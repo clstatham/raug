@@ -34,10 +34,11 @@ pub mod prelude {
     };
     pub use crate::runtime::{AudioBackend, AudioDevice, MidiPort, Runtime, RuntimeHandle};
     pub use crate::signal::{
-        AnySignal, Buffer, Float, List, MidiMessage, Signal, SignalBuffer, SignalType, PI, TAU,
+        AnySignal, AnySignalMut, AnySignalOpt, AnySignalRef, Buffer, Float, MidiMessage, Signal,
+        SignalBuffer, SignalType, PI, TAU,
     };
     pub use crate::util::*;
-    pub use raug_macros::{iter_proc_io_as, split_outputs};
+    pub use raug_macros::{iter_proc_io, split_outputs};
     pub use std::time::Duration;
 
     #[cfg(feature = "fft")]

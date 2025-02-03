@@ -9,7 +9,7 @@ use thiserror::Error;
 use crate::{
     graph::asset::{AssetRef, Assets},
     signal::{
-        AnySignal, AnySignalMut, AnySignalRef, Float, List, MidiMessage, Signal, SignalBuffer,
+        AnySignalOpt, AnySignalOptMut, AnySignalOptRef, Float, MidiMessage, Signal, SignalBuffer,
         SignalType,
     },
     GraphSerde,
@@ -181,7 +181,7 @@ impl<'a> ProcessorOutput<'a> {
 
     /// Returns an iterator over the output signal.
     #[inline]
-    pub fn iter_mut(&'a mut self) -> impl Iterator<Item = AnySignalMut<'a>> {
+    pub fn iter_mut(&'a mut self) -> impl Iterator<Item = AnySignalOptMut<'a>> {
         match self {
             ProcessorOutput::Block(buffer) => Either::Left(buffer.iter_mut()),
             ProcessorOutput::Sample(buffer, sample_index) => {
@@ -224,7 +224,7 @@ impl<'a> ProcessorOutput<'a> {
     ///
     /// Panics if the output signal is not the same type as the given value.
     #[inline]
-    pub fn set(&mut self, index: usize, value: AnySignalRef) {
+    pub fn set(&mut self, index: usize, value: AnySignalOptRef) {
         match self {
             ProcessorOutput::Block(buffer) => {
                 buffer.set(index, value.into());
@@ -274,7 +274,7 @@ impl<'a> ProcessorOutput<'a> {
 
     /// Fills the output signal with the given value.
     #[inline]
-    pub fn fill(&mut self, value: AnySignal) {
+    pub fn fill(&mut self, value: AnySignalOpt) {
         match self {
             ProcessorOutput::Block(buffer) => buffer.fill(value),
             ProcessorOutput::Sample(buffer, sample_index) => {
@@ -370,7 +370,7 @@ impl<'a, 'b> ProcessorInputs<'a, 'b> {
 
     /// Returns an iterator over the input signal at the given index.
     #[inline]
-    pub fn iter_input(&self, index: usize) -> impl Iterator<Item = Option<AnySignalRef>> {
+    pub fn iter_input(&self, index: usize) -> impl Iterator<Item = Option<AnySignalOptRef>> {
         let buffer = &self.inputs[index];
         if let Some(buffer) = buffer.as_ref() {
             if let ProcessMode::Sample(sample_index) = self.mode {
@@ -444,24 +444,6 @@ impl<'a, 'b> ProcessorInputs<'a, 'b> {
         Self::iter_input_as::<bool>(self, index).map(|iter| iter.copied())
     }
 
-    /// Returns an iterator over the input signal at the given index, if it is a [`String`] signal.
-    #[inline]
-    pub fn iter_input_as_strings(
-        &self,
-        index: usize,
-    ) -> Result<impl Iterator<Item = Option<&String>> + '_, ProcessorError> {
-        Self::iter_input_as::<String>(self, index).map(|iter| iter.map(|s| s.as_ref()))
-    }
-
-    /// Returns an iterator over the input signal at the given index, if it is a [`List`] signal.
-    #[inline]
-    pub fn iter_input_as_lists(
-        &self,
-        index: usize,
-    ) -> Result<impl Iterator<Item = Option<&List>> + '_, ProcessorError> {
-        Self::iter_input_as::<List>(self, index).map(|iter| iter.map(|s| s.as_ref()))
-    }
-
     /// Returns an iterator over the input signal at the given index, if it is a [`MidiMessage`] signal.
     #[inline]
     pub fn iter_input_as_midi(
@@ -517,7 +499,7 @@ impl<'a> ProcessorOutputs<'a> {
 
     /// Returns an iterator over the output signal at the given index.
     #[inline]
-    pub fn iter_output_mut(&mut self, index: usize) -> impl Iterator<Item = AnySignalMut> {
+    pub fn iter_output_mut(&mut self, index: usize) -> impl Iterator<Item = AnySignalOptMut> {
         let output = &mut self.outputs[index];
         if let ProcessMode::Sample(sample_index) = self.mode {
             Either::Left(std::iter::once(output.get_mut(sample_index).unwrap()))
@@ -586,24 +568,6 @@ impl<'a> ProcessorOutputs<'a> {
         index: usize,
     ) -> Result<impl Iterator<Item = &mut Option<bool>> + '_, ProcessorError> {
         self.iter_output_mut_as::<bool>(index)
-    }
-
-    /// Returns an iterator over the output signal at the given index, if it is a [`String`] signal.
-    #[inline]
-    pub fn iter_output_mut_as_strings(
-        &mut self,
-        index: usize,
-    ) -> Result<impl Iterator<Item = &mut Option<String>> + '_, ProcessorError> {
-        self.iter_output_mut_as::<String>(index)
-    }
-
-    /// Returns an iterator over the output signal at the given index, if it is a list signal.
-    #[inline]
-    pub fn iter_output_mut_as_lists(
-        &mut self,
-        index: usize,
-    ) -> Result<impl Iterator<Item = &mut Option<List>> + '_, ProcessorError> {
-        self.iter_output_mut_as::<List>(index)
     }
 
     /// Returns an iterator over the output signal at the given index, if it is a [`MidiMessage`] signal.

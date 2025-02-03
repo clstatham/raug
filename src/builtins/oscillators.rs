@@ -51,7 +51,7 @@ impl Processor for PhaseAccumulator {
         inputs: ProcessorInputs,
         outputs: ProcessorOutputs,
     ) -> Result<(), ProcessorError> {
-        for (increment, reset, out) in iter_proc_io_as!(
+        for (increment, reset, out) in iter_proc_io!(
             inputs as [Float, bool],
             outputs as [Float]
         ) {
@@ -140,7 +140,7 @@ impl Processor for SineOscillator {
         inputs: ProcessorInputs,
         outputs: ProcessorOutputs,
     ) -> Result<(), ProcessorError> {
-        for (frequency, phase, reset, out) in iter_proc_io_as!(
+        for (frequency, phase, reset, out) in iter_proc_io!(
             inputs as [Float, Float, bool],
             outputs as [Float]
         ) {
@@ -236,7 +236,7 @@ impl Processor for SawOscillator {
         inputs: ProcessorInputs,
         outputs: ProcessorOutputs,
     ) -> Result<(), ProcessorError> {
-        for (frequency, phase, reset, out) in iter_proc_io_as!(
+        for (frequency, phase, reset, out) in iter_proc_io!(
             inputs as [Float, Float, bool],
             outputs as [Float]
         ) {
@@ -381,7 +381,7 @@ impl Processor for BlSawOscillator {
         outputs: ProcessorOutputs,
     ) -> Result<(), ProcessorError> {
         // algorithm courtesy of https://www.musicdsp.org/en/latest/Synthesis/12-bandlimited-waveforms.html
-        for (frequency, out) in iter_proc_io_as!(inputs as [Float], outputs as [Float]) {
+        for (frequency, out) in iter_proc_io!(inputs as [Float], outputs as [Float]) {
             self.frequency = frequency.unwrap_or(self.frequency);
             if self.frequency <= 0.0 {
                 *out = None;
@@ -487,7 +487,7 @@ impl Processor for BlSquareOscillator {
         inputs: ProcessorInputs,
         outputs: ProcessorOutputs,
     ) -> Result<(), ProcessorError> {
-        for (frequency, pulse_width, reset, out) in iter_proc_io_as!(
+        for (frequency, pulse_width, reset, out) in iter_proc_io!(
             inputs as [Float, Float, bool],
             outputs as [Float]
         ) {
@@ -596,7 +596,7 @@ impl Processor for KarplusStrong {
         inputs: ProcessorInputs,
         outputs: ProcessorOutputs,
     ) -> Result<(), ProcessorError> {
-        for (trig, frequency, damping, out) in iter_proc_io_as!(
+        for (trig, frequency, damping, out) in iter_proc_io!(
             inputs as [bool, Float, Float],
             outputs as [Float]
         ) {

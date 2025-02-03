@@ -60,7 +60,7 @@ impl Processor for AudioBuffer {
         let buffer = buffer.as_buffer_mut().ok_or_else(|| {
             ProcessorError::InvalidAsset(self.buffer.clone(), "Buffer".to_string())
         })?;
-        for (index, write, out, length) in iter_proc_io_as!(
+        for (index, write, out, length) in iter_proc_io!(
             inputs as [Float, Float],
             outputs as [Float, i64]
         ) {
@@ -116,14 +116,14 @@ impl Processor for AudioBuffer {
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Register {
-    value: AnySignal,
+    value: AnySignalOpt,
 }
 
 impl Register {
     /// Creates a new [`Register`] processor.
     pub fn new(signal_type: SignalType) -> Self {
         Self {
-            value: AnySignal::default_of_type(&signal_type),
+            value: AnySignalOpt::default_of_type(&signal_type),
         }
     }
 }
@@ -146,7 +146,7 @@ impl Processor for Register {
         inputs: ProcessorInputs,
         outputs: ProcessorOutputs,
     ) -> Result<(), ProcessorError> {
-        for (set, clear, mut out) in iter_proc_io_as!(
+        for (set, clear, mut out) in iter_proc_io!(
             inputs as [Any, bool],
             outputs as [Any]
         ) {
@@ -158,7 +158,7 @@ impl Processor for Register {
                 self.value.as_mut().set_none();
             }
 
-            out.clone_from_ref(self.value.as_ref());
+            out.clone_from_opt_ref(self.value.as_ref());
         }
 
         Ok(())

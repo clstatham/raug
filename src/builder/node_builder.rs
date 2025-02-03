@@ -323,19 +323,6 @@ impl Node {
         self.output(0).cond(then, else_)
     }
 
-    /// Connects a [`Len`] processor to the output of this node.
-    ///
-    /// # Panics
-    ///
-    /// - Panics if the node has multiple outputs.
-    /// - Panics if the output signal is not a list.
-    #[inline]
-    #[track_caller]
-    pub fn len(&self) -> Node {
-        self.assert_single_output("len");
-        self.output(0).len()
-    }
-
     /// Connects a [`Cast`] processor to the output of this node.
     ///
     /// The `signal_type` parameter specifies the type to cast the signal to.
@@ -627,18 +614,6 @@ impl Output {
         cond
     }
 
-    /// Creates a [`Len`] processor and connects it to the output.
-    #[inline]
-    pub fn len(&self) -> Node {
-        assert!(
-            matches!(self.signal_type(), SignalType::List { .. }),
-            "output signal must be a list"
-        );
-        let proc = self.node.graph().add(Len);
-        proc.input(0).connect(self);
-        proc
-    }
-
     /// Creates a [`Dedup`] processor and connects it to the output.
     #[inline]
     pub fn dedup(&self) -> Node {
@@ -845,12 +820,6 @@ impl IntoNode for i32 {
 impl IntoNode for u32 {
     fn into_node(self, graph: &GraphBuilder) -> Node {
         graph.constant(self as i64)
-    }
-}
-
-impl IntoNode for &str {
-    fn into_node(self, graph: &GraphBuilder) -> Node {
-        graph.constant(self.to_string())
     }
 }
 

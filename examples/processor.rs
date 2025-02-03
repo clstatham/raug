@@ -21,7 +21,7 @@ impl Processor for GainProc {
         inputs: ProcessorInputs,
         outputs: ProcessorOutputs,
     ) -> Result<(), ProcessorError> {
-        for (input, output) in iter_proc_io_as!(inputs as [Float], outputs as [Float]) {
+        for (input, output) in iter_proc_io!(inputs as [Float], outputs as [Float]) {
             let Some(input) = input else {
                 *output = None;
                 continue;

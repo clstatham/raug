@@ -120,8 +120,8 @@ pub enum MidiPort {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub(crate) struct NodeBuffers {
     input_spec: Vec<SignalSpec>,
-    output_spec: Vec<SignalSpec>,
     outputs: Vec<SignalBuffer>,
+    output_spec: Vec<SignalSpec>,
 }
 
 impl NodeBuffers {

@@ -1,6 +1,6 @@
 //! Mathematical processors.
 
-use crate::{prelude::*, processor::ProcessorError, signal::AnySignalMut};
+use crate::{prelude::*, processor::ProcessorError, signal::AnySignalOptMut};
 use std::ops::{
     Add as AddOp, Div as DivOp, Mul as MulOp, Neg as NegOp, Rem as RemOp, Sub as SubOp,
 };
@@ -49,7 +49,7 @@ impl Processor for Constant {
         _inputs: ProcessorInputs,
         mut outputs: ProcessorOutputs,
     ) -> Result<(), ProcessorError> {
-        outputs.output(0).fill(self.value.clone());
+        outputs.output(0).fill(self.value.into_any_signal_opt());
 
         Ok(())
     }
@@ -94,7 +94,7 @@ impl Processor for MidiToFreq {
         inputs: ProcessorInputs,
         outputs: ProcessorOutputs,
     ) -> Result<(), ProcessorError> {
-        for (note, freq) in iter_proc_io_as!(inputs as [Float], outputs as [Float]) {
+        for (note, freq) in iter_proc_io!(inputs as [Float], outputs as [Float]) {
             let note = note.unwrap_or_default();
             *freq = Some(Float::powf(2.0, (note - 69.0) / 12.0) * 440.0);
         }
@@ -135,7 +135,7 @@ impl Processor for FreqToMidi {
         inputs: ProcessorInputs,
         outputs: ProcessorOutputs,
     ) -> Result<(), ProcessorError> {
-        for (freq, note) in iter_proc_io_as!(inputs as [Float], outputs as [Float]) {
+        for (freq, note) in iter_proc_io!(inputs as [Float], outputs as [Float]) {
             let freq = freq.unwrap_or_default();
             *note = Some(69.0 + 12.0 * (freq / 440.0).log2());
         }
@@ -283,7 +283,7 @@ macro_rules! impl_binary_proc {
                 inputs: ProcessorInputs,
                 outputs: ProcessorOutputs,
             ) -> Result<(), ProcessorError> {
-                for (in1, in2, sample) in iter_proc_io_as!(inputs as [Any, Any], outputs as [Any]) {
+                for (in1, in2, sample) in iter_proc_io!(inputs as [Any, Any], outputs as [Any]) {
                     if let Some(in1) = in1 {
                         if in1.signal_type() != self.a.signal_type() {
                             return Err(ProcessorError::InputSpecMismatch {
@@ -292,7 +292,12 @@ macro_rules! impl_binary_proc {
                                 actual: in1.signal_type(),
                             });
                         }
-                        self.a.clone_from_ref(in1);
+                        if let Some(in1) = in1.as_any_signal_ref() {
+                            self.a.clone_from_ref(in1);
+                        } else {
+                            sample.set_none();
+                            continue;
+                        }
                     }
 
                     if let Some(in2) = in2 {
@@ -303,31 +308,19 @@ macro_rules! impl_binary_proc {
                                 actual: in2.signal_type(),
                             });
                         }
-                        self.b.clone_from_ref(in2);
+                        if let Some(in2) = in2.as_any_signal_ref() {
+                            self.b.clone_from_ref(in2);
+                        } else {
+                            sample.set_none();
+                            continue;
+                        }
                     }
 
                     match sample {
-                        $(AnySignalMut::$data(sample) => {
-                            match (self.a.is_some(), self.b.is_some()) {
-                                (true, true) => {
-                                    let a = self.a.as_type::<$ty>().unwrap().unwrap();
-                                    let b = self.b.as_type::<$ty>().unwrap().unwrap();
-                                    *sample = Some(a.$method(b));
-                                }
-                                (true, false) => {
-                                    let a = self.a.as_type::<$ty>().unwrap().unwrap();
-                                    let b = <$ty>::default();
-                                    *sample = Some(a.$method(b));
-                                }
-                                (false, true) => {
-                                    let a = <$ty>::default();
-                                    let b = self.b.as_type::<$ty>().unwrap().unwrap();
-                                    *sample = Some(a.$method(b));
-                                }
-                                (false, false) => {
-                                    *sample = None;
-                                }
-                            }
+                        $(AnySignalOptMut::$data(sample) => {
+                            let a = *self.a.as_type::<$ty>().unwrap();
+                            let b = *self.b.as_type::<$ty>().unwrap();
+                            *sample = Some(a.$method(b));
                         })*
                         sample => {
                             return Err(ProcessorError::OutputSpecMismatch {
@@ -439,7 +432,7 @@ macro_rules! impl_unary_proc {
                 inputs: ProcessorInputs,
                 outputs: ProcessorOutputs,
             ) -> Result<(), ProcessorError> {
-                for (a, sample) in iter_proc_io_as!(inputs as [Any], outputs as [Any]) {
+                for (a, sample) in iter_proc_io!(inputs as [Any], outputs as [Any]) {
                     if let Some(a) = a {
                         if a.signal_type() != self.a.signal_type() {
                             return Err(ProcessorError::InputSpecMismatch {
@@ -448,17 +441,17 @@ macro_rules! impl_unary_proc {
                                 actual: a.signal_type(),
                             });
                         }
-                        self.a.clone_from_ref(a);
-                    }
-
-                    if self.a.is_none() {
-                        sample.set_none();
-                        continue;
+                        if let Some(a) = a.as_any_signal_ref() {
+                            self.a.clone_from_ref(a);
+                        } else {
+                            sample.set_none();
+                            continue;
+                        }
                     }
 
                     match sample {
-                        $(AnySignalMut::$data(sample) => {
-                            let a = self.a.as_type::<$ty>().unwrap().unwrap();
+                        $(AnySignalOptMut::$data(sample) => {
+                            let a = self.a.as_type::<$ty>().unwrap();
                             *sample = Some(a.$method());
                         })*
                         sample => {

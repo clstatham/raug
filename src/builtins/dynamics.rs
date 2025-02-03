@@ -79,7 +79,7 @@ impl Processor for PeakLimiter {
         inputs: ProcessorInputs,
         outputs: ProcessorOutputs,
     ) -> Result<(), ProcessorError> {
-        for (in_signal, threshold, attack, release, out) in iter_proc_io_as!(
+        for (in_signal, threshold, attack, release, out) in iter_proc_io!(
             inputs as [Float, Float, Float, Float],
             outputs as [Float]
         ) {
@@ -194,7 +194,7 @@ impl Processor for Compressor {
         inputs: ProcessorInputs,
         outputs: ProcessorOutputs,
     ) -> Result<(), ProcessorError> {
-        for (in_signal, threshold, ratio, attack, release, out) in iter_proc_io_as!(
+        for (in_signal, threshold, ratio, attack, release, out) in iter_proc_io!(
             inputs as [Float, Float, Float, Float, Float],
             outputs as [Float]
         ) {
@@ -336,7 +336,7 @@ impl Processor for RmsCompressor {
         inputs: ProcessorInputs,
         outputs: ProcessorOutputs,
     ) -> Result<(), ProcessorError> {
-        for (in_signal, threshold, ratio, attack, release, window_size, out) in iter_proc_io_as!(
+        for (in_signal, threshold, ratio, attack, release, window_size, out) in iter_proc_io!(
             inputs as [Float, Float, Float, Float, Float, Float],
             outputs as [Float]
         ) {

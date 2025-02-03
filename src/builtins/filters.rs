@@ -82,7 +82,7 @@ impl Processor for MoogLadder {
         outputs: ProcessorOutputs,
     ) -> Result<(), ProcessorError> {
         // based on: https://github.com/ddiakopoulos/MoogLadders/blob/fd147415573e723ba102dfc63dc46af0b7fe55b9/src/HuovilainenModel.h
-        for (in_signal, cutoff, resonance, out) in iter_proc_io_as!(
+        for (in_signal, cutoff, resonance, out) in iter_proc_io!(
             inputs as [Float, Float, Float],
             outputs as [Float]
         ) {
@@ -236,7 +236,7 @@ impl Processor for Biquad {
         inputs: ProcessorInputs,
         outputs: ProcessorOutputs,
     ) -> Result<(), ProcessorError> {
-        for (in_signal, a0, a1, a2, b1, b2, out) in iter_proc_io_as!(
+        for (in_signal, a0, a1, a2, b1, b2, out) in iter_proc_io!(
             inputs as [Float, Float, Float, Float, Float, Float],
             outputs as [Float]
         ) {
@@ -548,7 +548,7 @@ impl Processor for AutoBiquad {
         inputs: ProcessorInputs,
         outputs: ProcessorOutputs,
     ) -> Result<(), ProcessorError> {
-        for (in_signal, frequency, q, gain, out) in iter_proc_io_as!(
+        for (in_signal, frequency, q, gain, out) in iter_proc_io!(
             inputs as [Float, Float, Float, Float],
             outputs as [Float]
         ) {
@@ -651,7 +651,7 @@ impl Processor for OnePole {
         inputs: ProcessorInputs,
         outputs: ProcessorOutputs,
     ) -> Result<(), ProcessorError> {
-        for (in_signal, cutoff, out) in iter_proc_io_as!(
+        for (in_signal, cutoff, out) in iter_proc_io!(
             inputs as [Float, Float],
             outputs as [Float]
         ) {

@@ -3,7 +3,6 @@
 use std::sync::{Arc, Mutex};
 
 use crossbeam_channel::{Receiver, Sender};
-use raug_macros::iter_proc_io_as;
 
 use crate::prelude::*;
 
@@ -86,9 +85,9 @@ impl Processor for Passthrough {
         inputs: ProcessorInputs,
         outputs: ProcessorOutputs,
     ) -> Result<(), ProcessorError> {
-        for (in_signal, mut out_signal) in iter_proc_io_as!(inputs as [Any], outputs as [Any]) {
+        for (in_signal, mut out_signal) in iter_proc_io!(inputs as [Any], outputs as [Any]) {
             if let Some(in_signal) = in_signal {
-                out_signal.clone_from_ref(in_signal);
+                out_signal.clone_from_opt_ref(in_signal);
             } else {
                 out_signal.set_none();
             }
@@ -139,7 +138,7 @@ impl Processor for Cast {
         inputs: ProcessorInputs,
         outputs: ProcessorOutputs,
     ) -> Result<(), ProcessorError> {
-        for (in_signal, mut out_signal) in iter_proc_io_as!(inputs as [Any], outputs as [Any]) {
+        for (in_signal, mut out_signal) in iter_proc_io!(inputs as [Any], outputs as [Any]) {
             let Some(in_signal) = in_signal else {
                 out_signal.set_none();
                 continue;
@@ -151,7 +150,7 @@ impl Processor for Cast {
                     self.to,
                 ));
             };
-            out_signal.clone_from_ref(cast.as_ref());
+            out_signal.clone_from_opt_ref(cast.as_ref());
         }
 
         Ok(())
@@ -208,7 +207,7 @@ impl Processor for Message {
         inputs: ProcessorInputs,
         outputs: ProcessorOutputs,
     ) -> Result<(), ProcessorError> {
-        for (bang, message, mut out) in iter_proc_io_as!(
+        for (bang, message, mut out) in iter_proc_io!(
             inputs as [bool, Any],
             outputs as [Any]
         ) {
@@ -220,7 +219,9 @@ impl Processor for Message {
                         actual: message.signal_type(),
                     });
                 }
-                self.message.clone_from_ref(message);
+                if let Some(message) = message.as_any_signal_ref() {
+                    self.message.clone_from_ref(message);
+                }
             }
 
             if bang.unwrap_or(false) {
@@ -286,21 +287,15 @@ impl Processor for Print {
         inputs: ProcessorInputs,
         outputs: ProcessorOutputs,
     ) -> Result<(), ProcessorError> {
-        for (bang, message) in iter_proc_io_as!(inputs as [bool, Any], outputs as []) {
+        for (bang, message) in iter_proc_io!(inputs as [bool, Any], outputs as []) {
             if let Some(message) = message {
-                self.msg = message.to_owned();
+                if let Some(message) = message.as_any_signal_ref() {
+                    self.msg = message.to_owned();
+                }
             }
 
             if bang.unwrap_or(false) {
-                if let AnySignal::String(msg) = &self.msg {
-                    if let Some(msg) = msg {
-                        println!("{}", msg);
-                    } else {
-                        println!();
-                    }
-                } else {
-                    println!("{:?}", self.msg);
-                }
+                println!("{:?}", self.msg);
             }
         }
 
@@ -392,7 +387,7 @@ impl Processor for Smooth {
         inputs: ProcessorInputs,
         outputs: ProcessorOutputs,
     ) -> Result<(), ProcessorError> {
-        for (target, factor, out) in iter_proc_io_as!(
+        for (target, factor, out) in iter_proc_io!(
             inputs as [Float, Float],
             outputs as [Float]
         ) {
@@ -463,7 +458,7 @@ impl Processor for Changed {
         inputs: ProcessorInputs,
         outputs: ProcessorOutputs,
     ) -> Result<(), ProcessorError> {
-        for (in_signal, threshold, out_signal) in iter_proc_io_as!(
+        for (in_signal, threshold, out_signal) in iter_proc_io!(
             inputs as [Float, Float],
             outputs as [bool]
         ) {
@@ -529,7 +524,7 @@ impl Processor for ZeroCrossing {
         inputs: ProcessorInputs,
         outputs: ProcessorOutputs,
     ) -> Result<(), ProcessorError> {
-        for (in_signal, out_signal) in iter_proc_io_as!(inputs as [Float], outputs as [bool]) {
+        for (in_signal, out_signal) in iter_proc_io!(inputs as [Float], outputs as [bool]) {
             let Some(in_signal) = *in_signal else {
                 *out_signal = None;
                 continue;
@@ -624,7 +619,7 @@ impl ParamRx {
             if let Some(last) = &mut *last {
                 last.clone_from(&msg);
             } else {
-                *last = Some(msg.clone());
+                *last = Some(msg);
             }
             Some(msg)
         } else {
@@ -634,7 +629,7 @@ impl ParamRx {
 
     /// Returns the last received message.
     pub fn last(&self) -> Option<AnySignal> {
-        self.last.try_lock().ok()?.clone()
+        *self.last.try_lock().ok()?
     }
 }
 
@@ -746,15 +741,14 @@ impl Param {
     pub fn send(&self, message: impl Signal) {
         let message = message.into_any_signal();
         match (message, self.minimum, self.maximum) {
-            (AnySignal::Float(Some(value)), Some(min), Some(max)) => {
-                self.tx()
-                    .send(AnySignal::Float(Some(value.clamp(min, max))));
+            (AnySignal::Float(value), Some(min), Some(max)) => {
+                self.tx().send(AnySignal::Float(value.clamp(min, max)));
             }
-            (AnySignal::Float(Some(value)), Some(min), None) => {
-                self.tx().send(AnySignal::Float(Some(value.max(min))));
+            (AnySignal::Float(value), Some(min), None) => {
+                self.tx().send(AnySignal::Float(value.max(min)));
             }
-            (AnySignal::Float(Some(value)), None, Some(max)) => {
-                self.tx().send(AnySignal::Float(Some(value.min(max))));
+            (AnySignal::Float(value), None, Some(max)) => {
+                self.tx().send(AnySignal::Float(value.min(max)));
             }
             (message, _, _) => self.tx().send(message),
         }
@@ -765,14 +759,14 @@ impl Param {
         let message = self.rx().recv();
 
         match (message, self.minimum, self.maximum) {
-            (Some(AnySignal::Float(Some(value))), Some(min), Some(max)) => {
-                Some(AnySignal::Float(Some(value.clamp(min, max))))
+            (Some(AnySignal::Float(value)), Some(min), Some(max)) => {
+                Some(AnySignal::Float(value.clamp(min, max)))
             }
-            (Some(AnySignal::Float(Some(value))), Some(min), None) => {
-                Some(AnySignal::Float(Some(value.max(min))))
+            (Some(AnySignal::Float(value)), Some(min), None) => {
+                Some(AnySignal::Float(value.max(min)))
             }
-            (Some(AnySignal::Float(Some(value))), None, Some(max)) => {
-                Some(AnySignal::Float(Some(value.min(max))))
+            (Some(AnySignal::Float(value)), None, Some(max)) => {
+                Some(AnySignal::Float(value.min(max)))
             }
             (message, _, _) => message,
         }
@@ -783,14 +777,14 @@ impl Param {
         let last = self.rx().last();
 
         match (last, self.minimum, self.maximum) {
-            (Some(AnySignal::Float(Some(value))), Some(min), Some(max)) => {
-                Some(AnySignal::Float(Some(value.clamp(min, max))))
+            (Some(AnySignal::Float(value)), Some(min), Some(max)) => {
+                Some(AnySignal::Float(value.clamp(min, max)))
             }
-            (Some(AnySignal::Float(Some(value))), Some(min), None) => {
-                Some(AnySignal::Float(Some(value.max(min))))
+            (Some(AnySignal::Float(value)), Some(min), None) => {
+                Some(AnySignal::Float(value.max(min)))
             }
-            (Some(AnySignal::Float(Some(value))), None, Some(max)) => {
-                Some(AnySignal::Float(Some(value.min(max))))
+            (Some(AnySignal::Float(value)), None, Some(max)) => {
+                Some(AnySignal::Float(value.min(max)))
             }
             (last, _, _) => last,
         }
@@ -812,8 +806,8 @@ impl Processor for Param {
         inputs: ProcessorInputs,
         outputs: ProcessorOutputs,
     ) -> Result<(), ProcessorError> {
-        for (set, mut get) in iter_proc_io_as!(inputs as [Any], outputs as [Any]) {
-            if let Some(set) = set {
+        for (set, mut get) in iter_proc_io!(inputs as [Any], outputs as [Any]) {
+            if let Some(set) = set.and_then(|set| set.as_any_signal_ref()) {
                 self.tx().send(set.to_owned());
             }
 
@@ -839,7 +833,7 @@ impl serde::Serialize for Param {
             signal_type: SignalType,
             minimum: Option<Float>,
             maximum: Option<Float>,
-            initial_value: Option<AnySignal>,
+            initial_value: Option<AnySignalOpt>,
         }
 
         self.recv();
@@ -865,7 +859,7 @@ impl<'de> serde::Deserialize<'de> for Param {
             signal_type: SignalType,
             minimum: Option<Float>,
             maximum: Option<Float>,
-            initial_value: Option<AnySignal>,
+            initial_value: Option<AnySignalOpt>,
         }
 
         let de = ParamDe::deserialize(deserializer)?;
@@ -925,7 +919,7 @@ impl Processor for Counter {
         inputs: ProcessorInputs,
         outputs: ProcessorOutputs,
     ) -> Result<(), ProcessorError> {
-        for (trig, reset, count) in iter_proc_io_as!(
+        for (trig, reset, count) in iter_proc_io!(
             inputs as [bool, bool],
             outputs as [i64]
         ) {
@@ -982,7 +976,7 @@ impl Processor for SampleAndHold {
         inputs: ProcessorInputs,
         outputs: ProcessorOutputs,
     ) -> Result<(), ProcessorError> {
-        for (in_signal, trig, out_signal) in iter_proc_io_as!(
+        for (in_signal, trig, out_signal) in iter_proc_io!(
             inputs as [Float, bool],
             outputs as [Float]
         ) {
@@ -1040,7 +1034,7 @@ impl Processor for CheckFinite {
         inputs: ProcessorInputs,
         outputs: ProcessorOutputs,
     ) -> Result<(), ProcessorError> {
-        for (in_signal, out_signal) in iter_proc_io_as!(inputs as [Float], outputs as [Float]) {
+        for (in_signal, out_signal) in iter_proc_io!(inputs as [Float], outputs as [Float]) {
             if let Some(in_signal) = in_signal {
                 if in_signal.is_nan() {
                     panic!("{}: signal is NaN: {:?}", self.context, in_signal);
@@ -1090,7 +1084,7 @@ impl Processor for FiniteOrZero {
         inputs: ProcessorInputs,
         outputs: ProcessorOutputs,
     ) -> Result<(), ProcessorError> {
-        for (in_signal, out_signal) in iter_proc_io_as!(inputs as [Float], outputs as [Float]) {
+        for (in_signal, out_signal) in iter_proc_io!(inputs as [Float], outputs as [Float]) {
             if let Some(in_signal) = *in_signal {
                 if in_signal.is_nan() || in_signal.is_infinite() {
                     *out_signal = Some(0.0);
@@ -1128,14 +1122,14 @@ impl Processor for FiniteOrZero {
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Dedup {
-    last: AnySignal,
+    last: AnySignalOpt,
 }
 
 impl Dedup {
     /// Create a new `Dedup` processor.
     pub fn new(signal_type: SignalType) -> Self {
         Self {
-            last: AnySignal::default_of_type(&signal_type),
+            last: AnySignalOpt::default_of_type(&signal_type),
         }
     }
 }
@@ -1155,10 +1149,10 @@ impl Processor for Dedup {
         inputs: ProcessorInputs,
         outputs: ProcessorOutputs,
     ) -> Result<(), ProcessorError> {
-        for (in_signal, mut out_signal) in iter_proc_io_as!(inputs as [Any], outputs as [Any]) {
+        for (in_signal, mut out_signal) in iter_proc_io!(inputs as [Any], outputs as [Any]) {
             if let Some(in_signal) = in_signal {
                 if self.last.as_ref() != in_signal {
-                    out_signal.clone_from_ref(in_signal);
+                    out_signal.clone_from_opt_ref(in_signal);
                 } else {
                     out_signal.set_none();
                 }
@@ -1212,7 +1206,7 @@ impl Processor for IsSome {
         inputs: ProcessorInputs,
         outputs: ProcessorOutputs,
     ) -> Result<(), ProcessorError> {
-        for (in_signal, out_signal) in iter_proc_io_as!(inputs as [Any], outputs as [bool]) {
+        for (in_signal, out_signal) in iter_proc_io!(inputs as [Any], outputs as [bool]) {
             *out_signal = Some(in_signal.is_some_and(|signal| signal.is_some()));
         }
 
@@ -1261,7 +1255,7 @@ impl Processor for IsNone {
         inputs: ProcessorInputs,
         outputs: ProcessorOutputs,
     ) -> Result<(), ProcessorError> {
-        for (in_signal, out_signal) in iter_proc_io_as!(inputs as [Any], outputs as [bool]) {
+        for (in_signal, out_signal) in iter_proc_io!(inputs as [Any], outputs as [bool]) {
             *out_signal = Some(!in_signal.is_some_and(|signal| signal.is_some()));
         }
 
@@ -1312,10 +1306,10 @@ impl Processor for OrElse {
         inputs: ProcessorInputs,
         outputs: ProcessorOutputs,
     ) -> Result<(), ProcessorError> {
-        for (in_signal, mut out_signal) in iter_proc_io_as!(inputs as [Any], outputs as [Any]) {
+        for (in_signal, mut out_signal) in iter_proc_io!(inputs as [Any], outputs as [Any]) {
             if let Some(in_signal) = in_signal {
                 if in_signal.is_some() {
-                    out_signal.clone_from_ref(in_signal);
+                    out_signal.clone_from_opt_ref(in_signal);
                 } else {
                     out_signal.clone_from_ref(self.default.as_ref());
                 }

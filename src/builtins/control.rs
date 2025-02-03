@@ -21,8 +21,8 @@ use crate::prelude::*;
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Cond {
     cond: bool,
-    then: AnySignal,
-    else_: AnySignal,
+    then: AnySignalOpt,
+    else_: AnySignalOpt,
 }
 
 impl Cond {
@@ -30,8 +30,8 @@ impl Cond {
     pub fn new(signal_type: SignalType) -> Self {
         Self {
             cond: false,
-            then: AnySignal::default_of_type(&signal_type),
-            else_: AnySignal::default_of_type(&signal_type),
+            then: AnySignalOpt::default_of_type(&signal_type),
+            else_: AnySignalOpt::default_of_type(&signal_type),
         }
     }
 }
@@ -55,7 +55,7 @@ impl Processor for Cond {
         inputs: ProcessorInputs,
         outputs: ProcessorOutputs,
     ) -> Result<(), ProcessorError> {
-        for (cond, then, else_, mut out) in iter_proc_io_as!(
+        for (cond, then, else_, mut out) in iter_proc_io!(
             inputs as [bool, Any, Any],
             outputs as [Any]
         ) {
@@ -84,9 +84,9 @@ impl Processor for Cond {
             }
 
             if self.cond {
-                out.clone_from_ref(self.then.as_ref());
+                out.clone_from_opt_ref(self.then.as_ref());
             } else {
-                out.clone_from_ref(self.else_.as_ref());
+                out.clone_from_opt_ref(self.else_.as_ref());
             }
         }
 
@@ -107,7 +107,6 @@ macro_rules! comparison_op {
         impl $name {
             #[doc = concat!("Creates a new `", stringify!($name), "` processor for the given type.")]
             pub fn new(signal_type: SignalType) -> Self {
-                assert!(!matches!(signal_type, SignalType::List { .. }), "List comparison not supported");
                 Self {
                     a: AnySignal::default_of_type(&signal_type),
                     b: AnySignal::default_of_type(&signal_type),
@@ -133,7 +132,7 @@ macro_rules! comparison_op {
                 inputs: ProcessorInputs,
                 outputs: ProcessorOutputs,
             ) -> Result<(), ProcessorError> {
-                for (a, b, out) in iter_proc_io_as!(inputs as [Any, Any], outputs as [bool]) {
+                for (a, b, out) in iter_proc_io!(inputs as [Any, Any], outputs as [bool]) {
                     if let Some(a) = a {
                         if a.signal_type() != self.a.signal_type() {
                             return Err(ProcessorError::InputSpecMismatch {
@@ -142,7 +141,11 @@ macro_rules! comparison_op {
                                 actual: a.signal_type(),
                             });
                         }
-                        self.a.clone_from_ref(a);
+                        if let Some(a) = a.as_any_signal_ref() {
+                            self.a.clone_from_ref(a);
+                        } else {
+                            continue;
+                        }
                     }
 
                     if let Some(b) = b {
@@ -153,12 +156,11 @@ macro_rules! comparison_op {
                                 actual: b.signal_type(),
                             });
                         }
-                        self.b.clone_from_ref(b);
-                    }
-
-                    if self.a.is_none() || self.b.is_none() {
-                        *out = None;
-                        continue;
+                        if let Some(b) = b.as_any_signal_ref() {
+                            self.b.clone_from_ref(b);
+                        } else {
+                            continue;
+                        }
                     }
 
                     if self.a.signal_type() != self.b.signal_type() {
@@ -170,23 +172,17 @@ macro_rules! comparison_op {
                     }
 
                     match (&self.a, &self.b) {
-                        (AnySignal::Bool(Some(a)), AnySignal::Bool(Some(b))) => {
+                        (AnySignal::Bool(a), AnySignal::Bool(b)) => {
                             *out = Some(*a $op *b);
                         }
-                        (AnySignal::Int(Some(a)), AnySignal::Int(Some(b))) => {
+                        (AnySignal::Int(a), AnySignal::Int(b)) => {
                             *out = Some(*a $op *b);
                         }
-                        (AnySignal::Float(Some(a)), AnySignal::Float(Some(b))) => {
+                        (AnySignal::Float(a), AnySignal::Float(b)) => {
                             *out = Some(*a $op *b);
                         }
-                        (AnySignal::String(Some(a)), AnySignal::String(Some(b))) => {
+                        (AnySignal::Midi(a), AnySignal::Midi(b)) => {
                             *out = Some(*a $op *b);
-                        }
-                        (AnySignal::Midi(Some(a)), AnySignal::Midi(Some(b))) => {
-                            *out = Some(*a $op *b);
-                        }
-                        (AnySignal::List(Some(_)), AnySignal::List(Some(_))) => {
-                            unimplemented!("List comparison not supported");
                         }
                         _ => unreachable!(),
                     }

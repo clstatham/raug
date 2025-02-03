@@ -1,7 +1,5 @@
 //! Time-related processors.
 
-use raug_macros::iter_proc_io_as;
-
 use crate::prelude::*;
 
 use super::lerp;
@@ -79,7 +77,7 @@ impl Processor for Metro {
         inputs: ProcessorInputs,
         outputs: ProcessorOutputs,
     ) -> Result<(), ProcessorError> {
-        for (period, reset, out) in iter_proc_io_as!(
+        for (period, reset, out) in iter_proc_io!(
             inputs as [Float, bool],
             outputs as [bool]
         ) {
@@ -145,7 +143,7 @@ impl Processor for UnitDelay {
         inputs: ProcessorInputs,
         outputs: ProcessorOutputs,
     ) -> Result<(), ProcessorError> {
-        for (in_signal, out) in iter_proc_io_as!(inputs as [Float], outputs as [Float]) {
+        for (in_signal, out) in iter_proc_io!(inputs as [Float], outputs as [Float]) {
             *out = self.value;
             self.value = *in_signal;
         }
@@ -209,7 +207,7 @@ impl Processor for SampleDelay {
         inputs: ProcessorInputs,
         outputs: ProcessorOutputs,
     ) -> Result<(), ProcessorError> {
-        for (in_signal, delay, out) in iter_proc_io_as!(
+        for (in_signal, delay, out) in iter_proc_io!(
             inputs as [Float, i64],
             outputs as [Float]
         ) {
@@ -297,7 +295,7 @@ impl Processor for FractDelay {
         inputs: ProcessorInputs,
         outputs: ProcessorOutputs,
     ) -> Result<(), ProcessorError> {
-        for (in_signal, delay, out) in iter_proc_io_as!(
+        for (in_signal, delay, out) in iter_proc_io!(
             inputs as [Float, Float],
             outputs as [Float]
         ) {
@@ -388,7 +386,7 @@ impl Processor for DecayEnv {
         inputs: ProcessorInputs,
         outputs: ProcessorOutputs,
     ) -> Result<(), ProcessorError> {
-        for (trig, tau, out) in iter_proc_io_as!(
+        for (trig, tau, out) in iter_proc_io!(
             inputs as [bool, Float],
             outputs as [Float]
         ) {
@@ -481,7 +479,7 @@ impl Processor for LinearDecayEnv {
         inputs: ProcessorInputs,
         outputs: ProcessorOutputs,
     ) -> Result<(), ProcessorError> {
-        for (trig, decay, out) in iter_proc_io_as!(
+        for (trig, decay, out) in iter_proc_io!(
             inputs as [bool, Float],
             outputs as [Float]
         ) {
@@ -589,7 +587,7 @@ impl Processor for AREnv {
         inputs: ProcessorInputs,
         outputs: ProcessorOutputs,
     ) -> Result<(), ProcessorError> {
-        for (trig, attack, release, out) in iter_proc_io_as!(
+        for (trig, attack, release, out) in iter_proc_io!(
             inputs as [bool, Float, Float],
             outputs as [Float]
         ) {
@@ -701,7 +699,7 @@ impl Processor for ADSREnv {
         inputs: ProcessorInputs,
         outputs: ProcessorOutputs,
     ) -> Result<(), ProcessorError> {
-        for (trig, attack, decay, sustain, release, out) in iter_proc_io_as!(
+        for (trig, attack, decay, sustain, release, out) in iter_proc_io!(
             inputs as [bool, Float, Float, Float, Float],
             outputs as [Float]
         ) {
