@@ -21,7 +21,7 @@ const THERMAL: Float = 0.000025;
 /// | `0` | `out` | `Float` | The output signal. |
 #[derive(Clone, Debug, Processor)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[cfg_attr(feature = "serde", processor_serde)]
+#[cfg_attr(feature = "serde", processor_typetag)]
 pub struct MoogLadder {
     stage: [Float; 4],
     stage_tanh: [Float; 3],
@@ -129,7 +129,7 @@ impl MoogLadder {
 /// | `0` | `out` | `Float` | The output signal. |
 #[derive(Clone, Debug, Processor)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[cfg_attr(feature = "serde", processor_serde)]
+#[cfg_attr(feature = "serde", processor_typetag)]
 pub struct Biquad {
     #[input]
     input: Float,
@@ -265,7 +265,7 @@ impl std::fmt::Display for BiquadType {
 /// A bi-quad filter with automatic coefficient calculation.
 #[derive(Clone, Debug, Processor)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[cfg_attr(feature = "serde", processor_serde)]
+#[cfg_attr(feature = "serde", processor_typetag)]
 pub struct AutoBiquad {
     // biquad state
     a0: Float,
@@ -501,7 +501,7 @@ impl AutoBiquad {
 /// | `0` | `out` | `Float` | The output signal. |
 #[derive(Clone, Debug, Processor)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[cfg_attr(feature = "serde", processor_serde)]
+#[cfg_attr(feature = "serde", processor_typetag)]
 pub struct OnePole {
     #[input]
     input: Float,

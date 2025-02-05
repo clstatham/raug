@@ -776,7 +776,7 @@ impl serde::Serialize for Param {
             signal_type: SignalType,
             minimum: Option<Float>,
             maximum: Option<Float>,
-            initial_value: Option<AnySignalOpt>,
+            initial_value: Option<AnySignal>,
         }
 
         self.recv();
@@ -802,7 +802,7 @@ impl<'de> serde::Deserialize<'de> for Param {
             signal_type: SignalType,
             minimum: Option<Float>,
             maximum: Option<Float>,
-            initial_value: Option<AnySignalOpt>,
+            initial_value: Option<AnySignal>,
         }
 
         let de = ParamDe::deserialize(deserializer)?;

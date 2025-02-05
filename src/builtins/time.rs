@@ -197,7 +197,6 @@ impl SampleDelay {
 /// | `0` | `out` | `Float` | The delayed signal. |
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[cfg_attr(feature = "serde", processor_typetag)]
 pub struct FractDelay {
     #[cfg_attr(feature = "serde", serde(skip))]
     ring_buffer: Vec<Float>,
