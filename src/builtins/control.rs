@@ -21,8 +21,8 @@ use crate::prelude::*;
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Cond {
     cond: bool,
-    then: AnySignalOpt,
-    else_: AnySignalOpt,
+    then: AnySignal,
+    else_: AnySignal,
 }
 
 impl Cond {
@@ -30,8 +30,8 @@ impl Cond {
     pub fn new(signal_type: SignalType) -> Self {
         Self {
             cond: false,
-            then: AnySignalOpt::default_of_type(&signal_type),
-            else_: AnySignalOpt::default_of_type(&signal_type),
+            then: AnySignal::default_of_type(&signal_type),
+            else_: AnySignal::default_of_type(&signal_type),
         }
     }
 }
@@ -53,41 +53,40 @@ impl Processor for Cond {
     fn process(
         &mut self,
         inputs: ProcessorInputs,
-        outputs: ProcessorOutputs,
+        mut outputs: ProcessorOutputs,
     ) -> Result<(), ProcessorError> {
-        for (cond, then, else_, mut out) in iter_proc_io!(
-            inputs as [bool, Any, Any],
-            outputs as [Any]
-        ) {
-            self.cond = cond.unwrap_or(self.cond);
+        let cond = inputs.input_as::<bool>(0)?;
+        let then = inputs.input(1)?.as_any_signal_ref();
+        let else_ = inputs.input(2)?.as_any_signal_ref();
 
-            if let Some(then) = then {
-                if then.signal_type() != self.then.signal_type() {
-                    return Err(ProcessorError::InputSpecMismatch {
-                        index: 1,
-                        expected: self.then.signal_type(),
-                        actual: then.signal_type(),
-                    });
-                }
-                self.then.clone_from_ref(then);
-            }
+        self.cond = cond.unwrap_or(self.cond);
 
-            if let Some(else_) = else_ {
-                if else_.signal_type() != self.else_.signal_type() {
-                    return Err(ProcessorError::InputSpecMismatch {
-                        index: 2,
-                        expected: self.else_.signal_type(),
-                        actual: else_.signal_type(),
-                    });
-                }
-                self.else_.clone_from_ref(else_);
+        if let Some(then) = then {
+            if then.signal_type() != self.then.signal_type() {
+                return Err(ProcessorError::InputSpecMismatch {
+                    index: 1,
+                    expected: self.then.signal_type(),
+                    actual: then.signal_type(),
+                });
             }
+            self.then.clone_from_ref(then);
+        }
 
-            if self.cond {
-                out.clone_from_opt_ref(self.then.as_ref());
-            } else {
-                out.clone_from_opt_ref(self.else_.as_ref());
+        if let Some(else_) = else_ {
+            if else_.signal_type() != self.else_.signal_type() {
+                return Err(ProcessorError::InputSpecMismatch {
+                    index: 2,
+                    expected: self.else_.signal_type(),
+                    actual: else_.signal_type(),
+                });
             }
+            self.else_.clone_from_ref(else_);
+        }
+
+        if self.cond {
+            outputs.set_output(0, self.then)?;
+        } else {
+            outputs.set_output(0, self.else_)?;
         }
 
         Ok(())
@@ -130,9 +129,11 @@ macro_rules! comparison_op {
             fn process(
                 &mut self,
                 inputs: ProcessorInputs,
-                outputs: ProcessorOutputs,
+                mut outputs: ProcessorOutputs,
             ) -> Result<(), ProcessorError> {
-                for (a, b, out) in iter_proc_io!(inputs as [Any, Any], outputs as [bool]) {
+                let a = inputs.input(0)?.as_any_signal_ref();
+                let b = inputs.input(1)?.as_any_signal_ref();
+                {
                     if let Some(a) = a {
                         if a.signal_type() != self.a.signal_type() {
                             return Err(ProcessorError::InputSpecMismatch {
@@ -141,11 +142,10 @@ macro_rules! comparison_op {
                                 actual: a.signal_type(),
                             });
                         }
-                        if let Some(a) = a.as_any_signal_ref() {
-                            self.a.clone_from_ref(a);
-                        } else {
-                            continue;
-                        }
+                        self.a.clone_from_ref(a);
+                    } else {
+                        outputs.set_output_none(0);
+                        return Ok(());
                     }
 
                     if let Some(b) = b {
@@ -156,11 +156,10 @@ macro_rules! comparison_op {
                                 actual: b.signal_type(),
                             });
                         }
-                        if let Some(b) = b.as_any_signal_ref() {
-                            self.b.clone_from_ref(b);
-                        } else {
-                            continue;
-                        }
+                        self.b.clone_from_ref(b);
+                    } else {
+                        outputs.set_output_none(0);
+                        return Ok(());
                     }
 
                     if self.a.signal_type() != self.b.signal_type() {
@@ -173,16 +172,16 @@ macro_rules! comparison_op {
 
                     match (&self.a, &self.b) {
                         (AnySignal::Bool(a), AnySignal::Bool(b)) => {
-                            *out = Some(*a $op *b);
+                            outputs.set_output_as(0, *a $op *b)?;
                         }
                         (AnySignal::Int(a), AnySignal::Int(b)) => {
-                            *out = Some(*a $op *b);
+                            outputs.set_output_as(0, *a $op *b)?;
                         }
                         (AnySignal::Float(a), AnySignal::Float(b)) => {
-                            *out = Some(*a $op *b);
+                            outputs.set_output_as(0, *a $op *b)?;
                         }
                         (AnySignal::Midi(a), AnySignal::Midi(b)) => {
-                            *out = Some(*a $op *b);
+                            outputs.set_output_as(0, *a $op *b)?;
                         }
                         _ => unreachable!(),
                     }

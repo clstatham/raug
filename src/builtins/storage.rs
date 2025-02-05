@@ -17,11 +17,21 @@ use crate::prelude::*;
 /// | --- | --- | --- | --- |
 /// | `0` | `out` | `Float` | The value of the sample at the current index. |
 /// | `1` | `length` | `Int` | The length of the buffer. |
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Processor)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", processor_typetag)]
 pub struct AudioBuffer {
     buffer: String,
+    #[input]
     index: Float,
+    #[input]
+    input: Float,
+    #[input]
+    write: bool,
+    #[output]
+    out: Float,
+    #[output]
+    length: i64,
 }
 
 impl AudioBuffer {
@@ -30,72 +40,43 @@ impl AudioBuffer {
         Self {
             buffer: buffer.into(),
             index: 0.0,
+            input: 0.0,
+            write: false,
+            out: 0.0,
+            length: 0,
         }
     }
-}
 
-#[cfg_attr(feature = "serde", typetag::serde)]
-impl Processor for AudioBuffer {
-    fn input_spec(&self) -> Vec<SignalSpec> {
-        vec![
-            SignalSpec::new("index", SignalType::Float),
-            SignalSpec::new("set", SignalType::Float),
-        ]
-    }
+    fn update(&mut self, env: &ProcEnv) {
+        let mut buffer = env.asset(&self.buffer).unwrap();
+        let buffer = buffer.as_buffer_mut().unwrap();
+        if self.write {
+            buffer[self.index as usize] = Some(self.input);
+        }
 
-    fn output_spec(&self) -> Vec<SignalSpec> {
-        vec![
-            SignalSpec::new("out", SignalType::Float),
-            SignalSpec::new("length", SignalType::Int),
-        ]
-    }
+        if self.index.fract() != 0.0 {
+            let pos_floor = self.index.floor() as usize;
+            let pos_ceil = self.index.ceil() as usize;
 
-    fn process(
-        &mut self,
-        inputs: ProcessorInputs,
-        outputs: ProcessorOutputs,
-    ) -> Result<(), ProcessorError> {
-        let buffer = inputs.asset(&self.buffer)?;
-        let mut buffer = buffer.try_lock().unwrap();
-        let buffer = buffer.as_buffer_mut().ok_or_else(|| {
-            ProcessorError::InvalidAsset(self.buffer.clone(), "Buffer".to_string())
-        })?;
-        for (index, write, out, length) in iter_proc_io!(
-            inputs as [Float, Float],
-            outputs as [Float, i64]
-        ) {
-            self.index = index.unwrap_or(self.index);
+            let value_floor = buffer[pos_floor].unwrap_or_default();
+            let value_ceil = buffer[pos_ceil].unwrap_or_default();
 
-            if let Some(write) = *write {
-                buffer[self.index as usize] = Some(write);
-            }
+            let t = self.index.fract();
 
-            if self.index.fract() != 0.0 {
-                let pos_floor = self.index.floor() as usize;
-                let pos_ceil = self.index.ceil() as usize;
+            self.out = value_floor + (value_ceil - value_floor) * t;
+        } else {
+            let index = self.index as i64;
 
-                let value_floor = buffer[pos_floor].unwrap_or_default();
-                let value_ceil = buffer[pos_ceil].unwrap_or_default();
-
-                let t = self.index.fract();
-
-                *out = Some(value_floor + (value_ceil - value_floor) * t);
+            if index < 0 {
+                self.index = buffer.len() as Float + index as Float;
             } else {
-                let index = self.index as i64;
-
-                if index < 0 {
-                    self.index = self.buffer.len() as Float + index as Float;
-                } else {
-                    self.index = index as Float;
-                }
-
-                *out = Some(buffer[self.index as usize].unwrap_or_default());
+                self.index = index as Float;
             }
 
-            *length = Some(buffer.len() as i64);
+            self.out = buffer[self.index as usize].unwrap_or_default();
         }
 
-        Ok(())
+        self.length = buffer.len() as i64;
     }
 }
 
@@ -144,21 +125,23 @@ impl Processor for Register {
     fn process(
         &mut self,
         inputs: ProcessorInputs,
-        outputs: ProcessorOutputs,
+        mut outputs: ProcessorOutputs,
     ) -> Result<(), ProcessorError> {
-        for (set, clear, mut out) in iter_proc_io!(
-            inputs as [Any, bool],
-            outputs as [Any]
-        ) {
-            if let Some(set) = set {
-                self.value.clone_from_ref(set);
-            }
+        let set = inputs.input(0)?.as_any_signal_ref();
+        let clear = inputs.input_as::<bool>(1)?;
 
-            if clear.is_some() {
-                self.value.as_mut().set_none();
-            }
+        if let Some(set) = set {
+            self.value = set.to_owned().into_any_signal_opt();
+        }
 
-            out.clone_from_opt_ref(self.value.as_ref());
+        if clear.is_some() {
+            self.value.as_mut().set_none();
+        }
+
+        if let Ok(value) = self.value.try_into_any_signal() {
+            outputs.set_output(0, value)?;
+        } else {
+            outputs.set_output_none(0);
         }
 
         Ok(())

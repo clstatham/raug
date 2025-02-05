@@ -1,4 +1,7 @@
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::{
+    ops::{Deref, DerefMut},
+    sync::{Arc, Mutex, MutexGuard},
+};
 
 use rustc_hash::FxHashMap;
 
@@ -30,12 +33,20 @@ impl From<Buffer<Float>> for Asset {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-pub struct AssetRef<'a>(&'a Arc<Mutex<Asset>>);
+#[derive(Debug)]
+pub struct AssetRef<'a>(MutexGuard<'a, Asset>);
 
-impl<'a> AssetRef<'a> {
-    pub fn try_lock(&self) -> Option<MutexGuard<'a, Asset>> {
-        self.0.try_lock().ok()
+impl Deref for AssetRef<'_> {
+    type Target = Asset;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl DerefMut for AssetRef<'_> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
     }
 }
 
@@ -52,7 +63,10 @@ impl Assets {
     }
 
     pub fn get(&self, name: &str) -> Option<AssetRef> {
-        self.assets.get(name).map(AssetRef)
+        self.assets
+            .get(name)
+            .and_then(|asset| asset.try_lock().ok())
+            .map(AssetRef)
     }
 
     pub fn insert(&mut self, name: String, asset: Asset) {

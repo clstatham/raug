@@ -1,34 +1,28 @@
 use raug::prelude::*;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Processor)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", processor_typetag)]
 struct GainProc {
     gain: Float,
+
+    #[input]
+    input: Float,
+    #[output]
+    out: Float,
 }
 
-#[cfg_attr(feature = "serde", typetag::serde)]
-impl Processor for GainProc {
-    fn input_spec(&self) -> Vec<SignalSpec> {
-        vec![SignalSpec::new("in", SignalType::Float)]
-    }
-
-    fn output_spec(&self) -> Vec<SignalSpec> {
-        vec![SignalSpec::new("out", SignalType::Float)]
-    }
-
-    fn process(
-        &mut self,
-        inputs: ProcessorInputs,
-        outputs: ProcessorOutputs,
-    ) -> Result<(), ProcessorError> {
-        for (input, output) in iter_proc_io!(inputs as [Float], outputs as [Float]) {
-            let Some(input) = input else {
-                *output = None;
-                continue;
-            };
-            *output = Some(input * self.gain);
+impl GainProc {
+    pub fn new(gain: Float) -> Self {
+        Self {
+            gain,
+            input: 0.0,
+            out: 0.0,
         }
-        Ok(())
+    }
+
+    fn update(&mut self, _env: &ProcEnv) {
+        self.out = self.input * self.gain;
     }
 }
 
@@ -43,7 +37,7 @@ fn main() {
     let sine = graph.add(SineOscillator::default());
     sine.input("frequency").connect(440.0);
 
-    let gain = graph.add(GainProc { gain: 0.2 });
+    let gain = graph.add(GainProc::new(0.5));
 
     sine.output(0).connect(&gain.input(0));
 

@@ -18,10 +18,19 @@ use super::lerp;
 /// | Index | Name | Type | Description |
 /// | --- | --- | --- | --- |
 /// | `0` | `out` | `Bool` | The pulse signal. |
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Processor)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", processor_typetag)]
 pub struct Metro {
+    #[input]
     period: Float,
+
+    #[input]
+    reset: bool,
+
+    #[output]
+    out: bool,
+
     last_time: u64,
     next_time: u64,
     time: u64,
@@ -35,6 +44,8 @@ impl Metro {
             last_time: 0,
             next_time: 0,
             time: 0,
+            reset: false,
+            out: false,
         }
     }
 
@@ -51,52 +62,22 @@ impl Metro {
 
         out
     }
+
+    fn update(&mut self, env: &ProcEnv) {
+        if self.reset {
+            self.time = 0;
+            self.last_time = 0;
+            self.next_time = 0;
+            self.reset = false;
+        }
+
+        self.out = self.next_sample(env.sample_rate);
+    }
 }
 
 impl Default for Metro {
     fn default() -> Self {
         Self::new(1.0)
-    }
-}
-
-#[cfg_attr(feature = "serde", typetag::serde)]
-impl Processor for Metro {
-    fn input_spec(&self) -> Vec<SignalSpec> {
-        vec![
-            SignalSpec::new("period", SignalType::Float),
-            SignalSpec::new("reset", SignalType::Bool),
-        ]
-    }
-
-    fn output_spec(&self) -> Vec<SignalSpec> {
-        vec![SignalSpec::new("out", SignalType::Bool)]
-    }
-
-    fn process(
-        &mut self,
-        inputs: ProcessorInputs,
-        outputs: ProcessorOutputs,
-    ) -> Result<(), ProcessorError> {
-        for (period, reset, out) in iter_proc_io!(
-            inputs as [Float, bool],
-            outputs as [bool]
-        ) {
-            if reset.unwrap_or(false) {
-                self.time = 0;
-                self.last_time = 0;
-                self.next_time = 0;
-            }
-
-            self.period = period.unwrap_or(self.period);
-
-            if self.next_sample(inputs.sample_rate()) {
-                *out = Some(true);
-            } else {
-                *out = None;
-            }
-        }
-
-        Ok(())
     }
 }
 
@@ -115,10 +96,17 @@ impl Processor for Metro {
 /// | Index | Name | Type | Description |
 /// | --- | --- | --- | --- |
 /// | `0` | `out` | `Float` | The delayed signal. |
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Processor)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", processor_typetag)]
 pub struct UnitDelay {
     value: Option<Float>,
+
+    #[input]
+    input: Float,
+
+    #[output]
+    out: Float,
 }
 
 impl UnitDelay {
@@ -126,29 +114,10 @@ impl UnitDelay {
     pub fn new() -> Self {
         Self::default()
     }
-}
 
-#[cfg_attr(feature = "serde", typetag::serde)]
-impl Processor for UnitDelay {
-    fn input_spec(&self) -> Vec<SignalSpec> {
-        vec![SignalSpec::new("in", SignalType::Float)]
-    }
-
-    fn output_spec(&self) -> Vec<SignalSpec> {
-        vec![SignalSpec::new("out", SignalType::Float)]
-    }
-
-    fn process(
-        &mut self,
-        inputs: ProcessorInputs,
-        outputs: ProcessorOutputs,
-    ) -> Result<(), ProcessorError> {
-        for (in_signal, out) in iter_proc_io!(inputs as [Float], outputs as [Float]) {
-            *out = self.value;
-            self.value = *in_signal;
-        }
-
-        Ok(())
+    fn update(&mut self, _env: &ProcEnv) {
+        self.out = self.value.unwrap_or_default();
+        self.value = Some(self.input);
     }
 }
 
@@ -166,11 +135,22 @@ impl Processor for UnitDelay {
 /// | Index | Name | Type | Description |
 /// | --- | --- | --- | --- |
 /// | `0` | `out` | `Float` | The delayed signal. |
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Processor)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", processor_typetag)]
 pub struct SampleDelay {
+    #[cfg_attr(feature = "serde", serde(skip))]
     ring_buffer: Vec<Float>,
     head: usize,
+
+    #[input]
+    input: Float,
+
+    #[input]
+    delay: i64,
+
+    #[output]
+    out: Float,
 }
 
 impl SampleDelay {
@@ -180,6 +160,9 @@ impl SampleDelay {
         Self {
             ring_buffer,
             head: 0,
+            input: 0.0,
+            delay: 0,
+            out: 0.0,
         }
     }
 
@@ -187,43 +170,14 @@ impl SampleDelay {
     fn index_modulo(&self, delay: usize) -> usize {
         (self.head + self.ring_buffer.len() - delay) % self.ring_buffer.len()
     }
-}
 
-#[cfg_attr(feature = "serde", typetag::serde)]
-impl Processor for SampleDelay {
-    fn input_spec(&self) -> Vec<SignalSpec> {
-        vec![
-            SignalSpec::new("in", SignalType::Float),
-            SignalSpec::new("delay", SignalType::Int),
-        ]
-    }
+    fn update(&mut self, _env: &ProcEnv) {
+        self.ring_buffer[self.head] = self.input;
 
-    fn output_spec(&self) -> Vec<SignalSpec> {
-        vec![SignalSpec::new("out", SignalType::Float)]
-    }
+        let index = self.index_modulo(self.delay as usize);
+        self.out = self.ring_buffer[index];
 
-    fn process(
-        &mut self,
-        inputs: ProcessorInputs,
-        outputs: ProcessorOutputs,
-    ) -> Result<(), ProcessorError> {
-        for (in_signal, delay, out) in iter_proc_io!(
-            inputs as [Float, i64],
-            outputs as [Float]
-        ) {
-            let in_signal = in_signal.unwrap_or_default();
-
-            let delay = delay.unwrap_or_default() as usize;
-
-            self.ring_buffer[self.head] = in_signal;
-
-            let index = self.index_modulo(delay);
-            *out = Some(self.ring_buffer[index]);
-
-            self.head = (self.head + 1) % self.ring_buffer.len();
-        }
-
-        Ok(())
+        self.head = (self.head + 1) % self.ring_buffer.len();
     }
 }
 
@@ -243,6 +197,7 @@ impl Processor for SampleDelay {
 /// | `0` | `out` | `Float` | The delayed signal. |
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", processor_typetag)]
 pub struct FractDelay {
     #[cfg_attr(feature = "serde", serde(skip))]
     ring_buffer: Vec<Float>,
@@ -293,27 +248,25 @@ impl Processor for FractDelay {
     fn process(
         &mut self,
         inputs: ProcessorInputs,
-        outputs: ProcessorOutputs,
+        mut outputs: ProcessorOutputs,
     ) -> Result<(), ProcessorError> {
-        for (in_signal, delay, out) in iter_proc_io!(
-            inputs as [Float, Float],
-            outputs as [Float]
-        ) {
-            let delay = delay.unwrap_or_default();
+        let in_signal = inputs.input_as::<Float>(0)?;
+        let delay = inputs.input_as::<Float>(1)?;
 
-            self.ring_buffer[self.head] = in_signal.unwrap_or_default();
+        let delay = delay.unwrap_or_default();
 
-            let (index, delay_frac) = self.index_modulo(delay);
+        self.ring_buffer[self.head] = in_signal.unwrap_or_default();
 
-            let delayed = self.ring_buffer[index];
+        let (index, delay_frac) = self.index_modulo(delay);
 
-            let next_index = (index + 1) % self.ring_buffer.len();
-            let next = self.ring_buffer[next_index];
+        let delayed = self.ring_buffer[index];
 
-            *out = Some(lerp(delayed, next, delay_frac));
+        let next_index = (index + 1) % self.ring_buffer.len();
+        let next = self.ring_buffer[next_index];
 
-            self.head = (self.head + 1) % self.ring_buffer.len();
-        }
+        outputs.set_output_as(0, lerp(delayed, next, delay_frac))?;
+
+        self.head = (self.head + 1) % self.ring_buffer.len();
 
         Ok(())
     }
@@ -341,13 +294,23 @@ impl Processor for FractDelay {
 /// | Index | Name | Type | Description |
 /// | --- | --- | --- | --- |
 /// | `0` | `out` | `Float` | The envelope signal. |
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Processor)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", processor_typetag)]
 pub struct DecayEnv {
     last_trig: bool,
-    tau: Float,
+
     value: Float,
     time: Float,
+
+    #[input]
+    trig: bool,
+
+    #[input]
+    tau: Float,
+
+    #[output]
+    out: Float,
 }
 
 impl DecayEnv {
@@ -358,57 +321,34 @@ impl DecayEnv {
             tau,
             value: 0.0,
             time: 1000.0,
+            trig: false,
+            out: 0.0,
         }
+    }
+
+    fn update(&mut self, env: &ProcEnv) {
+        self.tau = self.tau.max(0.0);
+        let trig = self.trig;
+
+        if trig && !self.last_trig {
+            self.value = 1.0;
+            self.time = 0.0;
+        } else {
+            self.time += env.sample_rate.recip();
+            self.value = (-self.tau.recip() * self.time).exp();
+        }
+
+        self.last_trig = trig;
+
+        self.value = self.value.clamp(0.0, 1.0);
+
+        self.out = self.value;
     }
 }
 
 impl Default for DecayEnv {
     fn default() -> Self {
         Self::new(1.0)
-    }
-}
-
-#[cfg_attr(feature = "serde", typetag::serde)]
-impl Processor for DecayEnv {
-    fn input_spec(&self) -> Vec<SignalSpec> {
-        vec![
-            SignalSpec::new("trig", SignalType::Bool),
-            SignalSpec::new("tau", SignalType::Float),
-        ]
-    }
-
-    fn output_spec(&self) -> Vec<SignalSpec> {
-        vec![SignalSpec::new("out", SignalType::Float)]
-    }
-
-    fn process(
-        &mut self,
-        inputs: ProcessorInputs,
-        outputs: ProcessorOutputs,
-    ) -> Result<(), ProcessorError> {
-        for (trig, tau, out) in iter_proc_io!(
-            inputs as [bool, Float],
-            outputs as [Float]
-        ) {
-            self.tau = tau.unwrap_or(self.tau);
-            let trig = trig.unwrap_or(false);
-
-            if trig && !self.last_trig {
-                self.value = 1.0;
-                self.time = 0.0;
-            } else {
-                self.time += inputs.sample_rate().recip();
-                self.value = (-self.tau.recip() * self.time).exp();
-            }
-
-            self.last_trig = trig;
-
-            self.value = self.value.clamp(0.0, 1.0);
-
-            *out = Some(self.value);
-        }
-
-        Ok(())
     }
 }
 
@@ -434,13 +374,22 @@ impl Processor for DecayEnv {
 /// | Index | Name | Type | Description |
 /// | --- | --- | --- | --- |
 /// | `0` | `out` | `Float` | The envelope signal. |
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Processor)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", processor_typetag)]
 pub struct LinearDecayEnv {
     last_trig: bool,
-    decay: Float,
+
     value: Float,
     time: Float,
+
+    #[input]
+    trig: bool,
+    #[input]
+    decay: Float,
+
+    #[output]
+    out: Float,
 }
 
 impl LinearDecayEnv {
@@ -451,60 +400,33 @@ impl LinearDecayEnv {
             decay,
             value: 0.0,
             time: 1000.0,
+            trig: false,
+            out: 0.0,
         }
+    }
+
+    fn update(&mut self, env: &ProcEnv) {
+        self.decay = self.decay.max(0.0);
+
+        if self.trig && !self.last_trig {
+            self.value = 1.0;
+            self.time = 0.0;
+        } else {
+            self.time += env.sample_rate.recip();
+            self.value = 1.0 - self.time / self.decay;
+        }
+
+        self.last_trig = self.trig;
+
+        self.value = self.value.clamp(0.0, 1.0);
+
+        self.out = self.value;
     }
 }
 
 impl Default for LinearDecayEnv {
     fn default() -> Self {
         Self::new(1.0)
-    }
-}
-
-#[cfg_attr(feature = "serde", typetag::serde)]
-impl Processor for LinearDecayEnv {
-    fn input_spec(&self) -> Vec<SignalSpec> {
-        vec![
-            SignalSpec::new("trig", SignalType::Bool),
-            SignalSpec::new("decay", SignalType::Float),
-        ]
-    }
-
-    fn output_spec(&self) -> Vec<SignalSpec> {
-        vec![SignalSpec::new("out", SignalType::Float)]
-    }
-
-    fn process(
-        &mut self,
-        inputs: ProcessorInputs,
-        outputs: ProcessorOutputs,
-    ) -> Result<(), ProcessorError> {
-        for (trig, decay, out) in iter_proc_io!(
-            inputs as [bool, Float],
-            outputs as [Float]
-        ) {
-            self.decay = decay.unwrap_or(self.decay);
-            if self.decay < 0.0 {
-                return Err(ProcessorError::InvalidValue("decay time msut be positive"));
-            }
-            let trig = trig.unwrap_or(false);
-
-            if trig && !self.last_trig {
-                self.value = 1.0;
-                self.time = 0.0;
-            } else {
-                self.time += inputs.sample_rate().recip();
-                self.value = 1.0 - self.time / self.decay;
-            }
-
-            self.last_trig = trig;
-
-            self.value = self.value.clamp(0.0, 1.0);
-
-            *out = Some(self.value);
-        }
-
-        Ok(())
     }
 }
 
@@ -539,14 +461,23 @@ pub enum ADSRState {
 /// | Index | Name | Type | Description |
 /// | --- | --- | --- | --- |
 /// | `0` | `out` | `Float` | The envelope signal. |
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Processor)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", processor_typetag)]
 pub struct AREnv {
     last_trig: bool,
-    attack: Float,
-    release: Float,
     value: Float,
     state: ADSRState,
+
+    #[input]
+    trig: bool,
+    #[input]
+    attack: Float,
+    #[input]
+    release: Float,
+
+    #[output]
+    out: Float,
 }
 
 impl AREnv {
@@ -558,73 +489,48 @@ impl AREnv {
             release,
             value: 0.0,
             state: ADSRState::Sustain,
+            trig: false,
+            out: 0.0,
         }
+    }
+
+    fn update(&mut self, env: &ProcEnv) {
+        self.attack = self.attack.max(0.0);
+        self.release = self.release.max(0.0);
+
+        if self.trig && !self.last_trig {
+            self.value = 0.0;
+            self.state = ADSRState::Attack;
+        } else if !self.trig && self.last_trig {
+            self.state = ADSRState::Release;
+        }
+
+        let slope = match self.state {
+            ADSRState::Sustain => 0.0,
+            ADSRState::Attack => 1.0 / (self.attack * env.sample_rate),
+            ADSRState::Release => -1.0 / (self.release * env.sample_rate),
+            _ => unreachable!(),
+        };
+
+        self.value += slope;
+
+        if self.state == ADSRState::Attack && self.value >= 1.0 {
+            self.value = 1.0;
+            self.state = ADSRState::Sustain;
+        } else if self.state == ADSRState::Release && self.value <= 0.0 {
+            self.value = 0.0;
+            self.state = ADSRState::Sustain;
+        }
+
+        self.last_trig = self.trig;
+
+        self.out = self.value;
     }
 }
 
 impl Default for AREnv {
     fn default() -> Self {
         Self::new(0.0, 0.0)
-    }
-}
-
-#[cfg_attr(feature = "serde", typetag::serde)]
-impl Processor for AREnv {
-    fn input_spec(&self) -> Vec<SignalSpec> {
-        vec![
-            SignalSpec::new("gate", SignalType::Bool),
-            SignalSpec::new("attack", SignalType::Float),
-            SignalSpec::new("release", SignalType::Float),
-        ]
-    }
-
-    fn output_spec(&self) -> Vec<SignalSpec> {
-        vec![SignalSpec::new("out", SignalType::Float)]
-    }
-
-    fn process(
-        &mut self,
-        inputs: ProcessorInputs,
-        outputs: ProcessorOutputs,
-    ) -> Result<(), ProcessorError> {
-        for (trig, attack, release, out) in iter_proc_io!(
-            inputs as [bool, Float, Float],
-            outputs as [Float]
-        ) {
-            self.attack = attack.unwrap_or(self.attack);
-            self.release = release.unwrap_or(self.release);
-            let trig = trig.unwrap_or(false);
-
-            if trig && !self.last_trig {
-                self.value = 0.0;
-                self.state = ADSRState::Attack; // attack
-            } else if !trig && self.last_trig {
-                self.state = ADSRState::Release; // release
-            }
-
-            let slope = match self.state {
-                ADSRState::Sustain => 0.0,
-                ADSRState::Attack => 1.0 / (self.attack * inputs.sample_rate()),
-                ADSRState::Release => -1.0 / (self.release * inputs.sample_rate()),
-                _ => unreachable!(),
-            };
-
-            self.value += slope;
-
-            if self.state == ADSRState::Attack && self.value >= 1.0 {
-                self.value = 1.0;
-                self.state = ADSRState::Sustain;
-            } else if self.state == ADSRState::Release && self.value <= 0.0 {
-                self.value = 0.0;
-                self.state = ADSRState::Sustain;
-            }
-
-            self.last_trig = trig;
-
-            *out = Some(self.value);
-        }
-
-        Ok(())
     }
 }
 
@@ -645,16 +551,28 @@ impl Processor for AREnv {
 /// | Index | Name | Type | Description |
 /// | --- | --- | --- | --- |
 /// | `0` | `out` | `Float` | The envelope signal. |
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Processor)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", processor_typetag)]
 pub struct ADSREnv {
     last_trig: bool,
-    attack: Float,
-    decay: Float,
-    sustain: Float,
-    release: Float,
     value: Float,
     state: ADSRState,
+
+    #[input]
+    trig: bool,
+
+    #[input]
+    attack: Float,
+    #[input]
+    decay: Float,
+    #[input]
+    sustain: Float,
+    #[input]
+    release: Float,
+
+    #[output]
+    out: Float,
 }
 
 impl ADSREnv {
@@ -668,79 +586,52 @@ impl ADSREnv {
             release,
             value: 0.0,
             state: ADSRState::Sustain,
+            trig: false,
+            out: 0.0,
         }
+    }
+
+    fn update(&mut self, env: &ProcEnv) {
+        self.attack = self.attack.max(0.0);
+        self.decay = self.decay.max(0.0);
+        self.sustain = self.sustain.max(0.0);
+        self.release = self.release.max(0.0);
+
+        if self.trig && !self.last_trig {
+            self.value = 0.0;
+            self.state = ADSRState::Attack;
+        } else if !self.trig && self.last_trig {
+            self.state = ADSRState::Release;
+        }
+
+        let slope = match self.state {
+            ADSRState::Attack => 1.0 / (self.attack * env.sample_rate),
+            ADSRState::Decay => -(1.0 - self.sustain) / (self.decay * env.sample_rate),
+            ADSRState::Sustain => 0.0,
+            ADSRState::Release => -self.sustain / (self.release * env.sample_rate),
+        };
+
+        self.value += slope;
+
+        if self.state == ADSRState::Attack && self.value >= 1.0 {
+            self.value = 1.0;
+            self.state = ADSRState::Decay;
+        } else if self.state == ADSRState::Decay && self.value <= self.sustain {
+            self.value = self.sustain;
+            self.state = ADSRState::Sustain;
+        } else if self.state == ADSRState::Release && self.value <= 0.0 {
+            self.value = 0.0;
+            self.state = ADSRState::Sustain;
+        }
+
+        self.last_trig = self.trig;
+
+        self.out = self.value;
     }
 }
 
 impl Default for ADSREnv {
     fn default() -> Self {
         Self::new(0.0, 0.0, 1.0, 0.0)
-    }
-}
-
-#[cfg_attr(feature = "serde", typetag::serde)]
-impl Processor for ADSREnv {
-    fn input_spec(&self) -> Vec<SignalSpec> {
-        vec![
-            SignalSpec::new("gate", SignalType::Bool),
-            SignalSpec::new("attack", SignalType::Float),
-            SignalSpec::new("decay", SignalType::Float),
-            SignalSpec::new("sustain", SignalType::Float),
-            SignalSpec::new("release", SignalType::Float),
-        ]
-    }
-
-    fn output_spec(&self) -> Vec<SignalSpec> {
-        vec![SignalSpec::new("out", SignalType::Float)]
-    }
-
-    fn process(
-        &mut self,
-        inputs: ProcessorInputs,
-        outputs: ProcessorOutputs,
-    ) -> Result<(), ProcessorError> {
-        for (trig, attack, decay, sustain, release, out) in iter_proc_io!(
-            inputs as [bool, Float, Float, Float, Float],
-            outputs as [Float]
-        ) {
-            self.attack = attack.unwrap_or(self.attack);
-            self.decay = decay.unwrap_or(self.decay);
-            self.sustain = sustain.unwrap_or(self.sustain);
-            self.release = release.unwrap_or(self.release);
-            let trig = trig.unwrap_or(false);
-
-            if trig && !self.last_trig {
-                self.value = 0.0;
-                self.state = ADSRState::Attack;
-            } else if !trig && self.last_trig {
-                self.state = ADSRState::Release;
-            }
-
-            let slope = match self.state {
-                ADSRState::Attack => 1.0 / (self.attack * inputs.sample_rate()),
-                ADSRState::Decay => -(1.0 - self.sustain) / (self.decay * inputs.sample_rate()),
-                ADSRState::Sustain => 0.0,
-                ADSRState::Release => -self.sustain / (self.release * inputs.sample_rate()),
-            };
-
-            self.value += slope;
-
-            if self.state == ADSRState::Attack && self.value >= 1.0 {
-                self.value = 1.0;
-                self.state = ADSRState::Decay;
-            } else if self.state == ADSRState::Decay && self.value <= self.sustain {
-                self.value = self.sustain;
-                self.state = ADSRState::Sustain;
-            } else if self.state == ADSRState::Release && self.value <= 0.0 {
-                self.value = 0.0;
-                self.state = ADSRState::Sustain;
-            }
-
-            self.last_trig = trig;
-
-            *out = Some(self.value);
-        }
-
-        Ok(())
     }
 }

@@ -2,11 +2,7 @@
 
 use std::collections::VecDeque;
 
-use crate::{
-    prelude::*,
-    processor::ProcessorOutputs,
-    signal::{PI, TAU},
-};
+use crate::prelude::*;
 
 /// A processor that accumulates a phase value.
 ///
@@ -24,50 +20,31 @@ use crate::{
 /// | Index | Name | Type | Description |
 /// | --- | --- | --- | --- |
 /// | `0` | `out` | `Float` | The phase accumulator value. |
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, Processor)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", processor_typetag)]
 pub struct PhaseAccumulator {
     // phase accumulator
     t: Float,
     // phase increment per sample
+    #[input]
     increment: Float,
+    #[input]
+    reset: bool,
+
+    #[output]
+    out: Float,
 }
 
-#[cfg_attr(feature = "serde", typetag::serde)]
-impl Processor for PhaseAccumulator {
-    fn input_spec(&self) -> Vec<SignalSpec> {
-        vec![
-            SignalSpec::new("increment", SignalType::Float),
-            SignalSpec::new("reset", SignalType::Bool),
-        ]
-    }
+impl PhaseAccumulator {
+    pub fn update(&mut self, _env: &ProcEnv) {
+        // increment the phase accumulator
+        self.t += self.increment;
 
-    fn output_spec(&self) -> Vec<SignalSpec> {
-        vec![SignalSpec::new("out", SignalType::Float)]
-    }
-
-    fn process(
-        &mut self,
-        inputs: ProcessorInputs,
-        outputs: ProcessorOutputs,
-    ) -> Result<(), ProcessorError> {
-        for (increment, reset, out) in iter_proc_io!(
-            inputs as [Float, bool],
-            outputs as [Float]
-        ) {
-            if reset.unwrap_or(false) {
-                self.t = 0.0;
-            }
-
-            // output the phase accumulator value
-            *out = Some(self.t);
-
-            // increment the phase accumulator
-            self.increment = increment.unwrap_or(self.increment);
-            self.t += self.increment;
+        // check for phase reset
+        if self.reset {
+            self.t = 0.0;
         }
-
-        Ok(())
     }
 }
 
@@ -85,8 +62,9 @@ impl Processor for PhaseAccumulator {
 /// | Index | Name | Type | Description |
 /// | --- | --- | --- | --- |
 /// | `0` | `out` | `Float` | The sine wave value. |
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Processor)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", processor_typetag)]
 pub struct SineOscillator {
     // phase accumulator
     t: Float,
@@ -94,10 +72,18 @@ pub struct SineOscillator {
     t_step: Float,
 
     /// The frequency of the sine wave.
+    #[input]
     pub frequency: Float,
 
     /// The phase offset of the sine wave.
+    #[input]
     pub phase: Float,
+
+    #[input]
+    reset: bool,
+
+    #[output]
+    out: Float,
 }
 
 impl SineOscillator {
@@ -108,6 +94,16 @@ impl SineOscillator {
             ..Default::default()
         }
     }
+
+    pub fn update(&mut self, env: &ProcEnv) {
+        // calculate the sine wave using the phase accumulator
+        self.out = (self.t / env.sample_rate * TAU + self.phase).cos();
+
+        // increment the phase accumulator
+        self.t_step = self.frequency;
+        self.t += self.t_step;
+        self.t %= env.sample_rate;
+    }
 }
 
 impl Default for SineOscillator {
@@ -117,51 +113,9 @@ impl Default for SineOscillator {
             t_step: 0.0,
             frequency: 0.0,
             phase: 0.0,
+            out: 0.0,
+            reset: false,
         }
-    }
-}
-
-#[cfg_attr(feature = "serde", typetag::serde)]
-impl Processor for SineOscillator {
-    fn input_spec(&self) -> Vec<SignalSpec> {
-        vec![
-            SignalSpec::new("frequency", SignalType::Float),
-            SignalSpec::new("phase", SignalType::Float),
-            SignalSpec::new("reset", SignalType::Bool),
-        ]
-    }
-
-    fn output_spec(&self) -> Vec<SignalSpec> {
-        vec![SignalSpec::new("out", SignalType::Float)]
-    }
-
-    fn process(
-        &mut self,
-        inputs: ProcessorInputs,
-        outputs: ProcessorOutputs,
-    ) -> Result<(), ProcessorError> {
-        for (frequency, phase, reset, out) in iter_proc_io!(
-            inputs as [Float, Float, bool],
-            outputs as [Float]
-        ) {
-            if let Some(true) = reset {
-                self.t = 0.0;
-            }
-
-            self.frequency = frequency.unwrap_or(self.frequency);
-            self.phase = phase.unwrap_or(self.phase);
-
-            // calculate the sine wave using the phase accumulator
-            let sine = (self.t / inputs.sample_rate() * TAU + self.phase).cos();
-            *out = Some(sine);
-
-            // increment the phase accumulator
-            self.t_step = self.frequency;
-            self.t += self.t_step;
-            self.t %= inputs.sample_rate();
-        }
-
-        Ok(())
     }
 }
 
@@ -181,8 +135,9 @@ impl Processor for SineOscillator {
 /// | Index | Name | Type | Description |
 /// | --- | --- | --- | --- |
 /// | `0` | `out` | `Float` | The sawtooth wave value. |
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Processor)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", processor_typetag)]
 pub struct SawOscillator {
     // phase accumulator
     t: Float,
@@ -190,10 +145,18 @@ pub struct SawOscillator {
     t_step: Float,
 
     /// The frequency of the sawtooth wave.
+    #[input]
     pub frequency: Float,
 
     /// The phase offset of the sawtooth wave.
+    #[input]
     pub phase: Float,
+
+    #[input]
+    reset: bool,
+
+    #[output]
+    out: Float,
 }
 
 impl Default for SawOscillator {
@@ -203,6 +166,8 @@ impl Default for SawOscillator {
             t_step: 0.0,
             frequency: 0.0,
             phase: 0.0,
+            out: 0.0,
+            reset: false,
         }
     }
 }
@@ -215,53 +180,15 @@ impl SawOscillator {
             ..Default::default()
         }
     }
-}
 
-#[cfg_attr(feature = "serde", typetag::serde)]
-impl Processor for SawOscillator {
-    fn input_spec(&self) -> Vec<SignalSpec> {
-        vec![
-            SignalSpec::new("frequency", SignalType::Float),
-            SignalSpec::new("phase", SignalType::Float),
-            SignalSpec::new("reset", SignalType::Bool),
-        ]
-    }
+    pub fn update(&mut self, env: &ProcEnv) {
+        // calculate the sawtooth wave using the phase accumulator
+        self.out = (self.t / env.sample_rate + self.phase) % 1.0;
 
-    fn output_spec(&self) -> Vec<SignalSpec> {
-        vec![SignalSpec::new("out", SignalType::Float)]
-    }
-
-    fn process(
-        &mut self,
-        inputs: ProcessorInputs,
-        outputs: ProcessorOutputs,
-    ) -> Result<(), ProcessorError> {
-        for (frequency, phase, reset, out) in iter_proc_io!(
-            inputs as [Float, Float, bool],
-            outputs as [Float]
-        ) {
-            if let Some(true) = reset {
-                self.t = 0.0;
-            }
-
-            if let Some(frequency) = frequency {
-                self.frequency = *frequency;
-            }
-
-            if let Some(phase) = phase {
-                self.phase = *phase;
-            }
-
-            // calculate the sawtooth wave using the phase accumulator
-            *out = Some((self.t / inputs.sample_rate() + self.phase) % 1.0);
-
-            // increment the phase accumulator
-            self.t_step = self.frequency;
-            self.t += self.t_step;
-            self.t %= inputs.sample_rate();
-        }
-
-        Ok(())
+        // increment the phase accumulator
+        self.t_step = self.frequency;
+        self.t += self.t_step;
+        self.t %= env.sample_rate;
     }
 }
 
@@ -276,47 +203,28 @@ impl Processor for SawOscillator {
 /// | Index | Name | Type | Description |
 /// | --- | --- | --- | --- |
 /// | `0` | `out` | `Float` | The white noise value. |
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Processor)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct NoiseOscillator;
+#[cfg_attr(feature = "serde", processor_typetag)]
+pub struct NoiseOscillator {
+    #[output]
+    out: Float,
+}
 
 impl NoiseOscillator {
     /// Creates a new [`NoiseOscillator`] processor.
     pub fn new() -> Self {
-        Self
+        Self::default()
+    }
+
+    pub fn update(&mut self, _env: &ProcEnv) {
+        self.out = rand::random::<Float>();
     }
 }
 
 impl Default for NoiseOscillator {
     fn default() -> Self {
-        Self::new()
-    }
-}
-
-#[cfg_attr(feature = "serde", typetag::serde)]
-impl Processor for NoiseOscillator {
-    fn input_spec(&self) -> Vec<SignalSpec> {
-        vec![]
-    }
-
-    fn output_spec(&self) -> Vec<SignalSpec> {
-        vec![SignalSpec::new("out", SignalType::Float)]
-    }
-
-    fn process(
-        &mut self,
-        _inputs: ProcessorInputs,
-        mut outputs: ProcessorOutputs,
-    ) -> Result<(), ProcessorError> {
-        use rand::distributions::Distribution;
-        let mut rng = rand::thread_rng();
-        let dist = rand::distributions::Uniform::new(0.0, 1.0);
-        for out in outputs.iter_output_mut_as_floats(0)? {
-            // generate a random number
-            *out = Some(dist.sample(&mut rng));
-        }
-
-        Ok(())
+        Self { out: 0.0 }
     }
 }
 
@@ -333,15 +241,20 @@ impl Processor for NoiseOscillator {
 /// | Index | Name | Type | Description |
 /// | --- | --- | --- | --- |
 /// | `0` | `out` | `Float` | The sawtooth wave value. |
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Processor)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", processor_typetag)]
 pub struct BlSawOscillator {
     p: Float,
     dp: Float,
     saw: Float,
 
     /// The frequency of the sawtooth wave.
+    #[input]
     pub frequency: Float,
+
+    #[output]
+    out: Float,
 }
 
 impl Default for BlSawOscillator {
@@ -351,6 +264,7 @@ impl Default for BlSawOscillator {
             dp: 1.0,
             saw: 0.0,
             frequency: 0.0,
+            out: 0.0,
         }
     }
 }
@@ -363,54 +277,34 @@ impl BlSawOscillator {
             ..Default::default()
         }
     }
-}
 
-#[cfg_attr(feature = "serde", typetag::serde)]
-impl Processor for BlSawOscillator {
-    fn input_spec(&self) -> Vec<SignalSpec> {
-        vec![SignalSpec::new("frequency", SignalType::Float)]
-    }
-
-    fn output_spec(&self) -> Vec<SignalSpec> {
-        vec![SignalSpec::new("out", SignalType::Float)]
-    }
-
-    fn process(
-        &mut self,
-        inputs: ProcessorInputs,
-        outputs: ProcessorOutputs,
-    ) -> Result<(), ProcessorError> {
+    pub fn update(&mut self, env: &ProcEnv) {
         // algorithm courtesy of https://www.musicdsp.org/en/latest/Synthesis/12-bandlimited-waveforms.html
-        for (frequency, out) in iter_proc_io!(inputs as [Float], outputs as [Float]) {
-            self.frequency = frequency.unwrap_or(self.frequency);
-            if self.frequency <= 0.0 {
-                *out = None;
-                continue;
-            }
-
-            let pmax = 0.5 * inputs.sample_rate() / self.frequency;
-            let dc = -0.498 / pmax;
-
-            self.p += self.dp;
-            if self.p < 0.0 {
-                self.p = -self.p;
-                self.dp = -self.dp;
-            } else if self.p > pmax {
-                self.p = 2.0 * pmax - self.p;
-                self.dp = -self.dp;
-            }
-
-            let mut x = PI * self.p;
-            if x < 0.00001 {
-                x = 0.00001;
-            }
-
-            self.saw = 0.995 * self.saw + dc + x.sin() / x;
-
-            *out = Some(self.saw);
+        if self.frequency <= 0.0 {
+            self.out = 0.0;
+            return;
         }
 
-        Ok(())
+        let pmax = 0.5 * env.sample_rate / self.frequency;
+        let dc = -0.498 / pmax;
+
+        self.p += self.dp;
+        if self.p < 0.0 {
+            self.p = -self.p;
+            self.dp = -self.dp;
+        } else if self.p > pmax {
+            self.p = 2.0 * pmax - self.p;
+            self.dp = -self.dp;
+        }
+
+        let mut x = PI * self.p;
+        if x < 0.00001 {
+            x = 0.00001;
+        }
+
+        self.saw = 0.995 * self.saw + dc + x.sin() / x;
+
+        self.out = self.saw;
     }
 }
 
@@ -431,8 +325,9 @@ const BL_SQUARE_MAX_HARMONICS: usize = 512;
 /// | Index | Name | Type | Description |
 /// | --- | --- | --- | --- |
 /// | `0` | `out` | `Float` | The square wave value. |
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Processor)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", processor_typetag)]
 pub struct BlSquareOscillator {
     // phase accumulator
     t: Float,
@@ -443,10 +338,18 @@ pub struct BlSquareOscillator {
     coeff: Box<[Float]>,
 
     /// The frequency of the square wave.
+    #[input]
     pub frequency: Float,
 
     /// The pulse width of the square wave (0.0 to 1.0).
+    #[input]
     pub pulse_width: Float,
+
+    #[input]
+    reset: bool,
+
+    #[output]
+    out: Float,
 }
 
 impl Default for BlSquareOscillator {
@@ -464,67 +367,42 @@ impl BlSquareOscillator {
             t: 0.0,
             t_step: 0.0,
             coeff: Box::new([0.0; BL_SQUARE_MAX_HARMONICS]),
+            out: 0.0,
+            reset: false,
         }
     }
-}
 
-#[cfg_attr(feature = "serde", typetag::serde)]
-impl Processor for BlSquareOscillator {
-    fn input_spec(&self) -> Vec<SignalSpec> {
-        vec![
-            SignalSpec::new("frequency", SignalType::Float),
-            SignalSpec::new("pulse_width", SignalType::Float),
-            SignalSpec::new("reset", SignalType::Bool),
-        ]
-    }
-
-    fn output_spec(&self) -> Vec<SignalSpec> {
-        vec![SignalSpec::new("out", SignalType::Float)]
-    }
-
-    fn process(
-        &mut self,
-        inputs: ProcessorInputs,
-        outputs: ProcessorOutputs,
-    ) -> Result<(), ProcessorError> {
-        for (frequency, pulse_width, reset, out) in iter_proc_io!(
-            inputs as [Float, Float, bool],
-            outputs as [Float]
-        ) {
-            self.frequency = frequency.unwrap_or(self.frequency);
-            if self.frequency <= 0.0 {
-                *out = None;
-                continue;
-            }
-
-            if reset.unwrap_or(false) {
-                self.t = 0.0;
-            }
-
-            self.pulse_width = pulse_width.unwrap_or(self.pulse_width);
-
-            self.t_step = self.frequency / inputs.sample_rate();
-
-            let n_harm = (inputs.sample_rate() / (self.frequency * 4.0)) as usize;
-            self.coeff[0] = self.pulse_width - 0.5;
-            for i in 1..n_harm + 1 {
-                self.coeff[i] =
-                    Float::sin(i as Float * PI * self.pulse_width) * 2.0 / (i as Float * PI);
-            }
-
-            let theta = self.t * TAU;
-
-            let mut square = 0.0;
-            for i in 0..n_harm + 1 {
-                square += self.coeff[i] * (theta * i as Float).cos();
-            }
-
-            self.t += self.t_step;
-
-            *out = Some(square);
+    pub fn update(&mut self, env: &ProcEnv) {
+        self.frequency = self.frequency.max(0.0);
+        if self.frequency <= 0.0 {
+            self.out = 0.0;
+            return;
         }
 
-        Ok(())
+        if self.reset {
+            self.t = 0.0;
+        }
+
+        self.pulse_width = self.pulse_width.clamp(0.0, 1.0);
+
+        self.t_step = self.frequency / env.sample_rate;
+
+        let n_harm = (env.sample_rate / (self.frequency * 4.0)) as usize;
+        self.coeff[0] = self.pulse_width - 0.5;
+        for i in 1..n_harm + 1 {
+            self.coeff[i] =
+                Float::sin(i as Float * PI * self.pulse_width) * 2.0 / (i as Float * PI);
+        }
+
+        let theta = self.t * TAU;
+
+        let mut square = 0.0;
+        for i in 0..n_harm + 1 {
+            square += self.coeff[i] * (theta * i as Float).cos();
+        }
+
+        self.t += self.t_step;
+        self.out = square;
     }
 }
 
@@ -543,17 +421,26 @@ impl Processor for BlSquareOscillator {
 /// | Index | Name | Type | Description |
 /// | --- | --- | --- | --- |
 /// | `0` | `out` | `Float` | The string value. |
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Processor)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", processor_typetag)]
 pub struct KarplusStrong {
     // delay line
     ringbuf: VecDeque<Float>,
 
-    /// The damping factor of the string.
-    pub damping: Float,
+    #[input]
+    trig: bool,
 
     /// The frequency of the string.
+    #[input]
     pub frequency: Float,
+
+    /// The damping factor of the string.
+    #[input]
+    pub damping: Float,
+
+    #[output]
+    out: Float,
 }
 
 impl KarplusStrong {
@@ -563,72 +450,42 @@ impl KarplusStrong {
             ringbuf: VecDeque::new(),
             damping,
             frequency,
+            trig: false,
+            out: 0.0,
         }
+    }
+
+    pub fn update(&mut self, env: &ProcEnv) {
+        self.frequency = self.frequency.max(0.0);
+        if self.frequency <= 0.0 {
+            self.out = 0.0;
+            return;
+        }
+
+        if self.trig {
+            // calculate the delay line index
+            let delay_time = (env.sample_rate / self.frequency) as usize;
+
+            // initialize the delay line with noise
+            self.ringbuf.clear();
+            for _ in 0..delay_time {
+                self.ringbuf.push_back(rand::random::<Float>() * 2.0 - 1.0);
+            }
+        }
+
+        let first = self.ringbuf.pop_front().unwrap_or_default();
+        let second = *self.ringbuf.front().unwrap_or(&0.0);
+
+        let new_sample = (first + second) * 0.5 * (1.0 - self.damping) + first * self.damping;
+
+        self.ringbuf.push_back(new_sample);
+
+        self.out = first;
     }
 }
 
 impl Default for KarplusStrong {
     fn default() -> Self {
         Self::new(0.0, 0.5)
-    }
-}
-
-#[cfg_attr(feature = "serde", typetag::serde)]
-impl Processor for KarplusStrong {
-    fn input_spec(&self) -> Vec<SignalSpec> {
-        vec![
-            SignalSpec::new("trig", SignalType::Bool),
-            SignalSpec::new("frequency", SignalType::Float),
-            SignalSpec::new("damping", SignalType::Float),
-        ]
-    }
-
-    fn output_spec(&self) -> Vec<SignalSpec> {
-        vec![SignalSpec::new("out", SignalType::Float)]
-    }
-
-    fn allocate(&mut self, sample_rate: Float, _max_block_size: usize) {
-        self.ringbuf = VecDeque::with_capacity(sample_rate as usize / 2);
-    }
-
-    fn process(
-        &mut self,
-        inputs: ProcessorInputs,
-        outputs: ProcessorOutputs,
-    ) -> Result<(), ProcessorError> {
-        for (trig, frequency, damping, out) in iter_proc_io!(
-            inputs as [bool, Float, Float],
-            outputs as [Float]
-        ) {
-            self.frequency = frequency.unwrap_or(self.frequency);
-            if self.frequency <= 0.0 {
-                *out = None;
-                continue;
-            }
-
-            self.damping = damping.unwrap_or(self.damping);
-
-            if trig.unwrap_or(false) {
-                // calculate the delay line index
-                let delay_time = (inputs.sample_rate() / self.frequency) as usize;
-
-                // initialize the delay line with noise
-                self.ringbuf.clear();
-                for _ in 0..delay_time {
-                    self.ringbuf.push_back(rand::random::<Float>() * 2.0 - 1.0);
-                }
-            }
-
-            let first = self.ringbuf.pop_front().unwrap_or_default();
-            let second = self.ringbuf.front().copied().unwrap_or_default();
-
-            let new_sample = (first + second) * 0.5 * (1.0 - self.damping) + first * self.damping;
-
-            self.ringbuf.push_back(new_sample);
-
-            *out = Some(first);
-        }
-
-        Ok(())
     }
 }

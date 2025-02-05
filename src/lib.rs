@@ -30,7 +30,7 @@ pub mod prelude {
     pub use crate::builtins::*;
     pub use crate::graph::Graph;
     pub use crate::processor::{
-        Processor, ProcessorError, ProcessorInputs, ProcessorOutputs, SignalSpec,
+        ProcEnv, Processor, ProcessorError, ProcessorInputs, ProcessorOutputs, SignalSpec,
     };
     pub use crate::runtime::{AudioBackend, AudioDevice, MidiPort, Runtime, RuntimeHandle};
     pub use crate::signal::{
@@ -38,7 +38,7 @@ pub mod prelude {
         SignalBuffer, SignalType, PI, TAU,
     };
     pub use crate::util::*;
-    pub use raug_macros::{iter_proc_io, split_outputs};
+    pub use raug_macros::Processor;
     pub use std::time::Duration;
 
     #[cfg(feature = "fft")]
@@ -67,6 +67,7 @@ mod graph_serde {
 pub(crate) use graph_serde::GraphSerde;
 
 #[doc(hidden)]
+#[allow(unused)]
 mod logging {
     use std::{
         collections::HashSet,
@@ -164,5 +165,12 @@ mod logging {
 #[doc(hidden)]
 #[allow(unused)]
 pub mod __itertools {
-    pub use itertools::{cons_tuples, izip};
+    pub use itertools::*;
+}
+
+#[doc(hidden)]
+#[allow(unused)]
+#[cfg(feature = "serde")]
+pub mod __typetag {
+    pub use typetag::*;
 }

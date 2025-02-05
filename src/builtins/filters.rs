@@ -19,8 +19,9 @@ const THERMAL: Float = 0.000025;
 /// | Index | Name | Type | Description |
 /// | --- | --- | --- | --- |
 /// | `0` | `out` | `Float` | The output signal. |
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Processor)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", processor_serde)]
 pub struct MoogLadder {
     stage: [Float; 4],
     stage_tanh: [Float; 3],
@@ -29,11 +30,15 @@ pub struct MoogLadder {
     acr: Float,
     res_quad: Float,
 
-    /// The cutoff frequency of the filter.
-    pub cutoff: Float,
+    #[input]
+    input: Float,
+    #[input]
+    cutoff: Float,
+    #[input]
+    resonance: Float,
 
-    /// The resonance of the filter.
-    pub resonance: Float,
+    #[output]
+    output: Float,
 }
 
 impl Default for MoogLadder {
@@ -45,8 +50,10 @@ impl Default for MoogLadder {
             tune: 0.0,
             acr: 0.0,
             res_quad: 0.0,
+            input: 0.0,
             cutoff: 1000.0,
             resonance: 0.1,
+            output: 0.0,
         }
     }
 }
@@ -60,82 +67,45 @@ impl MoogLadder {
             ..Default::default()
         }
     }
-}
 
-#[cfg_attr(feature = "serde", typetag::serde)]
-impl Processor for MoogLadder {
-    fn input_spec(&self) -> Vec<SignalSpec> {
-        vec![
-            SignalSpec::new("in", SignalType::Float),
-            SignalSpec::new("cutoff", SignalType::Float),
-            SignalSpec::new("resonance", SignalType::Float),
-        ]
-    }
+    pub fn update(&mut self, env: &ProcEnv) {
+        self.cutoff = self.cutoff.clamp(0.0, env.sample_rate * 0.5);
+        self.resonance = self.resonance.clamp(0.0, 1.0);
 
-    fn output_spec(&self) -> Vec<SignalSpec> {
-        vec![SignalSpec::new("out", SignalType::Float)]
-    }
+        let fc = self.cutoff / env.sample_rate;
+        let f = fc * 0.5; // oversampling
+        let fc2 = fc * fc;
+        let fc3 = fc2 * fc;
 
-    fn process(
-        &mut self,
-        inputs: ProcessorInputs,
-        outputs: ProcessorOutputs,
-    ) -> Result<(), ProcessorError> {
-        // based on: https://github.com/ddiakopoulos/MoogLadders/blob/fd147415573e723ba102dfc63dc46af0b7fe55b9/src/HuovilainenModel.h
-        for (in_signal, cutoff, resonance, out) in iter_proc_io!(
-            inputs as [Float, Float, Float],
-            outputs as [Float]
-        ) {
-            let Some(in_signal) = in_signal else {
-                *out = None;
-                continue;
-            };
+        let fcr = 1.8730 * fc3 + 0.4955 * fc2 - 0.6490 * fc + 0.9988;
+        self.acr = -3.9364 * fc2 + 1.8409 * fc + 0.9968;
+        self.tune = (1.0 - Float::exp(-((2.0 * PI) * f * fcr))) / THERMAL;
+        self.res_quad = 4.0 * self.resonance * self.acr;
 
-            if let Some(cutoff) = cutoff {
-                self.cutoff = cutoff.clamp(0.0, inputs.sample_rate() * 0.5);
-            }
-
-            if let Some(resonance) = resonance {
-                self.resonance = resonance.clamp(0.0, 1.0);
-            }
-
-            let fc = self.cutoff / inputs.sample_rate();
-            let f = fc * 0.5; // oversampling
-            let fc2 = fc * fc;
-            let fc3 = fc2 * fc;
-
-            let fcr = 1.8730 * fc3 + 0.4955 * fc2 - 0.6490 * fc + 0.9988;
-            self.acr = -3.9364 * fc2 + 1.8409 * fc + 0.9968;
-            self.tune = (1.0 - Float::exp(-((2.0 * PI) * f * fcr))) / THERMAL;
-            self.res_quad = 4.0 * self.resonance * self.acr;
-
-            // oversample
-            for _ in 0..2 {
-                let mut inp = in_signal - self.res_quad * self.delay[5];
-                self.stage[0] =
-                    self.delay[0] + self.tune * (Float::tanh(inp * THERMAL) - self.stage_tanh[0]);
-                self.delay[0] = self.stage[0];
-                for k in 1..4 {
-                    inp = self.stage[k - 1];
-                    self.stage_tanh[k - 1] = Float::tanh(inp * THERMAL);
-                    if k == 3 {
-                        self.stage[k] = self.delay[k]
-                            + self.tune
-                                * (self.stage_tanh[k - 1] - Float::tanh(self.delay[k] * THERMAL));
-                    } else {
-                        self.stage[k] = self.delay[k]
-                            + self.tune * (self.stage_tanh[k - 1] - self.stage_tanh[k]);
-                    }
-                    self.delay[k] = self.stage[k];
+        // oversample
+        for _ in 0..2 {
+            let mut inp = self.input - self.res_quad * self.delay[5];
+            self.stage[0] =
+                self.delay[0] + self.tune * (Float::tanh(inp * THERMAL) - self.stage_tanh[0]);
+            self.delay[0] = self.stage[0];
+            for k in 1..4 {
+                inp = self.stage[k - 1];
+                self.stage_tanh[k - 1] = Float::tanh(inp * THERMAL);
+                if k == 3 {
+                    self.stage[k] = self.delay[k]
+                        + self.tune
+                            * (self.stage_tanh[k - 1] - Float::tanh(self.delay[k] * THERMAL));
+                } else {
+                    self.stage[k] =
+                        self.delay[k] + self.tune * (self.stage_tanh[k - 1] - self.stage_tanh[k]);
                 }
-                self.delay[5] = (self.stage[3] + self.delay[4]) * 0.5;
-                self.delay[4] = self.stage[3];
+                self.delay[k] = self.stage[k];
             }
-
-            *out = Some(self.delay[5]);
+            self.delay[5] = (self.stage[3] + self.delay[4]) * 0.5;
+            self.delay[4] = self.stage[3];
         }
 
-        Ok(())
+        self.output = self.delay[5];
     }
 }
 
@@ -157,23 +127,35 @@ impl Processor for MoogLadder {
 /// | Index | Name | Type | Description |
 /// | --- | --- | --- | --- |
 /// | `0` | `out` | `Float` | The output signal. |
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Processor)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", processor_serde)]
 pub struct Biquad {
+    #[input]
+    input: Float,
+
     /// The `a0` coefficient.
+    #[input]
     pub a0: Float,
 
     /// The `a1` coefficient.
+    #[input]
     pub a1: Float,
 
     /// The `a2` coefficient.
+    #[input]
     pub a2: Float,
 
     /// The `b1` coefficient.
+    #[input]
     pub b1: Float,
 
     /// The `b2` coefficient.
+    #[input]
     pub b2: Float,
+
+    #[output]
+    output: Float,
 
     // input state
     x1: Float,
@@ -196,6 +178,8 @@ impl Default for Biquad {
             x2: 0.0,
             y1: 0.0,
             y2: 0.0,
+            input: 0.0,
+            output: 0.0,
         }
     }
 }
@@ -212,68 +196,18 @@ impl Biquad {
             ..Default::default()
         }
     }
-}
 
-#[cfg_attr(feature = "serde", typetag::serde)]
-impl Processor for Biquad {
-    fn input_spec(&self) -> Vec<SignalSpec> {
-        vec![
-            SignalSpec::new("in", SignalType::Float),
-            SignalSpec::new("a0", SignalType::Float),
-            SignalSpec::new("a1", SignalType::Float),
-            SignalSpec::new("a2", SignalType::Float),
-            SignalSpec::new("b1", SignalType::Float),
-            SignalSpec::new("b2", SignalType::Float),
-        ]
-    }
+    pub fn update(&mut self, _env: &ProcEnv) {
+        let filtered = self.a0 * self.input + self.a1 * self.x1 + self.a2 * self.x2
+            - self.b1 * self.y1
+            - self.b2 * self.y2;
 
-    fn output_spec(&self) -> Vec<SignalSpec> {
-        vec![SignalSpec::new("out", SignalType::Float)]
-    }
+        self.x2 = self.x1;
+        self.x1 = self.input;
+        self.y2 = self.y1;
+        self.y1 = filtered;
 
-    fn process(
-        &mut self,
-        inputs: ProcessorInputs,
-        outputs: ProcessorOutputs,
-    ) -> Result<(), ProcessorError> {
-        for (in_signal, a0, a1, a2, b1, b2, out) in iter_proc_io!(
-            inputs as [Float, Float, Float, Float, Float, Float],
-            outputs as [Float]
-        ) {
-            let Some(in_signal) = in_signal else {
-                *out = None;
-                continue;
-            };
-
-            if let Some(a0) = a0 {
-                self.a0 = *a0;
-            }
-            if let Some(a1) = a1 {
-                self.a1 = *a1;
-            }
-            if let Some(a2) = a2 {
-                self.a2 = *a2;
-            }
-            if let Some(b1) = b1 {
-                self.b1 = *b1;
-            }
-            if let Some(b2) = b2 {
-                self.b2 = *b2;
-            }
-
-            let filtered = self.a0 * in_signal + self.a1 * self.x1 + self.a2 * self.x2
-                - self.b1 * self.y1
-                - self.b2 * self.y2;
-
-            self.x2 = self.x1;
-            self.x1 = *in_signal;
-            self.y2 = self.y1;
-            self.y1 = filtered;
-
-            *out = Some(filtered);
-        }
-
-        Ok(())
+        self.output = filtered;
     }
 }
 
@@ -329,8 +263,9 @@ impl std::fmt::Display for BiquadType {
 }
 
 /// A bi-quad filter with automatic coefficient calculation.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Processor)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", processor_serde)]
 pub struct AutoBiquad {
     // biquad state
     a0: Float,
@@ -346,14 +281,23 @@ pub struct AutoBiquad {
     // the type of biquad filter
     biquad_type: BiquadType,
 
+    #[input]
+    input: Float,
+
     /// The cutoff frequency of the filter.
+    #[input]
     pub cutoff: Float,
 
     /// The Q factor of the filter.
+    #[input]
     pub q: Float,
 
     /// The gain of the filter.
+    #[input]
     pub gain: Float,
+
+    #[output]
+    output: Float,
 }
 
 impl AutoBiquad {
@@ -373,6 +317,8 @@ impl AutoBiquad {
             x2: 0.0,
             y1: 0.0,
             y2: 0.0,
+            input: 0.0,
+            output: 0.0,
         }
     }
 
@@ -522,70 +468,20 @@ impl AutoBiquad {
             assert!(self.b2.is_finite(), "biquad: malformed b2 coefficient");
         }
     }
-}
 
-#[cfg_attr(feature = "serde", typetag::serde)]
-impl Processor for AutoBiquad {
-    fn input_spec(&self) -> Vec<SignalSpec> {
-        vec![
-            SignalSpec::new("in", SignalType::Float),
-            SignalSpec::new("frequency", SignalType::Float),
-            SignalSpec::new("q", SignalType::Float),
-            SignalSpec::new("gain", SignalType::Float),
-        ]
-    }
+    pub fn update(&mut self, env: &ProcEnv) {
+        self.set_coefficients(env.sample_rate);
 
-    fn output_spec(&self) -> Vec<SignalSpec> {
-        vec![SignalSpec::new("out", SignalType::Float)]
-    }
+        let filtered = self.a0 * self.input + self.a1 * self.x1 + self.a2 * self.x2
+            - self.b1 * self.y1
+            - self.b2 * self.y2;
 
-    fn resize_buffers(&mut self, sample_rate: Float, _block_size: usize) {
-        self.set_coefficients(sample_rate);
-    }
+        self.x2 = self.x1;
+        self.x1 = self.input;
+        self.y2 = self.y1;
+        self.y1 = filtered;
 
-    fn process(
-        &mut self,
-        inputs: ProcessorInputs,
-        outputs: ProcessorOutputs,
-    ) -> Result<(), ProcessorError> {
-        for (in_signal, frequency, q, gain, out) in iter_proc_io!(
-            inputs as [Float, Float, Float, Float],
-            outputs as [Float]
-        ) {
-            let Some(in_signal) = in_signal else {
-                *out = None;
-                continue;
-            };
-
-            let frequency = frequency.unwrap_or(self.cutoff);
-            let q = q.unwrap_or(self.q);
-            let gain = gain.unwrap_or(self.gain);
-
-            let frequency_changed = (frequency - self.cutoff).abs() > Float::EPSILON;
-            let q_changed = (q - self.q).abs() > Float::EPSILON;
-            let gain_changed = (gain - self.gain).abs() > Float::EPSILON;
-
-            if frequency_changed || q_changed || gain_changed {
-                self.cutoff = frequency;
-                self.q = q;
-                self.gain = gain;
-
-                self.set_coefficients(inputs.sample_rate());
-            }
-
-            let filtered = self.a0 * in_signal + self.a1 * self.x1 + self.a2 * self.x2
-                - self.b1 * self.y1
-                - self.b2 * self.y2;
-
-            self.x2 = self.x1;
-            self.x1 = *in_signal;
-            self.y2 = self.y1;
-            self.y1 = filtered;
-
-            *out = Some(filtered);
-        }
-
-        Ok(())
+        self.output = filtered;
     }
 }
 
@@ -603,10 +499,18 @@ impl Processor for AutoBiquad {
 /// | Index | Name | Type | Description |
 /// | --- | --- | --- | --- |
 /// | `0` | `out` | `Float` | The output signal. |
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Processor)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", processor_serde)]
 pub struct OnePole {
+    #[input]
+    input: Float,
+    #[input]
     cutoff: Float,
+
+    #[output]
+    output: Float,
+
     a0: Float,
     b1: Float,
     x1: Float,
@@ -619,6 +523,8 @@ impl Default for OnePole {
             a0: 1.0,
             b1: 0.0,
             x1: 0.0,
+            input: 0.0,
+            output: 0.0,
         }
     }
 }
@@ -631,48 +537,16 @@ impl OnePole {
             ..Default::default()
         }
     }
-}
 
-#[cfg_attr(feature = "serde", typetag::serde)]
-impl Processor for OnePole {
-    fn input_spec(&self) -> Vec<SignalSpec> {
-        vec![
-            SignalSpec::new("in", SignalType::Float),
-            SignalSpec::new("cutoff", SignalType::Float),
-        ]
-    }
+    pub fn update(&mut self, env: &ProcEnv) {
+        self.cutoff = self.cutoff.clamp(0.0, env.sample_rate * 0.5);
+        self.b1 = Float::exp(-2.0 * PI * self.cutoff / env.sample_rate);
+        self.a0 = 1.0 - self.b1;
 
-    fn output_spec(&self) -> Vec<SignalSpec> {
-        vec![SignalSpec::new("out", SignalType::Float)]
-    }
+        let filtered = self.a0 * self.input + self.b1 * self.x1;
 
-    fn process(
-        &mut self,
-        inputs: ProcessorInputs,
-        outputs: ProcessorOutputs,
-    ) -> Result<(), ProcessorError> {
-        for (in_signal, cutoff, out) in iter_proc_io!(
-            inputs as [Float, Float],
-            outputs as [Float]
-        ) {
-            self.cutoff = cutoff
-                .unwrap_or(self.cutoff)
-                .clamp(0.0, inputs.sample_rate() * 0.5);
-            self.b1 = Float::exp(-2.0 * PI * self.cutoff / inputs.sample_rate());
-            self.a0 = 1.0 - self.b1;
+        self.x1 = self.input;
 
-            let Some(in_signal) = in_signal else {
-                *out = None;
-                continue;
-            };
-
-            let filtered = self.a0 * in_signal + self.b1 * self.x1;
-
-            self.x1 = *in_signal;
-
-            *out = Some(filtered);
-        }
-
-        Ok(())
+        self.output = filtered;
     }
 }

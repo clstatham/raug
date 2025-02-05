@@ -549,9 +549,9 @@ impl<'a> AnySignalRef<'a> {
 
     /// Attempts to convert the signal to the given signal type, without casting. Returns `None` if the types do not match.
     #[inline]
-    pub fn as_type<T: Signal>(self) -> Option<&'a T> {
+    pub fn as_type<T: Signal>(&self) -> Option<&'a T> {
         if self.signal_type() == T::signal_type() {
-            T::try_from_any_signal_ref(self)
+            T::try_from_any_signal_ref(*self)
         } else {
             None
         }
@@ -617,7 +617,7 @@ impl<'a> AnySignalMut<'a> {
 }
 
 /// A type that holds an Option containing any signal type.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum AnySignalOpt {
     /// A floating-point value.
@@ -699,7 +699,7 @@ impl AnySignalOpt {
     #[inline]
     pub fn cast(&self, target: SignalType) -> Option<Self> {
         if self.signal_type() == target {
-            return Some(self.clone());
+            return Some(*self);
         }
         match (self, target) {
             (Self::Float(float), SignalType::Int) => float.map(|f| Self::Int(Some(f as i64))),
@@ -795,6 +795,16 @@ impl<'a> AnySignalOptRef<'a> {
             Self::Int(_) => SignalType::Int,
             Self::Bool(_) => SignalType::Bool,
             Self::Midi(_) => SignalType::Midi,
+        }
+    }
+
+    #[inline]
+    pub fn default_of_type(signal_type: &SignalType) -> Self {
+        match signal_type {
+            SignalType::Float => AnySignalOptRef::Float(&None),
+            SignalType::Int => AnySignalOptRef::Int(&None),
+            SignalType::Bool => AnySignalOptRef::Bool(&None),
+            SignalType::Midi => AnySignalOptRef::Midi(&None),
         }
     }
 
@@ -1383,3 +1393,35 @@ impl FromIterator<MidiMessage> for SignalBuffer {
         })
     }
 }
+
+pub trait SignalTuple {
+    type Options;
+
+    fn from_inputs(inputs: &[AnySignalOptRef]) -> Option<Self::Options>;
+}
+
+macro_rules! impl_signal_tuple {
+    ($($name:ident),*) => {
+        #[allow(non_snake_case)]
+        impl<$($name: Signal),*> SignalTuple for ($($name,)*) {
+            type Options = ($(Option<$name>,)*);
+
+            fn from_inputs(inputs: &[AnySignalOptRef]) -> Option<Self::Options> {
+                let [$($name,)*] = inputs else {
+                    return None;
+                };
+
+                Some(($($name.as_any_signal_ref().and_then(|sig| sig.as_type::<$name>()).copied(),)*))
+            }
+        }
+    };
+}
+
+impl_signal_tuple!(A);
+impl_signal_tuple!(A, B);
+impl_signal_tuple!(A, B, C);
+impl_signal_tuple!(A, B, C, D);
+impl_signal_tuple!(A, B, C, D, E);
+impl_signal_tuple!(A, B, C, D, E, F);
+impl_signal_tuple!(A, B, C, D, E, F, G);
+impl_signal_tuple!(A, B, C, D, E, F, G, H);

@@ -3,13 +3,12 @@
 use std::fmt::Debug;
 
 use downcast_rs::{impl_downcast, Downcast};
-use itertools::Either;
 use thiserror::Error;
 
 use crate::{
     graph::asset::{AssetRef, Assets},
     signal::{
-        AnySignalOpt, AnySignalOptMut, AnySignalOptRef, Float, MidiMessage, Signal, SignalBuffer,
+        AnySignal, AnySignalOpt, AnySignalOptMut, AnySignalOptRef, Float, Signal, SignalTuple,
         SignalType,
     },
     GraphSerde,
@@ -103,30 +102,6 @@ impl SignalSpec {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-pub(crate) enum Ternary<A, B, C> {
-    A(A),
-    B(B),
-    C(C),
-}
-
-impl<A, B, C> Iterator for Ternary<A, B, C>
-where
-    A: Iterator,
-    B: Iterator<Item = A::Item>,
-    C: Iterator<Item = A::Item>,
-{
-    type Item = A::Item;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        match self {
-            Ternary::A(a) => a.next(),
-            Ternary::B(b) => b.next(),
-            Ternary::C(c) => c.next(),
-        }
-    }
-}
-
 /// The mode in which a processor should process signals.
 ///
 /// - `Block` means the processor processes the entire block of samples at once.
@@ -142,145 +117,17 @@ pub enum ProcessMode {
     ),
 }
 
-/// The output of a [`Processor`].
-#[derive(Debug)]
-pub enum ProcessorOutput<'a> {
-    /// A block of signals.
-    Block(&'a mut SignalBuffer),
-    /// A single sample.
-    Sample(&'a mut SignalBuffer, usize),
+#[derive(Debug, Clone, Copy)]
+pub struct ProcEnv<'a> {
+    pub assets: &'a Assets,
+    pub sample_rate: Float,
+    pub block_size: usize,
+    pub mode: ProcessMode,
 }
 
-impl<'a> ProcessorOutput<'a> {
-    /// Returns the type of the output signal.
-    #[inline]
-    pub fn signal_type(&self) -> SignalType {
-        match self {
-            ProcessorOutput::Block(buffer) => buffer.signal_type(),
-            ProcessorOutput::Sample(buffer, _) => buffer.signal_type(),
-        }
-    }
-
-    /// Returns the number of signals in the output.
-    #[inline]
-    pub fn len(&self) -> usize {
-        match self {
-            ProcessorOutput::Block(buffer) => buffer.len(),
-            ProcessorOutput::Sample(buffer, _) => buffer.len(),
-        }
-    }
-
-    /// Returns `true` if the output signal is empty.
-    #[inline]
-    pub fn is_empty(&self) -> bool {
-        match self {
-            ProcessorOutput::Block(buffer) => buffer.is_empty(),
-            ProcessorOutput::Sample(buffer, _) => buffer.is_empty(),
-        }
-    }
-
-    /// Returns an iterator over the output signal.
-    #[inline]
-    pub fn iter_mut(&'a mut self) -> impl Iterator<Item = AnySignalOptMut<'a>> {
-        match self {
-            ProcessorOutput::Block(buffer) => Either::Left(buffer.iter_mut()),
-            ProcessorOutput::Sample(buffer, sample_index) => {
-                Either::Right(std::iter::once(buffer.get_mut(*sample_index).unwrap()))
-            }
-        }
-    }
-
-    /// Returns an iterator over the output signal, if it is of the given type.
-    #[inline]
-    pub fn iter_mut_as<S: Signal>(&'a mut self) -> impl Iterator<Item = &'a mut Option<S>> {
-        match self {
-            ProcessorOutput::Block(buffer) => {
-                Either::Left(buffer.as_type_mut().unwrap().iter_mut())
-            }
-            ProcessorOutput::Sample(buffer, sample_index) => Either::Right(std::iter::once(
-                &mut buffer.as_type_mut::<S>().unwrap()[*sample_index],
-            )),
-        }
-    }
-
-    /// Returns a reference to the output signal at the given index, if it is of the given type.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the output signal is not of the given type.
-    #[inline]
-    pub fn get_as<S: Signal>(&self, index: usize) -> Option<&Option<S>> {
-        match self {
-            ProcessorOutput::Block(buffer) => buffer.as_type::<S>().unwrap().get(index),
-            ProcessorOutput::Sample(buffer, sample_index) => {
-                buffer.as_type::<S>().unwrap().get(*sample_index)
-            }
-        }
-    }
-
-    /// Sets the output signal at the given index.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the output signal is not the same type as the given value.
-    #[inline]
-    pub fn set(&mut self, index: usize, value: AnySignalOptRef) {
-        match self {
-            ProcessorOutput::Block(buffer) => {
-                buffer.set(index, value.into());
-            }
-            ProcessorOutput::Sample(buffer, sample_index) => {
-                buffer.set(*sample_index, value.into())
-            }
-        }
-    }
-
-    /// Sets the output signal at the given index, if it is of the given type.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the output signal is not of the given type.
-    #[inline]
-    pub fn set_as<S: Signal>(&mut self, index: usize, value: impl Into<Option<S>>) {
-        match self {
-            ProcessorOutput::Block(buffer) => {
-                buffer.as_type_mut::<S>().unwrap()[index] = value.into();
-            }
-            ProcessorOutput::Sample(buffer, sample_index) => {
-                buffer.as_type_mut::<S>().unwrap()[*sample_index] = value.into();
-            }
-        }
-    }
-
-    /// Sets the output signal at the given index to `None`.
-    #[inline]
-    pub fn set_none(&mut self, index: usize) {
-        match self {
-            ProcessorOutput::Block(buffer) => buffer.set_none(index),
-            ProcessorOutput::Sample(buffer, sample_index) => buffer.set_none(*sample_index),
-        }
-    }
-
-    /// Fills the output signal with the given value, if it is of the correct type.
-    #[inline]
-    pub fn fill_as<S: Signal + Clone>(&mut self, value: impl Into<Option<S>>) {
-        match self {
-            ProcessorOutput::Block(buffer) => buffer.as_type_mut::<S>().unwrap().fill(value.into()),
-            ProcessorOutput::Sample(buffer, sample_index) => {
-                buffer.as_type_mut::<S>().unwrap()[*sample_index] = value.into();
-            }
-        }
-    }
-
-    /// Fills the output signal with the given value.
-    #[inline]
-    pub fn fill(&mut self, value: AnySignalOpt) {
-        match self {
-            ProcessorOutput::Block(buffer) => buffer.fill(value),
-            ProcessorOutput::Sample(buffer, sample_index) => {
-                buffer.set(*sample_index, value.as_ref());
-            }
-        }
+impl ProcEnv<'_> {
+    pub fn asset(&self, name: &str) -> Option<AssetRef> {
+        self.assets.get(name)
     }
 }
 
@@ -291,19 +138,10 @@ pub struct ProcessorInputs<'a, 'b> {
     pub input_specs: &'a [SignalSpec],
 
     /// The input signals.
-    pub inputs: &'a [Option<&'b SignalBuffer>],
+    pub inputs: &'a [AnySignalOptRef<'b>],
 
-    /// The graph's assets, made available to the processor.
-    pub assets: &'a Assets,
-
-    /// The mode in which the processor should process signals.
-    pub mode: ProcessMode,
-
-    /// The current sample rate.
-    pub sample_rate: Float,
-
-    /// The current block size.
-    pub block_size: usize,
+    /// Environment information for the processor.
+    pub env: ProcEnv<'a>,
 }
 
 impl<'a, 'b> ProcessorInputs<'a, 'b> {
@@ -311,19 +149,13 @@ impl<'a, 'b> ProcessorInputs<'a, 'b> {
     #[inline]
     pub fn new(
         input_specs: &'a [SignalSpec],
-        inputs: &'a [Option<&'b SignalBuffer>],
-        assets: &'a Assets,
-        mode: ProcessMode,
-        sample_rate: Float,
-        block_size: usize,
+        inputs: &'a [AnySignalOptRef<'b>],
+        env: ProcEnv<'a>,
     ) -> Self {
         Self {
             input_specs,
             inputs,
-            assets,
-            mode,
-            sample_rate,
-            block_size,
+            env,
         }
     }
 
@@ -342,115 +174,58 @@ impl<'a, 'b> ProcessorInputs<'a, 'b> {
     /// Returns the current sample rate.
     #[inline]
     pub fn sample_rate(&self) -> Float {
-        self.sample_rate
+        self.env.sample_rate
     }
 
     /// Returns the current block size.
     #[inline]
     pub fn block_size(&self) -> usize {
-        self.block_size
+        self.env.block_size
     }
 
     /// Returns the asset with the given name, if it exists.
     #[inline]
     pub fn asset(&self, name: &str) -> Result<AssetRef, ProcessorError> {
-        self.assets
+        self.env
+            .assets
             .get(name)
             .ok_or_else(|| ProcessorError::AssetNotFound(name.into()))
     }
 
     /// Returns the input signal at the given index. Unconnected inputs are represented as `None`.
     #[inline]
-    pub fn input(&self, index: usize) -> Option<&'b SignalBuffer> {
+    pub fn input(&self, index: usize) -> Result<AnySignalOptRef, ProcessorError> {
         self.inputs
             .get(index)
-            .and_then(|input| input.as_ref())
             .copied()
+            .ok_or(ProcessorError::NumInputsMismatch)
     }
 
-    /// Returns an iterator over the input signal at the given index.
     #[inline]
-    pub fn iter_input(&self, index: usize) -> impl Iterator<Item = Option<AnySignalOptRef>> {
-        let buffer = &self.inputs[index];
-        if let Some(buffer) = buffer.as_ref() {
-            if let ProcessMode::Sample(sample_index) = self.mode {
-                Ternary::B(std::iter::once(Some(buffer.get(sample_index).unwrap())))
-            } else {
-                Ternary::A(buffer.iter().map(Some))
-            }
-        } else {
-            Ternary::C(std::iter::repeat(None))
-        }
-    }
+    pub fn input_as<S: Signal>(&self, index: usize) -> Result<Option<S>, ProcessorError> {
+        let input = self
+            .inputs
+            .get(index)
+            .ok_or(ProcessorError::NumInputsMismatch)?;
 
-    /// Returns an iterator over the input signal at the given index, if it is of the given type.
-    #[inline]
-    pub fn iter_input_as<S: Signal>(
-        &self,
-        index: usize,
-    ) -> Result<impl Iterator<Item = &Option<S>> + '_, ProcessorError> {
-        let buffer = &self.inputs[index];
-        let Some(buffer) = buffer.as_ref() else {
-            return Ok(Ternary::C(std::iter::repeat(&None)));
-        };
-
-        if let ProcessMode::Sample(sample_index) = self.mode {
-            if buffer.signal_type().is_compatible_with(&S::signal_type()) {
-                Ok(Ternary::B(std::iter::once(
-                    &buffer.as_type::<S>().unwrap()[sample_index],
-                )))
+        if let Some(input) = input.as_any_signal_ref() {
+            if input.signal_type() == S::signal_type() {
+                Ok(Some(*input.as_type::<S>().unwrap()))
             } else {
                 Err(ProcessorError::InputSpecMismatch {
                     index,
                     expected: S::signal_type(),
-                    actual: buffer.signal_type(),
+                    actual: input.signal_type(),
                 })
             }
-        } else if buffer.signal_type().is_compatible_with(&S::signal_type()) {
-            Ok(Ternary::A(buffer.as_type::<S>().unwrap().iter()))
         } else {
-            Err(ProcessorError::InputSpecMismatch {
-                index,
-                expected: S::signal_type(),
-                actual: buffer.signal_type(),
-            })
+            Ok(None)
         }
     }
 
-    /// Returns an iterator over the input signal at the given index, if it is a [`Float`] signal.
     #[inline]
-    pub fn iter_input_as_floats(
-        &self,
-        index: usize,
-    ) -> Result<impl Iterator<Item = Option<Float>> + '_, ProcessorError> {
-        Self::iter_input_as::<Float>(self, index).map(|iter| iter.copied())
-    }
-
-    /// Returns an iterator over the input signal at the given index, if it is an [`i64`] signal.
-    #[inline]
-    pub fn iter_input_as_ints(
-        &self,
-        index: usize,
-    ) -> Result<impl Iterator<Item = Option<i64>> + '_, ProcessorError> {
-        Self::iter_input_as::<i64>(self, index).map(|iter| iter.copied())
-    }
-
-    /// Returns an iterator over the input signal at the given index, if it is a [`bool`] signal.
-    #[inline]
-    pub fn iter_input_as_bools(
-        &self,
-        index: usize,
-    ) -> Result<impl Iterator<Item = Option<bool>> + '_, ProcessorError> {
-        Self::iter_input_as::<bool>(self, index).map(|iter| iter.copied())
-    }
-
-    /// Returns an iterator over the input signal at the given index, if it is a [`MidiMessage`] signal.
-    #[inline]
-    pub fn iter_input_as_midi(
-        &self,
-        index: usize,
-    ) -> Result<impl Iterator<Item = Option<&MidiMessage>> + '_, ProcessorError> {
-        Self::iter_input_as::<MidiMessage>(self, index).map(|iter| iter.map(|s| s.as_ref()))
+    pub fn as_tuple<T: SignalTuple>(&self) -> Result<T::Options, ProcessorError> {
+        T::from_inputs(self.inputs).ok_or(ProcessorError::NumInputsMismatch)
     }
 }
 
@@ -460,7 +235,7 @@ pub struct ProcessorOutputs<'a> {
     pub output_spec: &'a [SignalSpec],
 
     /// The output signals.
-    pub outputs: &'a mut [SignalBuffer],
+    pub outputs: &'a mut [AnySignalOpt],
 
     /// The mode in which the processor should process signals.
     pub mode: ProcessMode,
@@ -471,7 +246,7 @@ impl<'a> ProcessorOutputs<'a> {
     /// Creates a new collection of output signals.
     pub fn new(
         output_spec: &'a [SignalSpec],
-        outputs: &'a mut [SignalBuffer],
+        outputs: &'a mut [AnySignalOpt],
         mode: ProcessMode,
     ) -> Self {
         Self {
@@ -483,12 +258,8 @@ impl<'a> ProcessorOutputs<'a> {
 
     /// Returns the output signal at the given index.
     #[inline]
-    pub fn output(&mut self, index: usize) -> ProcessorOutput<'_> {
-        if let ProcessMode::Sample(sample_index) = self.mode {
-            ProcessorOutput::Sample(&mut self.outputs[index], sample_index)
-        } else {
-            ProcessorOutput::Block(&mut self.outputs[index])
-        }
+    pub fn output(&mut self, index: usize) -> AnySignalOptMut<'_> {
+        self.outputs[index].as_mut()
     }
 
     /// Returns the specification of the output signal at the given index.
@@ -497,112 +268,48 @@ impl<'a> ProcessorOutputs<'a> {
         &self.output_spec[index]
     }
 
-    /// Returns an iterator over the output signal at the given index.
+    /// Sets the output signal at the given index to `None`.
     #[inline]
-    pub fn iter_output_mut(&mut self, index: usize) -> impl Iterator<Item = AnySignalOptMut> {
-        let output = &mut self.outputs[index];
-        if let ProcessMode::Sample(sample_index) = self.mode {
-            Either::Left(std::iter::once(output.get_mut(sample_index).unwrap()))
-        } else {
-            Either::Right(output.iter_mut())
+    pub fn set_output_none(&mut self, index: usize) {
+        self.outputs[index].as_mut().set_none();
+    }
+
+    /// Sets the output signal at the given index.
+    #[inline]
+    pub fn set_output(&mut self, index: usize, signal: AnySignal) -> Result<(), ProcessorError> {
+        if signal.signal_type() != self.output_spec[index].signal_type {
+            return Err(ProcessorError::OutputSpecMismatch {
+                index,
+                expected: self.output_spec[index].signal_type,
+                actual: signal.signal_type(),
+            });
         }
+
+        self.outputs[index].clone_from_ref(signal.into_any_signal_opt().as_ref());
+
+        Ok(())
     }
 
-    /// Returns an iterator over the output signal at the given index, if it is of the given type.
+    /// Sets the output signal at the given index.
     #[inline]
-    pub fn iter_output_mut_as<S: Signal>(
+    pub fn set_output_as<S: Signal>(
         &mut self,
         index: usize,
-    ) -> Result<impl Iterator<Item = &mut Option<S>> + '_, ProcessorError> {
-        if let ProcessMode::Sample(sample_index) = self.mode {
-            let output = &mut self.outputs[index];
-            if output.signal_type().is_compatible_with(&S::signal_type()) {
-                Ok(Either::Left(std::iter::once(
-                    &mut output.as_type_mut::<S>().unwrap()[sample_index],
-                )))
-            } else {
-                Err(ProcessorError::OutputSpecMismatch {
-                    index,
-                    expected: S::signal_type(),
-                    actual: output.signal_type(),
-                })
-            }
-        } else {
-            let output = &mut self.outputs[index];
-            let actual = output.signal_type();
-            let output =
-                output
-                    .as_type_mut::<S>()
-                    .ok_or_else(|| ProcessorError::OutputSpecMismatch {
-                        index,
-                        expected: S::signal_type(),
-                        actual,
-                    })?;
+        signal: S,
+    ) -> Result<(), ProcessorError> {
+        let signal = signal.into_any_signal();
 
-            Ok(Either::Right(output.iter_mut()))
+        if signal.signal_type() != self.output_spec[index].signal_type {
+            return Err(ProcessorError::OutputSpecMismatch {
+                index,
+                expected: self.output_spec[index].signal_type,
+                actual: signal.signal_type(),
+            });
         }
-    }
 
-    /// Returns an iterator over the output signal at the given index, if it is a [`Float`] signal.
-    #[inline]
-    pub fn iter_output_mut_as_floats(
-        &mut self,
-        index: usize,
-    ) -> Result<impl Iterator<Item = &mut Option<Float>> + '_, ProcessorError> {
-        self.iter_output_mut_as::<Float>(index)
-    }
+        self.outputs[index].clone_from_ref(signal.into_any_signal_opt().as_ref());
 
-    /// Returns an iterator over the output signal at the given index, if it is an [`i64`] signal.
-    #[inline]
-    pub fn iter_output_mut_as_ints(
-        &mut self,
-        index: usize,
-    ) -> Result<impl Iterator<Item = &mut Option<i64>> + '_, ProcessorError> {
-        self.iter_output_mut_as::<i64>(index)
-    }
-
-    /// Returns an iterator over the output signal at the given index, if it is a [`bool`] signal.
-    #[inline]
-    pub fn iter_output_mut_as_bools(
-        &mut self,
-        index: usize,
-    ) -> Result<impl Iterator<Item = &mut Option<bool>> + '_, ProcessorError> {
-        self.iter_output_mut_as::<bool>(index)
-    }
-
-    /// Returns an iterator over the output signal at the given index, if it is a [`MidiMessage`] signal.
-    #[inline]
-    pub fn iter_output_mut_as_midi(
-        &mut self,
-        index: usize,
-    ) -> Result<impl Iterator<Item = &mut Option<MidiMessage>> + '_, ProcessorError> {
-        self.iter_output_mut_as::<MidiMessage>(index)
-    }
-
-    /// Splits this collection of output signals into two collections at the given index.
-    #[inline]
-    pub fn split_at_mut(&mut self, index: usize) -> (ProcessorOutputs<'_>, ProcessorOutputs<'_>) {
-        let (left, right) = self.outputs.split_at_mut(index);
-        let (left_spec, right_spec) = self.output_spec.split_at(index);
-        (
-            ProcessorOutputs::new(left_spec, left, self.mode),
-            ProcessorOutputs::new(right_spec, right, self.mode),
-        )
-    }
-
-    /// Splits this collection of output signals into two collections at the last index.
-    #[inline]
-    pub fn split_last_mut(&mut self) -> (ProcessorOutputs<'_>, ProcessorOutputs<'_>) {
-        let (left, right) = self.outputs.split_last_mut().unwrap();
-        let (left_spec, right_spec) = self.output_spec.split_last().unwrap();
-        (
-            ProcessorOutputs::new(
-                std::slice::from_ref(left_spec),
-                std::slice::from_mut(left),
-                self.mode,
-            ),
-            ProcessorOutputs::new(right_spec, right, self.mode),
-        )
+        Ok(())
     }
 }
 

@@ -34,17 +34,18 @@ impl Processor for MidiNote {
     fn process(
         &mut self,
         inputs: ProcessorInputs,
-        outputs: ProcessorOutputs,
+        mut outputs: ProcessorOutputs,
     ) -> Result<(), ProcessorError> {
-        for (midi, out) in iter_proc_io!(inputs as [MidiMessage], outputs as [Float]) {
-            if let Some(msg) = midi {
-                if msg.status() == 0x90 {
-                    self.note = msg.data1() as Float;
-                }
-            }
+        let midi = inputs.input_as::<MidiMessage>(0)?;
 
-            *out = Some(self.note);
+        if let Some(msg) = midi {
+            if msg.status() == 0x90 {
+                self.note = msg.data1() as Float;
+            }
         }
+
+        outputs.set_output_as(0, self.note)?;
+
         Ok(())
     }
 }
@@ -81,18 +82,18 @@ impl Processor for MidiVelocity {
     fn process(
         &mut self,
         inputs: ProcessorInputs,
-        outputs: ProcessorOutputs,
+        mut outputs: ProcessorOutputs,
     ) -> Result<(), ProcessorError> {
-        for (midi, out) in iter_proc_io!(inputs as [MidiMessage], outputs as [Float]) {
-            if let Some(msg) = midi {
-                // Note on, note off, and polyphonic aftertouch messages.
-                if [0x90, 0x80, 0xa8].contains(&msg.status()) {
-                    self.velocity = msg.data2() as Float;
-                }
-            }
+        let midi = inputs.input_as::<MidiMessage>(0)?;
 
-            *out = Some(self.velocity);
+        if let Some(msg) = midi {
+            if [0x90, 0x80, 0xa8].contains(&msg.status()) {
+                self.velocity = msg.data2() as Float;
+            }
         }
+
+        outputs.set_output_as(0, self.velocity)?;
+
         Ok(())
     }
 }
@@ -129,19 +130,20 @@ impl Processor for MidiGate {
     fn process(
         &mut self,
         inputs: ProcessorInputs,
-        outputs: ProcessorOutputs,
+        mut outputs: ProcessorOutputs,
     ) -> Result<(), ProcessorError> {
-        for (midi, out) in iter_proc_io!(inputs as [MidiMessage], outputs as [bool]) {
-            if let Some(msg) = midi {
-                if msg.status() == 0x90 {
-                    self.gate = msg.data2() > 0;
-                } else if msg.status() == 0x80 {
-                    self.gate = false;
-                }
-            }
+        let midi = inputs.input_as::<MidiMessage>(0)?;
 
-            *out = Some(self.gate);
+        if let Some(msg) = midi {
+            if msg.status() == 0x90 {
+                self.gate = msg.data2() > 0;
+            } else if msg.status() == 0x80 {
+                self.gate = false;
+            }
         }
+
+        outputs.set_output_as(0, self.gate)?;
+
         Ok(())
     }
 }
@@ -176,16 +178,16 @@ impl Processor for MidiTrigger {
     fn process(
         &mut self,
         inputs: ProcessorInputs,
-        outputs: ProcessorOutputs,
+        mut outputs: ProcessorOutputs,
     ) -> Result<(), ProcessorError> {
-        for (midi, out) in iter_proc_io!(inputs as [MidiMessage], outputs as [bool]) {
-            *out = None;
-            if let Some(msg) = midi {
-                if msg.status() == 0x90 && msg.data2() > 0 {
-                    *out = Some(true);
-                }
+        let midi = inputs.input_as::<MidiMessage>(0)?;
+
+        if let Some(msg) = midi {
+            if msg.status() == 0x90 && msg.data2() > 0 {
+                outputs.set_output_as(0, true)?;
             }
         }
+
         Ok(())
     }
 }
@@ -220,15 +222,14 @@ impl Processor for MidiChannel {
     fn process(
         &mut self,
         inputs: ProcessorInputs,
-        outputs: ProcessorOutputs,
+        mut outputs: ProcessorOutputs,
     ) -> Result<(), ProcessorError> {
-        for (midi, out) in iter_proc_io!(inputs as [MidiMessage], outputs as [Float]) {
-            *out = None;
-            if let Some(msg) = midi {
-                let channel = msg.channel() as Float;
-                *out = Some(channel);
-            }
+        let midi = inputs.input_as::<MidiMessage>(0)?;
+
+        if let Some(msg) = midi {
+            outputs.set_output_as(0, msg.channel() as Float)?;
         }
+
         Ok(())
     }
 }

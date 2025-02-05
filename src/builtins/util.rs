@@ -83,15 +83,12 @@ impl Processor for Passthrough {
     fn process(
         &mut self,
         inputs: ProcessorInputs,
-        outputs: ProcessorOutputs,
+        mut outputs: ProcessorOutputs,
     ) -> Result<(), ProcessorError> {
-        for (in_signal, mut out_signal) in iter_proc_io!(inputs as [Any], outputs as [Any]) {
-            if let Some(in_signal) = in_signal {
-                out_signal.clone_from_opt_ref(in_signal);
-            } else {
-                out_signal.set_none();
-            }
-        }
+        let in_signal = inputs.input(0)?;
+        let mut out_signal = outputs.output(0);
+        out_signal.clone_from_opt_ref(in_signal);
+
         Ok(())
     }
 }
@@ -136,22 +133,24 @@ impl Processor for Cast {
     fn process(
         &mut self,
         inputs: ProcessorInputs,
-        outputs: ProcessorOutputs,
+        mut outputs: ProcessorOutputs,
     ) -> Result<(), ProcessorError> {
-        for (in_signal, mut out_signal) in iter_proc_io!(inputs as [Any], outputs as [Any]) {
-            let Some(in_signal) = in_signal else {
-                out_signal.set_none();
-                continue;
-            };
-            let in_signal = in_signal.to_owned();
-            let Some(cast) = in_signal.cast(self.to) else {
-                return Err(ProcessorError::InvalidCast(
-                    in_signal.signal_type(),
-                    self.to,
-                ));
-            };
-            out_signal.clone_from_opt_ref(cast.as_ref());
-        }
+        let in_signal = inputs.input(0)?.as_any_signal_ref();
+
+        let Some(in_signal) = in_signal else {
+            outputs.output(0).set_none();
+            return Ok(());
+        };
+        let in_signal = in_signal.to_owned();
+        let Some(cast) = in_signal.cast(self.to) else {
+            return Err(ProcessorError::InvalidCast(
+                in_signal.signal_type(),
+                self.to,
+            ));
+        };
+        outputs
+            .output(0)
+            .clone_from_opt_ref(cast.into_any_signal_opt().as_ref());
 
         Ok(())
     }
@@ -205,30 +204,26 @@ impl Processor for Message {
     fn process(
         &mut self,
         inputs: ProcessorInputs,
-        outputs: ProcessorOutputs,
+        mut outputs: ProcessorOutputs,
     ) -> Result<(), ProcessorError> {
-        for (bang, message, mut out) in iter_proc_io!(
-            inputs as [bool, Any],
-            outputs as [Any]
-        ) {
-            if let Some(message) = message {
-                if message.signal_type() != self.message.signal_type() {
-                    return Err(ProcessorError::InputSpecMismatch {
-                        index: 1,
-                        expected: self.message.signal_type(),
-                        actual: message.signal_type(),
-                    });
-                }
-                if let Some(message) = message.as_any_signal_ref() {
-                    self.message.clone_from_ref(message);
-                }
-            }
+        let trig = inputs.input_as::<bool>(0)?;
+        let in_signal = inputs.input(1)?.as_any_signal_ref();
 
-            if bang.unwrap_or(false) {
-                out.clone_from_ref(self.message.as_ref());
-            } else {
-                out.set_none();
+        if let Some(in_signal) = in_signal {
+            if in_signal.signal_type() != self.message.signal_type() {
+                return Err(ProcessorError::InputSpecMismatch {
+                    index: 1,
+                    expected: self.message.signal_type(),
+                    actual: in_signal.signal_type(),
+                });
             }
+            self.message.clone_from_ref(in_signal);
+        }
+
+        if trig.unwrap_or(false) {
+            outputs.output(0).clone_from_ref(self.message.as_ref());
+        } else {
+            outputs.output(0).set_none();
         }
 
         Ok(())
@@ -285,18 +280,24 @@ impl Processor for Print {
     fn process(
         &mut self,
         inputs: ProcessorInputs,
-        outputs: ProcessorOutputs,
+        _outputs: ProcessorOutputs,
     ) -> Result<(), ProcessorError> {
-        for (bang, message) in iter_proc_io!(inputs as [bool, Any], outputs as []) {
-            if let Some(message) = message {
-                if let Some(message) = message.as_any_signal_ref() {
-                    self.msg = message.to_owned();
-                }
-            }
+        let trig = inputs.input_as::<bool>(0)?;
+        let message = inputs.input(1)?.as_any_signal_ref();
 
-            if bang.unwrap_or(false) {
-                println!("{:?}", self.msg);
+        if let Some(message) = message {
+            if message.signal_type() != self.msg.signal_type() {
+                return Err(ProcessorError::InputSpecMismatch {
+                    index: 1,
+                    expected: self.msg.signal_type(),
+                    actual: message.signal_type(),
+                });
             }
+            self.msg.clone_from_ref(message);
+        }
+
+        if trig.unwrap_or(false) {
+            println!("{:?}", self.msg);
         }
 
         Ok(())
@@ -333,7 +334,7 @@ impl Processor for SampleRate {
         inputs: ProcessorInputs,
         mut outputs: ProcessorOutputs,
     ) -> Result<(), ProcessorError> {
-        outputs.output(0).fill_as::<Float>(inputs.sample_rate());
+        outputs.set_output_as(0, inputs.sample_rate())?;
 
         Ok(())
     }
@@ -362,48 +363,32 @@ impl GraphBuilder {
 /// | Index | Name | Type | Description |
 /// | --- | --- | --- | --- |
 /// | `0` | `out` | `Float` | The smoothed output signal. |
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, Processor)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", processor_typetag)]
 pub struct Smooth {
-    current: Float,
+    #[input]
+    target: Float,
+    #[input]
     factor: Float,
+
+    #[output]
+    out: Float,
 }
 
-#[cfg_attr(feature = "serde", typetag::serde)]
-impl Processor for Smooth {
-    fn input_spec(&self) -> Vec<SignalSpec> {
-        vec![
-            SignalSpec::new("target", SignalType::Float),
-            SignalSpec::new("factor", SignalType::Float),
-        ]
-    }
-
-    fn output_spec(&self) -> Vec<SignalSpec> {
-        vec![SignalSpec::new("out", SignalType::Float)]
-    }
-
-    fn process(
-        &mut self,
-        inputs: ProcessorInputs,
-        outputs: ProcessorOutputs,
-    ) -> Result<(), ProcessorError> {
-        for (target, factor, out) in iter_proc_io!(
-            inputs as [Float, Float],
-            outputs as [Float]
-        ) {
-            self.factor = factor.unwrap_or(self.factor).clamp(0.0, 1.0);
-
-            let Some(target) = target else {
-                *out = Some(self.current);
-                continue;
-            };
-
-            self.current = lerp(self.current, *target, self.factor);
-
-            *out = Some(self.current);
+impl Smooth {
+    /// Create a new `Smooth` processor with the given target value and smoothing factor.
+    pub fn new(target: Float, factor: Float) -> Self {
+        Self {
+            target,
+            factor,
+            out: target,
         }
+    }
 
-        Ok(())
+    fn update(&mut self, _env: &ProcEnv) {
+        self.factor = self.factor.clamp(0.0, 1.0);
+        self.out = lerp(self.out, self.target, self.factor);
     }
 }
 
@@ -421,12 +406,19 @@ impl Processor for Smooth {
 /// | Index | Name | Type | Description |
 /// | --- | --- | --- | --- |
 /// | `0` | `out` | `Bool` | The change signal. |
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, Processor)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", processor_typetag)]
 pub struct Changed {
     last: Option<Float>,
+    #[input]
+    input: Float,
+    #[input]
     threshold: Float,
     include_none: bool,
+
+    #[output]
+    out: bool,
 }
 
 impl Changed {
@@ -436,57 +428,19 @@ impl Changed {
             last: None,
             threshold,
             include_none,
+            input: 0.0,
+            out: false,
         }
     }
-}
 
-#[cfg_attr(feature = "serde", typetag::serde)]
-impl Processor for Changed {
-    fn input_spec(&self) -> Vec<SignalSpec> {
-        vec![
-            SignalSpec::new("in", SignalType::Float),
-            SignalSpec::new("threshold", SignalType::Float),
-        ]
-    }
-
-    fn output_spec(&self) -> Vec<SignalSpec> {
-        vec![SignalSpec::new("out", SignalType::Bool)]
-    }
-
-    fn process(
-        &mut self,
-        inputs: ProcessorInputs,
-        outputs: ProcessorOutputs,
-    ) -> Result<(), ProcessorError> {
-        for (in_signal, threshold, out_signal) in iter_proc_io!(
-            inputs as [Float, Float],
-            outputs as [bool]
-        ) {
-            self.threshold = threshold.unwrap_or(self.threshold);
-
-            match (self.last, in_signal) {
-                (Some(last), Some(in_signal)) => {
-                    if (last - in_signal).abs() > self.threshold {
-                        *out_signal = Some(true);
-                    } else {
-                        *out_signal = None;
-                    }
-                }
-                (None, Some(_)) if self.include_none => {
-                    *out_signal = Some(true);
-                }
-                (Some(_), None) if self.include_none => {
-                    *out_signal = Some(true);
-                }
-                _ => {
-                    *out_signal = None;
-                }
-            }
-
-            self.last = *in_signal;
+    fn update(&mut self, _env: &ProcEnv) {
+        if let Some(last) = self.last {
+            self.out = (last - self.input).abs() > self.threshold;
+        } else {
+            self.out = self.include_none;
         }
 
-        Ok(())
+        self.last = Some(self.input);
     }
 }
 
@@ -503,43 +457,32 @@ impl Processor for Changed {
 /// | Index | Name | Type | Description |
 /// | --- | --- | --- | --- |
 /// | `0` | `out` | `Bool` | The zero crossing signal. |
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, Processor)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", processor_typetag)]
 pub struct ZeroCrossing {
     last: Float,
+
+    #[input]
+    input: Float,
+    #[output]
+    out: bool,
 }
 
-#[cfg_attr(feature = "serde", typetag::serde)]
-impl Processor for ZeroCrossing {
-    fn input_spec(&self) -> Vec<SignalSpec> {
-        vec![SignalSpec::new("in", SignalType::Float)]
-    }
-
-    fn output_spec(&self) -> Vec<SignalSpec> {
-        vec![SignalSpec::new("out", SignalType::Bool)]
-    }
-
-    fn process(
-        &mut self,
-        inputs: ProcessorInputs,
-        outputs: ProcessorOutputs,
-    ) -> Result<(), ProcessorError> {
-        for (in_signal, out_signal) in iter_proc_io!(inputs as [Float], outputs as [bool]) {
-            let Some(in_signal) = *in_signal else {
-                *out_signal = None;
-                continue;
-            };
-
-            if (self.last < 0.0 && in_signal >= 0.0) || (self.last > 0.0 && in_signal <= 0.0) {
-                *out_signal = Some(true);
-            } else {
-                *out_signal = None;
-            }
-
-            self.last = in_signal;
+impl ZeroCrossing {
+    /// Create a new `ZeroCrossing` processor.
+    pub fn new() -> Self {
+        Self {
+            last: 0.0,
+            input: 0.0,
+            out: false,
         }
+    }
 
-        Ok(())
+    fn update(&mut self, _env: &ProcEnv) {
+        self.out = (self.last < 0.0 && self.input >= 0.0) || (self.last > 0.0 && self.input <= 0.0);
+
+        self.last = self.input;
     }
 }
 
@@ -804,20 +747,20 @@ impl Processor for Param {
     fn process(
         &mut self,
         inputs: ProcessorInputs,
-        outputs: ProcessorOutputs,
+        mut outputs: ProcessorOutputs,
     ) -> Result<(), ProcessorError> {
-        for (set, mut get) in iter_proc_io!(inputs as [Any], outputs as [Any]) {
-            if let Some(set) = set.and_then(|set| set.as_any_signal_ref()) {
-                self.tx().send(set.to_owned());
-            }
+        let set = inputs.input(0)?.as_any_signal_ref();
 
-            if let Some(msg) = self.rx_mut().recv() {
-                get.clone_from_ref(msg.as_ref());
-            } else if let Some(last) = self.rx().last() {
-                get.clone_from_ref(last.as_ref());
-            } else {
-                get.set_none();
-            }
+        if let Some(set) = set {
+            self.tx().send(set.to_owned());
+        }
+
+        if let Some(msg) = self.rx_mut().recv() {
+            outputs.set_output(0, msg)?;
+        } else if let Some(last) = self.rx().last() {
+            outputs.set_output(0, last)?;
+        } else {
+            outputs.set_output_none(0);
         }
 
         Ok(())
@@ -895,46 +838,37 @@ impl<'de> serde::Deserialize<'de> for Param {
 /// | Index | Name | Type | Description |
 /// | --- | --- | --- | --- |
 /// | `0` | `count` | `Int` | The current count. |
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, Processor)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", processor_typetag)]
 pub struct Counter {
+    #[input]
+    trig: bool,
+    #[input]
+    reset: bool,
+
+    #[output]
     count: i64,
 }
 
-#[cfg_attr(feature = "serde", typetag::serde)]
-impl Processor for Counter {
-    fn input_spec(&self) -> Vec<SignalSpec> {
-        vec![
-            SignalSpec::new("trig", SignalType::Bool),
-            SignalSpec::new("reset", SignalType::Bool),
-        ]
+impl Counter {
+    /// Create a new `Counter` processor.
+    pub fn new() -> Self {
+        Self {
+            trig: false,
+            reset: false,
+            count: 0,
+        }
     }
 
-    fn output_spec(&self) -> Vec<SignalSpec> {
-        vec![SignalSpec::new("count", SignalType::Int)]
-    }
-
-    fn process(
-        &mut self,
-        inputs: ProcessorInputs,
-        outputs: ProcessorOutputs,
-    ) -> Result<(), ProcessorError> {
-        for (trig, reset, count) in iter_proc_io!(
-            inputs as [bool, bool],
-            outputs as [i64]
-        ) {
-            if let Some(true) = reset {
-                self.count = 0;
-            }
-
-            *count = Some(self.count);
-
-            if let Some(true) = trig {
-                self.count += 1;
-            }
+    fn update(&mut self, _env: &ProcEnv) {
+        if self.reset {
+            self.count = 0;
         }
 
-        Ok(())
+        if self.trig {
+            self.count += 1;
+        }
     }
 }
 
@@ -952,42 +886,38 @@ impl Processor for Counter {
 /// | Index | Name | Type | Description |
 /// | --- | --- | --- | --- |
 /// | `0` | `out` | `Float` | The output signal. |
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, Processor)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", processor_typetag)]
 pub struct SampleAndHold {
     last: Option<Float>,
+
+    #[input]
+    input: Float,
+    #[input]
+    trig: bool,
+
+    #[output]
+    out: Float,
 }
 
-#[cfg_attr(feature = "serde", typetag::serde)]
-impl Processor for SampleAndHold {
-    fn input_spec(&self) -> Vec<SignalSpec> {
-        vec![
-            SignalSpec::new("in", SignalType::Float),
-            SignalSpec::new("trig", SignalType::Bool),
-        ]
+impl SampleAndHold {
+    /// Create a new `SampleAndHold` processor.
+    pub fn new() -> Self {
+        Self {
+            last: None,
+            input: 0.0,
+            trig: false,
+            out: 0.0,
+        }
     }
 
-    fn output_spec(&self) -> Vec<SignalSpec> {
-        vec![SignalSpec::new("out", SignalType::Float)]
-    }
-
-    fn process(
-        &mut self,
-        inputs: ProcessorInputs,
-        outputs: ProcessorOutputs,
-    ) -> Result<(), ProcessorError> {
-        for (in_signal, trig, out_signal) in iter_proc_io!(
-            inputs as [Float, bool],
-            outputs as [Float]
-        ) {
-            if let Some(true) = trig {
-                self.last = *in_signal;
-            }
-
-            *out_signal = self.last;
+    fn update(&mut self, _env: &ProcEnv) {
+        if self.trig {
+            self.last = Some(self.input);
         }
 
-        Ok(())
+        self.out = self.last.unwrap_or(self.input);
     }
 }
 
@@ -1004,10 +934,16 @@ impl Processor for SampleAndHold {
 /// | Index | Name | Type | Description |
 /// | --- | --- | --- | --- |
 /// | `0` | `out` | `Float` | The input signal passed through. |
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, Processor)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", processor_typetag)]
 pub struct CheckFinite {
     context: String,
+
+    #[input]
+    input: Float,
+    #[output]
+    out: Float,
 }
 
 impl CheckFinite {
@@ -1015,39 +951,17 @@ impl CheckFinite {
     pub fn new(context: impl Into<String>) -> Self {
         Self {
             context: context.into(),
+            input: 0.0,
+            out: 0.0,
         }
     }
-}
 
-#[cfg_attr(feature = "serde", typetag::serde)]
-impl Processor for CheckFinite {
-    fn input_spec(&self) -> Vec<SignalSpec> {
-        vec![SignalSpec::new("in", SignalType::Float)]
-    }
-
-    fn output_spec(&self) -> Vec<SignalSpec> {
-        vec![SignalSpec::new("out", SignalType::Float)]
-    }
-
-    fn process(
-        &mut self,
-        inputs: ProcessorInputs,
-        outputs: ProcessorOutputs,
-    ) -> Result<(), ProcessorError> {
-        for (in_signal, out_signal) in iter_proc_io!(inputs as [Float], outputs as [Float]) {
-            if let Some(in_signal) = in_signal {
-                if in_signal.is_nan() {
-                    panic!("{}: signal is NaN: {:?}", self.context, in_signal);
-                }
-                if in_signal.is_infinite() {
-                    panic!("{}: signal is infinite: {:?}", self.context, in_signal);
-                }
-            }
-
-            *out_signal = *in_signal;
+    fn update(&mut self, _env: &ProcEnv) {
+        if self.input.is_nan() || self.input.is_infinite() {
+            panic!("{}: input signal is NaN or infinite", self.context);
         }
 
-        Ok(())
+        self.out = self.input;
     }
 }
 
@@ -1065,38 +979,31 @@ impl Processor for CheckFinite {
 /// | Index | Name | Type | Description |
 /// | --- | --- | --- | --- |
 /// | `0` | `out` | `Float` | The input signal passed through, or 0.0 if the input signal is NaN or infinite. |
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, Processor)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct FiniteOrZero;
+#[cfg_attr(feature = "serde", processor_typetag)]
+pub struct FiniteOrZero {
+    #[input]
+    input: Float,
+    #[output]
+    out: Float,
+}
 
-#[cfg_attr(feature = "serde", typetag::serde)]
-impl Processor for FiniteOrZero {
-    fn input_spec(&self) -> Vec<SignalSpec> {
-        vec![SignalSpec::new("in", SignalType::Float)]
-    }
-
-    fn output_spec(&self) -> Vec<SignalSpec> {
-        vec![SignalSpec::new("out", SignalType::Float)]
-    }
-
-    fn process(
-        &mut self,
-        inputs: ProcessorInputs,
-        outputs: ProcessorOutputs,
-    ) -> Result<(), ProcessorError> {
-        for (in_signal, out_signal) in iter_proc_io!(inputs as [Float], outputs as [Float]) {
-            if let Some(in_signal) = *in_signal {
-                if in_signal.is_nan() || in_signal.is_infinite() {
-                    *out_signal = Some(0.0);
-                } else {
-                    *out_signal = Some(in_signal);
-                }
-            } else {
-                *out_signal = None;
-            }
+impl FiniteOrZero {
+    /// Create a new `FiniteOrZero` processor.
+    pub fn new() -> Self {
+        Self {
+            input: 0.0,
+            out: 0.0,
         }
+    }
 
-        Ok(())
+    fn update(&mut self, _env: &ProcEnv) {
+        if self.input.is_nan() || self.input.is_infinite() {
+            self.out = 0.0;
+        } else {
+            self.out = self.input;
+        }
     }
 }
 
@@ -1147,18 +1054,19 @@ impl Processor for Dedup {
     fn process(
         &mut self,
         inputs: ProcessorInputs,
-        outputs: ProcessorOutputs,
+        mut outputs: ProcessorOutputs,
     ) -> Result<(), ProcessorError> {
-        for (in_signal, mut out_signal) in iter_proc_io!(inputs as [Any], outputs as [Any]) {
-            if let Some(in_signal) = in_signal {
-                if self.last.as_ref() != in_signal {
-                    out_signal.clone_from_opt_ref(in_signal);
-                } else {
-                    out_signal.set_none();
-                }
+        let in_signal = inputs.input(0)?;
+
+        if self.last.as_ref() != in_signal {
+            if in_signal.is_some() {
+                outputs.output(0).clone_from_opt_ref(in_signal);
+                self.last.clone_from_ref(in_signal);
             } else {
-                out_signal.set_none();
+                outputs.output(0).set_none();
             }
+        } else {
+            outputs.output(0).set_none();
         }
 
         Ok(())
@@ -1204,10 +1112,14 @@ impl Processor for IsSome {
     fn process(
         &mut self,
         inputs: ProcessorInputs,
-        outputs: ProcessorOutputs,
+        mut outputs: ProcessorOutputs,
     ) -> Result<(), ProcessorError> {
-        for (in_signal, out_signal) in iter_proc_io!(inputs as [Any], outputs as [bool]) {
-            *out_signal = Some(in_signal.is_some_and(|signal| signal.is_some()));
+        let in_signal = inputs.input(0)?.as_any_signal_ref();
+
+        if in_signal.is_some() {
+            outputs.set_output_as(0, true)?;
+        } else {
+            outputs.set_output_as(0, false)?;
         }
 
         Ok(())
@@ -1253,10 +1165,14 @@ impl Processor for IsNone {
     fn process(
         &mut self,
         inputs: ProcessorInputs,
-        outputs: ProcessorOutputs,
+        mut outputs: ProcessorOutputs,
     ) -> Result<(), ProcessorError> {
-        for (in_signal, out_signal) in iter_proc_io!(inputs as [Any], outputs as [bool]) {
-            *out_signal = Some(!in_signal.is_some_and(|signal| signal.is_some()));
+        let in_signal = inputs.input(0)?.as_any_signal_ref();
+
+        if in_signal.is_some() {
+            outputs.set_output_as(0, false)?;
+        } else {
+            outputs.set_output_as(0, true)?;
         }
 
         Ok(())
@@ -1304,18 +1220,14 @@ impl Processor for OrElse {
     fn process(
         &mut self,
         inputs: ProcessorInputs,
-        outputs: ProcessorOutputs,
+        mut outputs: ProcessorOutputs,
     ) -> Result<(), ProcessorError> {
-        for (in_signal, mut out_signal) in iter_proc_io!(inputs as [Any], outputs as [Any]) {
-            if let Some(in_signal) = in_signal {
-                if in_signal.is_some() {
-                    out_signal.clone_from_opt_ref(in_signal);
-                } else {
-                    out_signal.clone_from_ref(self.default.as_ref());
-                }
-            } else {
-                out_signal.clone_from_ref(self.default.as_ref());
-            }
+        let in_signal = inputs.input(0)?.as_any_signal_ref();
+
+        if let Some(in_signal) = in_signal {
+            outputs.output(0).clone_from_ref(in_signal);
+        } else {
+            outputs.output(0).clone_from_ref(self.default.as_ref());
         }
 
         Ok(())

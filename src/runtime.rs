@@ -10,11 +10,10 @@ use petgraph::prelude::*;
 use rustc_hash::{FxBuildHasher, FxHashMap};
 
 use crate::{
-    debug_once,
     graph::{Graph, GraphRunError, GraphRunErrorType, NodeIndex},
     prelude::{Param, ProcessorInputs, SignalSpec},
-    processor::{ProcessMode, ProcessorError, ProcessorOutputs},
-    signal::{Float, MidiMessage, SignalBuffer},
+    processor::{ProcEnv, ProcessMode, ProcessorError, ProcessorOutputs},
+    signal::{AnySignalOpt, AnySignalOptRef, Float, MidiMessage, SignalBuffer},
 };
 
 /// Errors that can occur related to the runtime.
@@ -273,52 +272,117 @@ impl Runtime {
     #[cfg_attr(feature = "profiling", inline(never))]
     fn process_node(&mut self, node_id: NodeIndex, mode: ProcessMode) -> RuntimeResult<()> {
         let num_inputs = self.buffer_cache[&node_id].input_spec.len();
+        let num_outputs = self.buffer_cache[&node_id].output_spec.len();
 
-        let mut inputs: smallvec::SmallVec<[_; 8]> = smallvec::smallvec![None; num_inputs];
+        let mut inputs: smallvec::SmallVec<[AnySignalOptRef; 8]> =
+            smallvec::SmallVec::with_capacity(num_inputs);
+        let mut outputs: smallvec::SmallVec<[AnySignalOpt; 8]> =
+            smallvec::SmallVec::with_capacity(num_outputs);
+
+        for spec in &self.buffer_cache[&node_id].input_spec {
+            inputs.push(AnySignalOptRef::default_of_type(&spec.signal_type));
+        }
+
+        for spec in &self.buffer_cache[&node_id].output_spec {
+            outputs.push(AnySignalOpt::default_of_type(&spec.signal_type));
+        }
 
         let mut buffers = self.buffer_cache.remove(&node_id).unwrap();
 
-        for (source_id, edge) in self
-            .graph
-            .digraph()
-            .edges_directed(node_id, Direction::Incoming)
-            .map(|edge| (edge.source(), edge.weight()))
-        {
-            let source_buffers = self.buffer_cache.get(&source_id).unwrap();
-            let buffer = &source_buffers.outputs[edge.source_output as usize];
+        match mode {
+            ProcessMode::Sample(sample_idx) => {
+                for (source_id, edge) in self
+                    .graph
+                    .digraph()
+                    .edges_directed(node_id, Direction::Incoming)
+                    .map(|edge| (edge.source(), edge.weight()))
+                {
+                    let source_buffers = self.buffer_cache.get(&source_id).unwrap();
+                    let buffer = &source_buffers.outputs[edge.source_output as usize];
 
-            inputs[edge.target_input as usize] = Some(buffer);
+                    inputs[edge.target_input as usize] = buffer.get(sample_idx).unwrap();
+                }
+
+                let node = self.graph.digraph.node_weight_mut(node_id).unwrap();
+
+                let result = node.process(
+                    ProcessorInputs::new(
+                        &buffers.input_spec,
+                        &inputs[..],
+                        ProcEnv {
+                            sample_rate: self.sample_rate,
+                            block_size: self.block_size,
+                            mode,
+                            assets: &self.graph.assets,
+                        },
+                    ),
+                    ProcessorOutputs::new(&buffers.output_spec, &mut outputs, mode),
+                );
+
+                if let Err(err) = result {
+                    let node = self.graph.digraph.node_weight(node_id).unwrap();
+                    log::error!("Error processing node {}: {:?}", node.name(), err);
+                    let error = GraphRunError {
+                        node_index: node_id,
+                        node_processor: node.name().to_string(),
+                        signal_type: GraphRunErrorType::ProcessorError(err),
+                    };
+                    return Err(RuntimeError::GraphRunError(error));
+                }
+
+                for (buffer, output) in buffers.outputs.iter_mut().zip(outputs.iter()) {
+                    buffer.set(sample_idx, output.as_ref());
+                }
+            }
+            ProcessMode::Block => {
+                for sample_idx in 0..self.block_size {
+                    for (source_id, edge) in self
+                        .graph
+                        .digraph()
+                        .edges_directed(node_id, Direction::Incoming)
+                        .map(|edge| (edge.source(), edge.weight()))
+                    {
+                        let source_buffers = self.buffer_cache.get(&source_id).unwrap();
+                        let buffer = &source_buffers.outputs[edge.source_output as usize];
+
+                        inputs[edge.target_input as usize] = buffer.get(sample_idx).unwrap();
+                    }
+
+                    let node = self.graph.digraph.node_weight_mut(node_id).unwrap();
+
+                    let result = node.process(
+                        ProcessorInputs::new(
+                            &buffers.input_spec,
+                            &inputs[..],
+                            ProcEnv {
+                                sample_rate: self.sample_rate,
+                                block_size: self.block_size,
+                                mode,
+                                assets: &self.graph.assets,
+                            },
+                        ),
+                        ProcessorOutputs::new(&buffers.output_spec, &mut outputs, mode),
+                    );
+
+                    if let Err(err) = result {
+                        let node = self.graph.digraph().node_weight(node_id).unwrap();
+                        log::error!("Error processing node {}: {:?}", node.name(), err);
+                        let error = GraphRunError {
+                            node_index: node_id,
+                            node_processor: node.name().to_string(),
+                            signal_type: GraphRunErrorType::ProcessorError(err),
+                        };
+                        return Err(RuntimeError::GraphRunError(error));
+                    }
+
+                    for (buffer, output) in buffers.outputs.iter_mut().zip(outputs.iter()) {
+                        buffer.set(sample_idx, output.as_ref());
+                    }
+                }
+            }
         }
 
-        let node = self.graph.digraph.node_weight_mut(node_id).unwrap();
-
-        if inputs.spilled() {
-            debug_once!(format!("{}_spilled", node_id.index()) => "Input array for {} ({}) spilled over to the heap (has {} inputs > 8)", node.name(), node_id.index(), num_inputs);
-        }
-
-        let result = node.process(
-            ProcessorInputs::new(
-                &buffers.input_spec,
-                &inputs[..],
-                &self.graph.assets,
-                mode,
-                self.sample_rate,
-                self.block_size,
-            ),
-            ProcessorOutputs::new(&buffers.output_spec, &mut buffers.outputs, mode),
-        );
-
-        if let Err(err) = result {
-            let node = self.graph.digraph.node_weight(node_id).unwrap();
-            log::error!("Error processing node {}: {:?}", node.name(), err);
-            let error = GraphRunError {
-                node_index: node_id,
-                node_processor: node.name().to_string(),
-                signal_type: GraphRunErrorType::ProcessorError(err),
-            };
-            return Err(RuntimeError::GraphRunError(error));
-        }
-
+        drop(outputs);
         drop(inputs);
 
         self.buffer_cache.insert(node_id, buffers);

@@ -674,7 +674,7 @@ impl Output {
             matches!(self.signal_type(), SignalType::Float),
             "output signal must be a float"
         );
-        let proc = self.node.graph().add(FiniteOrZero);
+        let proc = self.node.graph().add(FiniteOrZero::default());
         proc.input(0).connect(self);
         proc
     }
