@@ -89,6 +89,7 @@ impl Processor for MidiToFreq {
         vec![SignalSpec::new("freq", SignalType::Float)]
     }
 
+    #[allow(clippy::useless_conversion)]
     fn process(
         &mut self,
         inputs: ProcessorInputs,
@@ -96,7 +97,7 @@ impl Processor for MidiToFreq {
     ) -> Result<(), ProcessorError> {
         for (note, freq) in raug_macros::iter_proc_io_as!(inputs as [Float], outputs as [Float]) {
             if let Some(note) = note {
-                *freq = Some(2.0_f64.powf((note - 69.0) / 12.0) * 440.0);
+                *freq = Some((2.0 as Float).powf((note - 69.0) / 12.0) * 440.0);
             } else {
                 *freq = None;
             }

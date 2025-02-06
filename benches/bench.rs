@@ -82,32 +82,32 @@ pub fn bench_big_graph(c: &mut Criterion) {
     group.finish();
 }
 
-// pub fn bench_generative1(c: &mut Criterion) {
-//     let num_tones = 20;
-//     let graph = generative1::generative1(num_tones);
+pub fn bench_generative1(c: &mut Criterion) {
+    let num_tones = 20;
+    let graph = generative1::generative1(num_tones);
 
-//     let mut runtime = graph.build_runtime();
+    let mut runtime = graph.build_runtime();
 
-//     let mut group = c.benchmark_group(name(&format!("generative1_{}", num_tones)));
+    let mut group = c.benchmark_group(name(&format!("generative1_{}", num_tones)));
 
-//     for &block_size in BLOCK_SIZES {
-//         runtime.allocate_for_block_size(SAMPLE_RATE, block_size);
+    for &block_size in BLOCK_SIZES {
+        runtime.allocate_for_block_size(SAMPLE_RATE, block_size);
 
-//         group.throughput(criterion::Throughput::Elements(block_size as u64));
-//         group.bench_function(format!("block_size_{}", block_size), |b| {
-//             b.iter(|| {
-//                 runtime.process().unwrap();
-//             });
-//         });
-//     }
+        group.throughput(criterion::Throughput::Elements(block_size as u64));
+        group.bench_function(format!("block_size_{}", block_size), |b| {
+            b.iter(|| {
+                runtime.process().unwrap();
+            });
+        });
+    }
 
-//     group.finish();
-// }
+    group.finish();
+}
 
 criterion_group!(
     benches,
-    bench_big_graph,
+    // bench_big_graph,
     // bench_demo,
-    // bench_generative1
+    bench_generative1
 );
 criterion_main!(benches);
