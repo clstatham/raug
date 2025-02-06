@@ -45,6 +45,8 @@ impl PhaseAccumulator {
         if self.reset {
             self.t = 0.0;
         }
+
+        self.out = self.t;
     }
 }
 
@@ -189,6 +191,10 @@ impl SawOscillator {
         self.t_step = self.frequency;
         self.t += self.t_step;
         self.t %= env.sample_rate;
+
+        if self.reset {
+            self.t = 0.0;
+        }
     }
 }
 

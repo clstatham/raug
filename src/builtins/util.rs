@@ -83,11 +83,13 @@ impl Processor for Passthrough {
     fn process(
         &mut self,
         inputs: ProcessorInputs,
-        mut outputs: ProcessorOutputs,
+        outputs: ProcessorOutputs,
     ) -> Result<(), ProcessorError> {
-        let in_signal = inputs.input(0)?;
-        let mut out_signal = outputs.output(0);
-        out_signal.clone_from_opt_ref(in_signal);
+        for (input, mut output) in iter_proc_io_as!(inputs as [Any], outputs as [Any]) {
+            if let Some(input) = input {
+                output.clone_from_opt_ref(input);
+            }
+        }
 
         Ok(())
     }
@@ -133,24 +135,19 @@ impl Processor for Cast {
     fn process(
         &mut self,
         inputs: ProcessorInputs,
-        mut outputs: ProcessorOutputs,
+        outputs: ProcessorOutputs,
     ) -> Result<(), ProcessorError> {
-        let in_signal = inputs.input(0)?.as_any_signal_ref();
-
-        let Some(in_signal) = in_signal else {
-            outputs.output(0).set_none();
-            return Ok(());
-        };
-        let in_signal = in_signal.to_owned();
-        let Some(cast) = in_signal.cast(self.to) else {
-            return Err(ProcessorError::InvalidCast(
-                in_signal.signal_type(),
-                self.to,
-            ));
-        };
-        outputs
-            .output(0)
-            .clone_from_opt_ref(cast.into_any_signal_opt().as_ref());
+        for (input, mut output) in iter_proc_io_as!(inputs as [Any], outputs as [Any]) {
+            if let Some(input) = input {
+                if let Some(signal) = input.as_any_signal_ref() {
+                    if let Some(cast) = signal.to_owned().cast(self.to) {
+                        output.clone_from_ref(cast.as_ref());
+                    } else {
+                        return Err(ProcessorError::InvalidCast(signal.signal_type(), self.to));
+                    }
+                }
+            }
+        }
 
         Ok(())
     }
@@ -173,17 +170,17 @@ impl Processor for Cast {
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Message {
-    message: AnySignal,
+    message: AnySignalOpt,
 }
 
 impl Message {
     /// Create a new `MessageSender` processor with the given message.
     pub fn new(message: impl Signal) -> Self {
-        Self::new_any(message.into_any_signal())
+        Self::new_any(message.into_any_signal().into_any_signal_opt())
     }
 
     /// Create a new `MessageSender` processor with the given message.
-    pub fn new_any(message: AnySignal) -> Self {
+    pub fn new_any(message: AnySignalOpt) -> Self {
         Self { message }
     }
 }
@@ -204,26 +201,23 @@ impl Processor for Message {
     fn process(
         &mut self,
         inputs: ProcessorInputs,
-        mut outputs: ProcessorOutputs,
+        outputs: ProcessorOutputs,
     ) -> Result<(), ProcessorError> {
-        let trig = inputs.input_as::<bool>(0)?;
-        let in_signal = inputs.input(1)?.as_any_signal_ref();
-
-        if let Some(in_signal) = in_signal {
-            if in_signal.signal_type() != self.message.signal_type() {
-                return Err(ProcessorError::InputSpecMismatch {
-                    index: 1,
-                    expected: self.message.signal_type(),
-                    actual: in_signal.signal_type(),
-                });
+        for (trig, message, mut output) in iter_proc_io_as!(inputs as [bool, Any], outputs as [Any])
+        {
+            if trig.unwrap_or(false) {
+                if let Some(message) = message {
+                    if message.signal_type() != self.message.signal_type() {
+                        return Err(ProcessorError::InputSpecMismatch {
+                            index: 1,
+                            expected: self.message.signal_type(),
+                            actual: message.signal_type(),
+                        });
+                    }
+                    self.message.clone_from_ref(message);
+                }
+                output.clone_from_opt_ref(self.message.as_ref());
             }
-            self.message.clone_from_ref(in_signal);
-        }
-
-        if trig.unwrap_or(false) {
-            outputs.output(0).clone_from_ref(self.message.as_ref());
-        } else {
-            outputs.output(0).set_none();
         }
 
         Ok(())
@@ -245,21 +239,21 @@ impl Processor for Message {
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Print {
-    msg: AnySignal,
+    msg: AnySignalOpt,
 }
 
 impl Print {
     /// Create a new `Print` processor with the given message.
     pub fn with_message(message: impl Signal) -> Self {
         Self {
-            msg: message.into_any_signal(),
+            msg: message.into_any_signal().into_any_signal_opt(),
         }
     }
 
     /// Create a new `Print` processor with an empty message.
     pub fn new(signal_type: SignalType) -> Self {
         Self {
-            msg: AnySignal::default_of_type(&signal_type),
+            msg: AnySignalOpt::default_of_type(&signal_type),
         }
     }
 }
@@ -280,24 +274,23 @@ impl Processor for Print {
     fn process(
         &mut self,
         inputs: ProcessorInputs,
-        _outputs: ProcessorOutputs,
+        outputs: ProcessorOutputs,
     ) -> Result<(), ProcessorError> {
-        let trig = inputs.input_as::<bool>(0)?;
-        let message = inputs.input(1)?.as_any_signal_ref();
-
-        if let Some(message) = message {
-            if message.signal_type() != self.msg.signal_type() {
-                return Err(ProcessorError::InputSpecMismatch {
-                    index: 1,
-                    expected: self.msg.signal_type(),
-                    actual: message.signal_type(),
-                });
+        for (trig, message) in iter_proc_io_as!(inputs as [bool, Any], outputs as []) {
+            if let Some(message) = message {
+                if message.signal_type() != self.msg.signal_type() {
+                    return Err(ProcessorError::InputSpecMismatch {
+                        index: 1,
+                        expected: self.msg.signal_type(),
+                        actual: message.signal_type(),
+                    });
+                }
+                self.msg.clone_from_ref(message);
             }
-            self.msg.clone_from_ref(message);
-        }
 
-        if trig.unwrap_or(false) {
-            println!("{:?}", self.msg);
+            if trig.unwrap_or(false) {
+                println!("{:?}", self.msg);
+            }
         }
 
         Ok(())
@@ -334,7 +327,7 @@ impl Processor for SampleRate {
         inputs: ProcessorInputs,
         mut outputs: ProcessorOutputs,
     ) -> Result<(), ProcessorError> {
-        outputs.set_output_as(0, inputs.sample_rate())?;
+        outputs.output(0).fill_as(inputs.sample_rate());
 
         Ok(())
     }
@@ -747,20 +740,20 @@ impl Processor for Param {
     fn process(
         &mut self,
         inputs: ProcessorInputs,
-        mut outputs: ProcessorOutputs,
+        outputs: ProcessorOutputs,
     ) -> Result<(), ProcessorError> {
-        let set = inputs.input(0)?.as_any_signal_ref();
+        for (set, mut get) in iter_proc_io_as!(inputs as [Any], outputs as [Any]) {
+            if let Some(set) = set.and_then(|set| set.as_any_signal_ref()) {
+                self.tx().send(set.to_owned());
+            }
 
-        if let Some(set) = set {
-            self.tx().send(set.to_owned());
-        }
-
-        if let Some(msg) = self.rx_mut().recv() {
-            outputs.set_output(0, msg)?;
-        } else if let Some(last) = self.rx().last() {
-            outputs.set_output(0, last)?;
-        } else {
-            outputs.set_output_none(0);
+            if let Some(msg) = self.rx_mut().recv() {
+                get.clone_from_ref(msg.as_ref());
+            } else if let Some(last) = self.rx().last() {
+                get.clone_from_ref(last.as_ref());
+            } else {
+                get.set_none();
+            }
         }
 
         Ok(())
@@ -1029,14 +1022,16 @@ impl FiniteOrZero {
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Dedup {
-    last: AnySignalOpt,
+    signal_type: SignalType,
+    last: Option<AnySignal>,
 }
 
 impl Dedup {
     /// Create a new `Dedup` processor.
     pub fn new(signal_type: SignalType) -> Self {
         Self {
-            last: AnySignalOpt::default_of_type(&signal_type),
+            signal_type,
+            last: None,
         }
     }
 }
@@ -1044,29 +1039,25 @@ impl Dedup {
 #[cfg_attr(feature = "serde", typetag::serde)]
 impl Processor for Dedup {
     fn input_spec(&self) -> Vec<SignalSpec> {
-        vec![SignalSpec::new("in", self.last.signal_type())]
+        vec![SignalSpec::new("in", self.signal_type)]
     }
 
     fn output_spec(&self) -> Vec<SignalSpec> {
-        vec![SignalSpec::new("out", self.last.signal_type())]
+        vec![SignalSpec::new("out", self.signal_type)]
     }
 
     fn process(
         &mut self,
         inputs: ProcessorInputs,
-        mut outputs: ProcessorOutputs,
+        outputs: ProcessorOutputs,
     ) -> Result<(), ProcessorError> {
-        let in_signal = inputs.input(0)?;
-
-        if self.last.as_ref() != in_signal {
-            if in_signal.is_some() {
-                outputs.output(0).clone_from_opt_ref(in_signal);
-                self.last.clone_from_ref(in_signal);
-            } else {
-                outputs.output(0).set_none();
+        for (in_signal, mut out_signal) in iter_proc_io_as!(inputs as [Any], outputs as [Any]) {
+            if let Some(in_signal) = in_signal.and_then(|in_signal| in_signal.as_any_signal_ref()) {
+                if in_signal != self.last.unwrap_or_else(|| in_signal.to_owned()).as_ref() {
+                    out_signal.clone_from_ref(in_signal);
+                    self.last = Some(in_signal.to_owned());
+                }
             }
-        } else {
-            outputs.output(0).set_none();
         }
 
         Ok(())
@@ -1112,14 +1103,17 @@ impl Processor for IsSome {
     fn process(
         &mut self,
         inputs: ProcessorInputs,
-        mut outputs: ProcessorOutputs,
+        outputs: ProcessorOutputs,
     ) -> Result<(), ProcessorError> {
-        let in_signal = inputs.input(0)?.as_any_signal_ref();
-
-        if in_signal.is_some() {
-            outputs.set_output_as(0, true)?;
-        } else {
-            outputs.set_output_as(0, false)?;
+        for (in_signal, mut out_signal) in iter_proc_io_as!(inputs as [Any], outputs as [Any]) {
+            if in_signal
+                .and_then(|in_signal| in_signal.as_any_signal_ref())
+                .is_some()
+            {
+                out_signal.clone_from_ref(true.into_any_signal().as_ref());
+            } else {
+                out_signal.clone_from_ref(false.into_any_signal().as_ref());
+            }
         }
 
         Ok(())
@@ -1165,14 +1159,17 @@ impl Processor for IsNone {
     fn process(
         &mut self,
         inputs: ProcessorInputs,
-        mut outputs: ProcessorOutputs,
+        outputs: ProcessorOutputs,
     ) -> Result<(), ProcessorError> {
-        let in_signal = inputs.input(0)?.as_any_signal_ref();
-
-        if in_signal.is_some() {
-            outputs.set_output_as(0, false)?;
-        } else {
-            outputs.set_output_as(0, true)?;
+        for (in_signal, mut out_signal) in iter_proc_io_as!(inputs as [Any], outputs as [Any]) {
+            if in_signal
+                .and_then(|in_signal| in_signal.as_any_signal_ref())
+                .is_some()
+            {
+                out_signal.clone_from_ref(false.into_any_signal().as_ref());
+            } else {
+                out_signal.clone_from_ref(true.into_any_signal().as_ref());
+            }
         }
 
         Ok(())
@@ -1220,14 +1217,14 @@ impl Processor for OrElse {
     fn process(
         &mut self,
         inputs: ProcessorInputs,
-        mut outputs: ProcessorOutputs,
+        outputs: ProcessorOutputs,
     ) -> Result<(), ProcessorError> {
-        let in_signal = inputs.input(0)?.as_any_signal_ref();
-
-        if let Some(in_signal) = in_signal {
-            outputs.output(0).clone_from_ref(in_signal);
-        } else {
-            outputs.output(0).clone_from_ref(self.default.as_ref());
+        for (in_signal, mut out_signal) in iter_proc_io_as!(inputs as [Any], outputs as [Any]) {
+            if let Some(in_signal) = in_signal.and_then(|in_signal| in_signal.as_any_signal_ref()) {
+                out_signal.clone_from_ref(in_signal);
+            } else {
+                out_signal.clone_from_ref(self.default.as_ref());
+            }
         }
 
         Ok(())

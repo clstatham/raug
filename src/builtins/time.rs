@@ -247,25 +247,27 @@ impl Processor for FractDelay {
     fn process(
         &mut self,
         inputs: ProcessorInputs,
-        mut outputs: ProcessorOutputs,
+        outputs: ProcessorOutputs,
     ) -> Result<(), ProcessorError> {
-        let in_signal = inputs.input_as::<Float>(0)?;
-        let delay = inputs.input_as::<Float>(1)?;
+        for (input, delay, out) in iter_proc_io_as!(
+            inputs as [Float, Float],
+            outputs as [Float]
+        ) {
+            let delay = delay.unwrap_or_default();
 
-        let delay = delay.unwrap_or_default();
+            self.ring_buffer[self.head] = input.unwrap_or_default();
 
-        self.ring_buffer[self.head] = in_signal.unwrap_or_default();
+            let (index, delay_frac) = self.index_modulo(delay);
 
-        let (index, delay_frac) = self.index_modulo(delay);
+            let delayed = self.ring_buffer[index];
 
-        let delayed = self.ring_buffer[index];
+            let next_index = (index + 1) % self.ring_buffer.len();
+            let next = self.ring_buffer[next_index];
 
-        let next_index = (index + 1) % self.ring_buffer.len();
-        let next = self.ring_buffer[next_index];
+            *out = Some(lerp(delayed, next, delay_frac));
 
-        outputs.set_output_as(0, lerp(delayed, next, delay_frac))?;
-
-        self.head = (self.head + 1) % self.ring_buffer.len();
+            self.head = (self.head + 1) % self.ring_buffer.len();
+        }
 
         Ok(())
     }

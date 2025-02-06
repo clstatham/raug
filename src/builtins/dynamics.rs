@@ -77,31 +77,33 @@ impl Processor for PeakLimiter {
     fn process(
         &mut self,
         inputs: ProcessorInputs,
-        mut outputs: ProcessorOutputs,
+        outputs: ProcessorOutputs,
     ) -> Result<(), ProcessorError> {
-        let (in_signal, threshold, attack, release) =
-            inputs.as_tuple::<(Float, Float, Float, Float)>()?;
+        for (in_signal, threshold, attack, release, out) in raug_macros::iter_proc_io_as!(
+            inputs as [Float, Float, Float, Float],
+            outputs as [Float]
+        ) {
+            self.threshold = threshold.unwrap_or(self.threshold);
+            self.attack = attack.unwrap_or(self.attack);
+            self.release = release.unwrap_or(self.release);
 
-        self.threshold = threshold.unwrap_or(self.threshold);
-        self.attack = attack.unwrap_or(self.attack);
-        self.release = release.unwrap_or(self.release);
+            let Some(in_signal) = in_signal else {
+                *out = None;
+                continue;
+            };
 
-        let Some(in_signal) = in_signal else {
-            outputs.set_output_none(0);
-            return Ok(());
-        };
+            self.envelope = in_signal.abs().max(self.envelope * self.release);
 
-        self.envelope = in_signal.abs().max(self.envelope * self.release);
+            let target_gain = if self.envelope > self.threshold {
+                self.threshold / self.envelope
+            } else {
+                1.0
+            };
 
-        let target_gain = if self.envelope > self.threshold {
-            self.threshold / self.envelope
-        } else {
-            1.0
-        };
+            self.gain = self.gain * self.attack + target_gain * (1.0 - self.attack);
 
-        self.gain = self.gain * self.attack + target_gain * (1.0 - self.attack);
-
-        outputs.set_output_as(0, in_signal * self.gain)?;
+            *out = Some(in_signal * self.gain);
+        }
 
         Ok(())
     }
@@ -190,32 +192,34 @@ impl Processor for Compressor {
     fn process(
         &mut self,
         inputs: ProcessorInputs,
-        mut outputs: ProcessorOutputs,
+        outputs: ProcessorOutputs,
     ) -> Result<(), ProcessorError> {
-        let (in_signal, threshold, ratio, attack, release) =
-            inputs.as_tuple::<(Float, Float, Float, Float, Float)>()?;
+        for (in_signal, threshold, ratio, attack, release, out) in raug_macros::iter_proc_io_as!(
+            inputs as [Float, Float, Float, Float, Float],
+            outputs as [Float]
+        ) {
+            self.threshold = threshold.unwrap_or(self.threshold);
+            self.ratio = ratio.unwrap_or(self.ratio);
+            self.attack = attack.unwrap_or(self.attack);
+            self.release = release.unwrap_or(self.release);
 
-        self.threshold = threshold.unwrap_or(self.threshold);
-        self.ratio = ratio.unwrap_or(self.ratio);
-        self.attack = attack.unwrap_or(self.attack);
-        self.release = release.unwrap_or(self.release);
+            let Some(in_signal) = in_signal else {
+                *out = None;
+                continue;
+            };
 
-        let Some(in_signal) = in_signal else {
-            outputs.set_output_none(0);
-            return Ok(());
-        };
+            self.envelope = in_signal.abs().max(self.envelope * self.release);
 
-        self.envelope = in_signal.abs().max(self.envelope * self.release);
+            let target_gain = if self.envelope > self.threshold {
+                self.threshold + (self.envelope - self.threshold) / self.ratio
+            } else {
+                self.envelope
+            };
 
-        let target_gain = if self.envelope > self.threshold {
-            self.threshold + (self.envelope - self.threshold) / self.ratio
-        } else {
-            self.envelope
-        };
+            self.gain = self.gain * self.attack + target_gain * (1.0 - self.attack);
 
-        self.gain = self.gain * self.attack + target_gain * (1.0 - self.attack);
-
-        outputs.set_output_as(0, in_signal * self.gain)?;
+            *out = Some(in_signal * self.gain);
+        }
 
         Ok(())
     }
@@ -330,40 +334,43 @@ impl Processor for RmsCompressor {
     fn process(
         &mut self,
         inputs: ProcessorInputs,
-        mut outputs: ProcessorOutputs,
+        outputs: ProcessorOutputs,
     ) -> Result<(), ProcessorError> {
-        let (in_signal, threshold, ratio, attack, release, window_size) =
-            inputs.as_tuple::<(Float, Float, Float, Float, Float, Float)>()?;
+        for (in_signal, threshold, ratio, attack, release, window_size, out) in raug_macros::iter_proc_io_as!(
+            inputs as [Float, Float, Float, Float, Float, Float],
+            outputs as [Float]
+        ) {
+            self.threshold = threshold.unwrap_or(self.threshold);
+            self.ratio = ratio.unwrap_or(self.ratio);
+            self.attack = attack.unwrap_or(self.attack);
+            self.release = release.unwrap_or(self.release);
+            self.window_size = window_size.unwrap_or(self.window_size);
 
-        self.threshold = threshold.unwrap_or(self.threshold);
-        self.ratio = ratio.unwrap_or(self.ratio);
-        self.attack = attack.unwrap_or(self.attack);
-        self.release = release.unwrap_or(self.release);
-        self.window_size = window_size.unwrap_or(self.window_size);
+            let Some(in_signal) = in_signal else {
+                *out = None;
+                continue;
+            };
 
-        let Some(in_signal) = in_signal else {
-            outputs.set_output_none(0);
-            return Ok(());
-        };
+            self.window.rotate_left(1);
+            self.window[0] = in_signal.powi(2);
 
-        self.window.rotate_left(1);
-        self.window[0] = in_signal.powi(2);
+            let window_size = (self.window_size * inputs.sample_rate()) as usize;
 
-        let window_size = (self.window_size * inputs.sample_rate()) as usize;
+            self.rms =
+                self.window[..window_size].iter().sum::<Float>() / self.window.len() as Float;
+            self.rms = self.rms.sqrt();
+            self.envelope = self.rms.max(self.envelope * self.release);
 
-        self.rms = self.window[..window_size].iter().sum::<Float>() / self.window.len() as Float;
-        self.rms = self.rms.sqrt();
-        self.envelope = self.rms.max(self.envelope * self.release);
+            let target_gain = if self.envelope > self.threshold {
+                self.threshold + (self.envelope - self.threshold) / self.ratio
+            } else {
+                self.envelope
+            };
 
-        let target_gain = if self.envelope > self.threshold {
-            self.threshold + (self.envelope - self.threshold) / self.ratio
-        } else {
-            self.envelope
-        };
+            self.gain = self.gain * self.attack + target_gain * (1.0 - self.attack);
 
-        self.gain = self.gain * self.attack + target_gain * (1.0 - self.attack);
-
-        outputs.set_output_as(0, in_signal * self.gain)?;
+            *out = Some(in_signal * self.gain);
+        }
 
         Ok(())
     }

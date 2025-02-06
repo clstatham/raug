@@ -1,6 +1,8 @@
 use criterion::{criterion_group, criterion_main, Criterion};
 use raug::prelude::*;
 
+mod generative1;
+
 const SAMPLE_RATE: Float = 48_000.0;
 const BLOCK_SIZES: &[usize] = &[128, 512, 2048];
 
@@ -43,6 +45,43 @@ pub fn bench_demo(c: &mut Criterion) {
     group.finish();
 }
 
+fn make_sine(graph: &GraphBuilder, freq: Float, amp: Float) -> Node {
+    let sine = graph.add(SineOscillator::default());
+    sine.input("frequency").connect(freq);
+    sine * amp
+}
+
+pub fn bench_big_graph(c: &mut Criterion) {
+    let graph = GraphBuilder::new();
+
+    let out1 = graph.add_audio_output();
+
+    let mut sine = make_sine(&graph, 440.0, 0.01);
+
+    for _ in 0..1000 {
+        sine = make_sine(&graph, 440.0, 0.2) + sine;
+    }
+
+    sine.output(0).connect(&out1.input(0));
+
+    let mut runtime = graph.build_runtime();
+
+    let mut group = c.benchmark_group(name("big_graph"));
+
+    for &block_size in BLOCK_SIZES {
+        runtime.allocate_for_block_size(SAMPLE_RATE, block_size);
+
+        group.throughput(criterion::Throughput::Elements(block_size as u64));
+        group.bench_function(format!("block_size_{}", block_size), |b| {
+            b.iter(|| {
+                runtime.process().unwrap();
+            });
+        });
+    }
+
+    group.finish();
+}
+
 // pub fn bench_generative1(c: &mut Criterion) {
 //     let num_tones = 20;
 //     let graph = generative1::generative1(num_tones);
@@ -66,7 +105,9 @@ pub fn bench_demo(c: &mut Criterion) {
 // }
 
 criterion_group!(
-    benches, bench_demo,
+    benches,
+    bench_big_graph,
+    // bench_demo,
     // bench_generative1
 );
 criterion_main!(benches);

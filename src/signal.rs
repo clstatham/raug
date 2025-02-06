@@ -686,6 +686,18 @@ impl AnySignalOpt {
         }
     }
 
+    #[inline]
+    pub fn as_type<T: Signal>(&self) -> Option<T> {
+        if self.signal_type() == T::signal_type() {
+            match self.try_into_any_signal() {
+                Ok(signal) => T::try_from_any_signal(signal),
+                Err(_) => None,
+            }
+        } else {
+            None
+        }
+    }
+
     /// Attempts to cast the signal to the given signal type.
     ///
     /// Currently, the following conversions are supported:
@@ -1112,7 +1124,7 @@ impl SignalBuffer {
     }
 
     /// Fills the buffer with `None`.
-    pub fn fill_default(&mut self) {
+    pub fn fill_none(&mut self) {
         match self {
             Self::Float(buffer) => buffer.fill(None),
             Self::Int(buffer) => buffer.fill(None),
@@ -1125,7 +1137,7 @@ impl SignalBuffer {
     pub fn fill_with_hint(&mut self, type_hint: &SignalType) {
         let signal_type = self.signal_type();
         if signal_type.is_compatible_with(type_hint) {
-            self.fill_default();
+            self.fill_none();
         } else {
             *self = Self::new_of_type(type_hint, self.len());
         }
@@ -1393,35 +1405,3 @@ impl FromIterator<MidiMessage> for SignalBuffer {
         })
     }
 }
-
-pub trait SignalTuple {
-    type Options;
-
-    fn from_inputs(inputs: &[AnySignalOptRef]) -> Option<Self::Options>;
-}
-
-macro_rules! impl_signal_tuple {
-    ($($name:ident),*) => {
-        #[allow(non_snake_case)]
-        impl<$($name: Signal),*> SignalTuple for ($($name,)*) {
-            type Options = ($(Option<$name>,)*);
-
-            fn from_inputs(inputs: &[AnySignalOptRef]) -> Option<Self::Options> {
-                let [$($name,)*] = inputs else {
-                    return None;
-                };
-
-                Some(($($name.as_any_signal_ref().and_then(|sig| sig.as_type::<$name>()).copied(),)*))
-            }
-        }
-    };
-}
-
-impl_signal_tuple!(A);
-impl_signal_tuple!(A, B);
-impl_signal_tuple!(A, B, C);
-impl_signal_tuple!(A, B, C, D);
-impl_signal_tuple!(A, B, C, D, E);
-impl_signal_tuple!(A, B, C, D, E, F);
-impl_signal_tuple!(A, B, C, D, E, F, G);
-impl_signal_tuple!(A, B, C, D, E, F, G, H);

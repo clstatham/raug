@@ -125,23 +125,20 @@ impl Processor for Register {
     fn process(
         &mut self,
         inputs: ProcessorInputs,
-        mut outputs: ProcessorOutputs,
+        outputs: ProcessorOutputs,
     ) -> Result<(), ProcessorError> {
-        let set = inputs.input(0)?.as_any_signal_ref();
-        let clear = inputs.input_as::<bool>(1)?;
+        for (set, clear, mut out) in iter_proc_io_as!(inputs as [Any, bool], outputs as [Any]) {
+            if let Some(set) = set {
+                self.value.clone_from_ref(set);
+            }
 
-        if let Some(set) = set {
-            self.value = set.to_owned().into_any_signal_opt();
-        }
+            if clear.unwrap_or_default() {
+                self.value.as_mut().set_none();
+            }
 
-        if clear.is_some() {
-            self.value.as_mut().set_none();
-        }
-
-        if let Ok(value) = self.value.try_into_any_signal() {
-            outputs.set_output(0, value)?;
-        } else {
-            outputs.set_output_none(0);
+            if let Some(value) = self.value.as_ref().as_any_signal_ref() {
+                out.clone_from_ref(value);
+            }
         }
 
         Ok(())

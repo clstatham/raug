@@ -38,7 +38,7 @@ pub mod prelude {
         SignalBuffer, SignalType, PI, TAU,
     };
     pub use crate::util::*;
-    pub use raug_macros::Processor;
+    pub use raug_macros::{iter_proc_io_as, Processor};
     pub use std::time::Duration;
 
     #[cfg(feature = "fft")]

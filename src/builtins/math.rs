@@ -49,7 +49,7 @@ impl Processor for Constant {
         _inputs: ProcessorInputs,
         mut outputs: ProcessorOutputs,
     ) -> Result<(), ProcessorError> {
-        outputs.set_output(0, self.value)?;
+        outputs.output(0).fill(self.value.into_any_signal_opt());
 
         Ok(())
     }
@@ -92,14 +92,14 @@ impl Processor for MidiToFreq {
     fn process(
         &mut self,
         inputs: ProcessorInputs,
-        mut outputs: ProcessorOutputs,
+        outputs: ProcessorOutputs,
     ) -> Result<(), ProcessorError> {
-        let note = inputs.input_as::<Float>(0)?;
-        if let Some(note) = note {
-            let freq = 2.0_f64.powf((note - 69.0) / 12.0) * 440.0;
-            outputs.set_output_as(0, freq)?;
-        } else {
-            outputs.set_output_none(0);
+        for (note, freq) in raug_macros::iter_proc_io_as!(inputs as [Float], outputs as [Float]) {
+            if let Some(note) = note {
+                *freq = Some(2.0_f64.powf((note - 69.0) / 12.0) * 440.0);
+            } else {
+                *freq = None;
+            }
         }
 
         Ok(())
@@ -136,14 +136,14 @@ impl Processor for FreqToMidi {
     fn process(
         &mut self,
         inputs: ProcessorInputs,
-        mut outputs: ProcessorOutputs,
+        outputs: ProcessorOutputs,
     ) -> Result<(), ProcessorError> {
-        let freq = inputs.input_as::<Float>(0)?;
-        if let Some(freq) = freq {
-            let note = 69.0 + 12.0 * (freq / 440.0).log2();
-            outputs.set_output_as(0, note)?;
-        } else {
-            outputs.set_output_none(0);
+        for (freq, note) in raug_macros::iter_proc_io_as!(inputs as [Float], outputs as [Float]) {
+            if let Some(freq) = freq {
+                *note = Some(12.0 * (freq / 440.0).log2() + 69.0);
+            } else {
+                *note = None;
+            }
         }
 
         Ok(())
@@ -156,16 +156,16 @@ macro_rules! impl_binary_proc {
         #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
         #[doc = $doc]
         pub struct $name {
-            a: AnySignal,
-            b: AnySignal,
+            a: AnySignalOpt,
+            b: AnySignalOpt,
         }
 
         impl $name {
             #[doc = concat!("Creates a new `", stringify!($name), "` processor.")]
             pub fn new(signal_type: SignalType) -> Self {
                 Self {
-                    a: AnySignal::default_of_type(&signal_type),
-                    b: AnySignal::default_of_type(&signal_type),
+                    a: AnySignalOpt::default_of_type(&signal_type),
+                    b: AnySignalOpt::default_of_type(&signal_type),
                 }
             }
         }
@@ -186,53 +186,53 @@ macro_rules! impl_binary_proc {
             fn process(
                 &mut self,
                 inputs: ProcessorInputs,
-                mut outputs: ProcessorOutputs,
+                outputs: ProcessorOutputs,
             ) -> Result<(), ProcessorError> {
-                let in1 = inputs.input(0)?.as_any_signal_ref();
-                let in2 = inputs.input(1)?.as_any_signal_ref();
-
-                if let Some(in1) = in1 {
-                    if in1.signal_type() != self.a.signal_type() {
-                        return Err(ProcessorError::InputSpecMismatch {
-                            index: 0,
-                            expected: self.a.signal_type(),
-                            actual: in1.signal_type(),
-                        });
+                for (in1, in2, out) in raug_macros::iter_proc_io_as!(inputs as [Any, Any], outputs as [Any]) {
+                    if let Some(in1) = in1 {
+                        if in1.signal_type() != self.a.signal_type() {
+                            return Err(ProcessorError::InputSpecMismatch {
+                                index: 0,
+                                expected: self.a.signal_type(),
+                                actual: in1.signal_type(),
+                            });
+                        }
+                        self.a.clone_from_ref(in1);
+                    } else {
+                        out.set_none();
+                        return Ok(());
                     }
-                    self.a.clone_from_ref(in1);
-                } else {
-                    outputs.set_output_none(0);
-                    return Ok(());
+
+                    if let Some(in2) = in2 {
+                        if in2.signal_type() != self.b.signal_type() {
+                            return Err(ProcessorError::InputSpecMismatch {
+                                index: 1,
+                                expected: self.b.signal_type(),
+                                actual: in2.signal_type(),
+                            });
+                        }
+                        self.b.clone_from_ref(in2);
+                    } else {
+                        out.set_none();
+                        return Ok(());
+                    }
+
+                    match out {
+                        $(AnySignalOptMut::$data(sample) => {
+                            let a = self.a.as_type::<$ty>().unwrap();
+                            let b = self.b.as_type::<$ty>().unwrap();
+                            *sample = Some(a.$method(b));
+                        })*
+                        sample => {
+                            return Err(ProcessorError::OutputSpecMismatch {
+                                index: 0,
+                                expected: self.a.signal_type(),
+                                actual: sample.signal_type(),
+                            });
+                        }
+                    }
                 }
 
-                if let Some(in2) = in2 {
-                    if in2.signal_type() != self.b.signal_type() {
-                        return Err(ProcessorError::InputSpecMismatch {
-                            index: 1,
-                            expected: self.b.signal_type(),
-                            actual: in2.signal_type(),
-                        });
-                    }
-                    self.b.clone_from_ref(in2);
-                } else {
-                    outputs.set_output_none(0);
-                    return Ok(());
-                }
-
-                match outputs.output(0) {
-                    $(AnySignalOptMut::$data(sample) => {
-                        let a = *self.a.as_type::<$ty>().unwrap();
-                        let b = *self.b.as_type::<$ty>().unwrap();
-                        *sample = Some(a.$method(b));
-                    })*
-                    sample => {
-                        return Err(ProcessorError::OutputSpecMismatch {
-                            index: 0,
-                            expected: self.a.signal_type(),
-                            actual: sample.signal_type(),
-                        });
-                    }
-                }
 
                 Ok(())
             }
@@ -307,14 +307,14 @@ macro_rules! impl_unary_proc {
         #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
         #[doc = $doc]
         pub struct $name {
-            a: AnySignal,
+            a: AnySignalOpt,
         }
 
         impl $name {
             #[doc = concat!("Creates a new `", stringify!($name), "` processor.")]
             pub fn new(signal_type: SignalType) -> Self {
                 Self {
-                    a: AnySignal::default_of_type(&signal_type),
+                    a: AnySignalOpt::default_of_type(&signal_type),
                 }
             }
         }
@@ -332,37 +332,38 @@ macro_rules! impl_unary_proc {
             fn process(
                 &mut self,
                 inputs: ProcessorInputs,
-                mut outputs: ProcessorOutputs,
+                outputs: ProcessorOutputs,
             ) -> Result<(), ProcessorError> {
-                let a = inputs.input(0)?.as_any_signal_ref();
-
-                if let Some(a) = a {
-                    if a.signal_type() != self.a.signal_type() {
-                        return Err(ProcessorError::InputSpecMismatch {
-                            index: 0,
-                            expected: self.a.signal_type(),
-                            actual: a.signal_type(),
-                        });
+                for (a, out) in raug_macros::iter_proc_io_as!(inputs as [Any], outputs as [Any]) {
+                    if let Some(a) = a {
+                        if a.signal_type() != self.a.signal_type() {
+                            return Err(ProcessorError::InputSpecMismatch {
+                                index: 0,
+                                expected: self.a.signal_type(),
+                                actual: a.signal_type(),
+                            });
+                        }
+                        self.a.clone_from_ref(a);
+                    } else {
+                        out.set_none();
+                        return Ok(());
                     }
-                    self.a.clone_from_ref(a);
-                } else {
-                    outputs.set_output_none(0);
-                    return Ok(());
+
+                    match out {
+                        $(AnySignalOptMut::$data(sample) => {
+                            let a = self.a.as_type::<$ty>().unwrap();
+                            *sample = Some(a.$method());
+                        })*
+                        sample => {
+                            return Err(ProcessorError::OutputSpecMismatch {
+                                index: 0,
+                                expected: self.a.signal_type(),
+                                actual: sample.signal_type(),
+                            });
+                        }
+                    }
                 }
 
-                match outputs.output(0) {
-                    $(AnySignalOptMut::$data(sample) => {
-                        let a = self.a.as_type::<$ty>().unwrap();
-                        *sample = Some(a.$method());
-                    })*
-                    sample => {
-                        return Err(ProcessorError::OutputSpecMismatch {
-                            index: 0,
-                            expected: self.a.signal_type(),
-                            actual: sample.signal_type(),
-                        });
-                    }
-                }
 
                 Ok(())
             }

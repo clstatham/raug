@@ -17,9 +17,7 @@ use crate::prelude::*;
 /// | `0` | `note` | `Float` | The note number of the input MIDI message. |
 #[derive(Debug, Clone, Default)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct MidiNote {
-    note: Float,
-}
+pub struct MidiNote;
 
 #[cfg_attr(feature = "serde", typetag::serde)]
 impl Processor for MidiNote {
@@ -34,17 +32,15 @@ impl Processor for MidiNote {
     fn process(
         &mut self,
         inputs: ProcessorInputs,
-        mut outputs: ProcessorOutputs,
+        outputs: ProcessorOutputs,
     ) -> Result<(), ProcessorError> {
-        let midi = inputs.input_as::<MidiMessage>(0)?;
-
-        if let Some(msg) = midi {
-            if msg.status() == 0x90 {
-                self.note = msg.data1() as Float;
+        for (midi, note) in iter_proc_io_as!(inputs as [MidiMessage], outputs as [Float]) {
+            if let Some(msg) = midi {
+                if msg.status() == 0x90 {
+                    *note = Some(msg.data1() as Float);
+                }
             }
         }
-
-        outputs.set_output_as(0, self.note)?;
 
         Ok(())
     }
@@ -65,9 +61,7 @@ impl Processor for MidiNote {
 /// | `0` | `velocity` | `Float` | The velocity of the input MIDI message. |
 #[derive(Debug, Clone, Default)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct MidiVelocity {
-    velocity: Float,
-}
+pub struct MidiVelocity;
 
 #[cfg_attr(feature = "serde", typetag::serde)]
 impl Processor for MidiVelocity {
@@ -82,17 +76,15 @@ impl Processor for MidiVelocity {
     fn process(
         &mut self,
         inputs: ProcessorInputs,
-        mut outputs: ProcessorOutputs,
+        outputs: ProcessorOutputs,
     ) -> Result<(), ProcessorError> {
-        let midi = inputs.input_as::<MidiMessage>(0)?;
-
-        if let Some(msg) = midi {
-            if [0x90, 0x80, 0xa8].contains(&msg.status()) {
-                self.velocity = msg.data2() as Float;
+        for (midi, velocity) in iter_proc_io_as!(inputs as [MidiMessage], outputs as [Float]) {
+            if let Some(msg) = midi {
+                if msg.status() == 0x90 {
+                    *velocity = Some(msg.data2() as Float);
+                }
             }
         }
-
-        outputs.set_output_as(0, self.velocity)?;
 
         Ok(())
     }
@@ -130,19 +122,19 @@ impl Processor for MidiGate {
     fn process(
         &mut self,
         inputs: ProcessorInputs,
-        mut outputs: ProcessorOutputs,
+        outputs: ProcessorOutputs,
     ) -> Result<(), ProcessorError> {
-        let midi = inputs.input_as::<MidiMessage>(0)?;
+        for (midi, gate) in iter_proc_io_as!(inputs as [MidiMessage], outputs as [bool]) {
+            if let Some(msg) = midi {
+                if msg.status() == 0x90 {
+                    self.gate = msg.data2() > 0;
+                } else if msg.status() == 0x80 {
+                    self.gate = false;
+                }
 
-        if let Some(msg) = midi {
-            if msg.status() == 0x90 {
-                self.gate = msg.data2() > 0;
-            } else if msg.status() == 0x80 {
-                self.gate = false;
+                *gate = Some(self.gate);
             }
         }
-
-        outputs.set_output_as(0, self.gate)?;
 
         Ok(())
     }
@@ -178,13 +170,15 @@ impl Processor for MidiTrigger {
     fn process(
         &mut self,
         inputs: ProcessorInputs,
-        mut outputs: ProcessorOutputs,
+        outputs: ProcessorOutputs,
     ) -> Result<(), ProcessorError> {
-        let midi = inputs.input_as::<MidiMessage>(0)?;
-
-        if let Some(msg) = midi {
-            if msg.status() == 0x90 && msg.data2() > 0 {
-                outputs.set_output_as(0, true)?;
+        for (midi, trigger) in iter_proc_io_as!(inputs as [MidiMessage], outputs as [bool]) {
+            if let Some(msg) = midi {
+                if msg.status() == 0x90 && msg.data2() > 0 {
+                    *trigger = Some(true);
+                } else {
+                    *trigger = Some(false);
+                }
             }
         }
 
@@ -222,12 +216,12 @@ impl Processor for MidiChannel {
     fn process(
         &mut self,
         inputs: ProcessorInputs,
-        mut outputs: ProcessorOutputs,
+        outputs: ProcessorOutputs,
     ) -> Result<(), ProcessorError> {
-        let midi = inputs.input_as::<MidiMessage>(0)?;
-
-        if let Some(msg) = midi {
-            outputs.set_output_as(0, msg.channel() as Float)?;
+        for (midi, channel) in iter_proc_io_as!(inputs as [MidiMessage], outputs as [Float]) {
+            if let Some(msg) = midi {
+                *channel = Some(msg.channel() as Float);
+            }
         }
 
         Ok(())
