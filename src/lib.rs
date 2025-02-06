@@ -7,6 +7,7 @@
 pub mod builder;
 pub mod builtins;
 pub mod graph;
+pub mod midi;
 pub mod processor;
 pub mod runtime;
 pub mod signal;
@@ -29,16 +30,17 @@ pub mod prelude {
     };
     pub use crate::builtins::*;
     pub use crate::graph::Graph;
+    pub use crate::midi::MidiMessage;
     pub use crate::processor::{
         ProcEnv, Processor, ProcessorError, ProcessorInputs, ProcessorOutputs, SignalSpec,
     };
     pub use crate::runtime::{AudioBackend, AudioDevice, MidiPort, Runtime, RuntimeHandle};
     pub use crate::signal::{
-        AnySignal, AnySignalMut, AnySignalOpt, AnySignalRef, Buffer, Float, MidiMessage, Signal,
-        SignalBuffer, SignalType, PI, TAU,
+        AnySignal, AnySignalMut, AnySignalOpt, AnySignalRef, Buffer, Float, Signal, SignalBuffer,
+        SignalType, PI, TAU,
     };
     pub use crate::util::*;
-    pub use raug_macros::{iter_proc_io_as, Processor};
+    pub use raug_macros::{iter_proc_io_as, note, note_array, Processor};
     pub use std::time::Duration;
 
     #[cfg(feature = "fft")]

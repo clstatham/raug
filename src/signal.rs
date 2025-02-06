@@ -6,6 +6,8 @@ use std::{
     path::Path,
 };
 
+use crate::midi::MidiMessage;
+
 #[cfg(feature = "f32_samples")]
 /// The floating-point sample type.
 pub type Float = f32;
@@ -243,54 +245,6 @@ impl<'a, T: Signal> IntoIterator for &'a mut Buffer<T> {
     #[inline]
     fn into_iter(self) -> Self::IntoIter {
         self.buf.iter_mut()
-    }
-}
-
-/// A 3-byte MIDI message.
-#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Ord, Eq, Hash)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct MidiMessage {
-    /// The MIDI message data.
-    pub data: [u8; 3],
-}
-
-impl MidiMessage {
-    /// Creates a new MIDI message from the given data.
-    pub fn new(data: [u8; 3]) -> Self {
-        Self { data }
-    }
-
-    /// Returns the status byte of the MIDI message.
-    pub fn status(&self) -> u8 {
-        self.data[0] & 0xF0
-    }
-
-    /// Returns the channel of the MIDI message.
-    pub fn channel(&self) -> u8 {
-        self.data[0] & 0x0F
-    }
-
-    /// Returns the first data byte of the MIDI message.
-    pub fn data1(&self) -> u8 {
-        self.data[1]
-    }
-
-    /// Returns the second data byte of the MIDI message.
-    pub fn data2(&self) -> u8 {
-        self.data[2]
-    }
-}
-
-impl Deref for MidiMessage {
-    type Target = [u8; 3];
-    fn deref(&self) -> &Self::Target {
-        &self.data
-    }
-}
-
-impl DerefMut for MidiMessage {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.data
     }
 }
 

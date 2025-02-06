@@ -10,9 +10,10 @@ use petgraph::{
 use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::{
+    midi::MidiMessage,
     prelude::{Null, Param, Passthrough},
     processor::{Processor, ProcessorError},
-    signal::{Float, MidiMessage, SignalType},
+    signal::{Float, SignalType},
 };
 
 pub mod asset;

@@ -11,9 +11,10 @@ use rustc_hash::{FxBuildHasher, FxHashMap};
 
 use crate::{
     graph::{Graph, GraphRunError, GraphRunErrorType, NodeIndex},
+    midi::MidiMessage,
     prelude::{Param, ProcessorInputs, SignalSpec},
     processor::{ProcEnv, ProcessMode, ProcessorError, ProcessorOutputs},
-    signal::{Float, MidiMessage, SignalBuffer},
+    signal::{Float, SignalBuffer},
 };
 
 /// Errors that can occur related to the runtime.

@@ -44,19 +44,6 @@ pub fn fm_sine_osc(graph: &GraphBuilder, freq: &Node, mod_freq: &Node) -> Node {
     (phase * 2.0 * PI + mod_freq * 2.0 * PI).sin()
 }
 
-pub fn decay_env(graph: &GraphBuilder, trig: &Node, decay: &Node) -> Node {
-    let sr = graph.sample_rate();
-    let time = graph.add(PhaseAccumulator::default());
-    time.input(0).connect(sr.recip().output(0));
-    time.input(1).connect(trig.output(0));
-
-    let time = time % 1.0;
-
-    let env = (-&time + 1.0).powf(decay.recip());
-
-    env.smooth(0.001)
-}
-
 pub fn midi_to_freq(midi: Float) -> Float {
     440.0 * Float::powf(2.0, (midi - 69.0) / 12.0)
 }
