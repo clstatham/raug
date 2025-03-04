@@ -264,7 +264,7 @@ impl Processor for FractDelay {
             let next_index = (index + 1) % self.ring_buffer.len();
             let next = self.ring_buffer[next_index];
 
-            *out = Some(lerp(delayed, next, delay_frac));
+            out.set(lerp(delayed, next, delay_frac));
 
             self.head = (self.head + 1) % self.ring_buffer.len();
         }

@@ -51,7 +51,7 @@ impl AudioBuffer {
         let mut buffer = env.asset(&self.buffer).unwrap();
         let buffer = buffer.as_buffer_mut().unwrap();
         if self.write {
-            buffer[self.index as usize] = Some(self.input);
+            buffer[self.index as usize].set(self.input);
         }
 
         if self.index.fract() != 0.0 {
@@ -129,15 +129,15 @@ impl Processor for Register {
     ) -> Result<(), ProcessorError> {
         for (set, clear, mut out) in iter_proc_io_as!(inputs as [Any, bool], outputs as [Any]) {
             if let Some(set) = set {
-                self.value.clone_from_ref(set);
+                self.value = set;
             }
 
             if clear.unwrap_or_default() {
-                self.value.as_mut().set_none();
+                self.value.set_none();
             }
 
-            if let Some(value) = self.value.as_ref().as_any_signal_ref() {
-                out.clone_from_ref(value);
+            if self.value.is_some() {
+                out.set_any_opt(self.value);
             }
         }
 

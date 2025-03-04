@@ -69,7 +69,7 @@ impl Processor for Cond {
                         actual: then.signal_type(),
                     });
                 }
-                self.then.clone_from_ref(then);
+                self.then = then;
             }
 
             if let Some(else_) = else_ {
@@ -80,13 +80,13 @@ impl Processor for Cond {
                         actual: else_.signal_type(),
                     });
                 }
-                self.else_.clone_from_ref(else_);
+                self.else_ = else_;
             }
 
             if self.cond {
-                out.clone_from_opt_ref(self.then.as_ref());
+                out.set_any_opt(self.then);
             } else {
-                out.clone_from_opt_ref(self.else_.as_ref());
+                out.set_any_opt(self.else_);
             }
         }
 
@@ -145,7 +145,7 @@ macro_rules! comparison_op {
                                 actual: a.signal_type(),
                             });
                         }
-                        self.a.clone_from_ref(a);
+                        self.a = a;
                     } else {
                         *out = None;
                         return Ok(());
@@ -159,7 +159,7 @@ macro_rules! comparison_op {
                                 actual: b.signal_type(),
                             });
                         }
-                        self.b.clone_from_ref(b);
+                        self.b = b;
                     } else {
                         *out = None;
                         return Ok(());
@@ -173,18 +173,26 @@ macro_rules! comparison_op {
                         });
                     }
 
-                    match (&self.a, &self.b) {
-                        (AnySignalOpt::Bool(Some(a)), AnySignalOpt::Bool(Some(b))) => {
-                            *out = Some(*a $op *b);
+                    match (self.a, self.b) {
+                        (AnySignalOpt::Bool(a), AnySignalOpt::Bool(b)) => {
+                            let a = a.unwrap_or_default();
+                            let b = b.unwrap_or_default();
+                            *out = Some(a $op b);
                         }
-                        (AnySignalOpt::Int(Some(a)), AnySignalOpt::Int(Some(b))) => {
-                            *out = Some(*a $op *b);
+                        (AnySignalOpt::Int(a), AnySignalOpt::Int(b)) => {
+                            let a = a.unwrap_or_default();
+                            let b = b.unwrap_or_default();
+                            *out = Some(a $op b);
                         }
-                        (AnySignalOpt::Float(Some(a)), AnySignalOpt::Float(Some(b))) => {
-                            *out = Some(*a $op *b);
+                        (AnySignalOpt::Float(a), AnySignalOpt::Float(b)) => {
+                            let a = a.unwrap_or_default();
+                            let b = b.unwrap_or_default();
+                            *out = Some(a $op b);
                         }
-                        (AnySignalOpt::Midi(Some(a)), AnySignalOpt::Midi(Some(b))) => {
-                            *out = Some(*a $op *b);
+                        (AnySignalOpt::Midi(a), AnySignalOpt::Midi(b)) => {
+                            let a = a.unwrap_or_default();
+                            let b = b.unwrap_or_default();
+                            *out = Some(a $op b);
                         }
                         _ => unreachable!(),
                     }
@@ -366,13 +374,13 @@ impl Processor for Select {
         };
 
         for (sample_index, index) in index.iter().enumerate() {
-            let Some(index) = index else {
+            let Some(index) = index.into_option() else {
                 for j in 0..self.num_outputs {
                     outputs.output(j).set_none(sample_index);
                 }
                 continue;
             };
-            let index = *index as usize;
+            let index = index as usize;
             for j in 0..self.num_outputs {
                 if j == index {
                     if let Some(input) = input_signal.get(sample_index) {
@@ -431,11 +439,11 @@ impl Processor for Merge {
         };
 
         for (sample_index, index) in index.iter().enumerate() {
-            let Some(index) = index else {
+            let Some(index) = index.into_option() else {
                 outputs.output(0).set_none(sample_index);
                 continue;
             };
-            let index = *index as usize;
+            let index = index as usize;
             for i in 0..self.num_inputs {
                 let Some(input_signal) = inputs.input(i + 1) else {
                     outputs.output(0).set_none(sample_index);

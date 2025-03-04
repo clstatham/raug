@@ -37,7 +37,7 @@ impl Processor for MidiNote {
         for (midi, note) in iter_proc_io_as!(inputs as [MidiMessage], outputs as [Float]) {
             if let Some(msg) = midi {
                 if msg.status() == 0x90 {
-                    *note = Some(msg.data1() as Float);
+                    note.set(msg.data1() as Float);
                 }
             }
         }
@@ -81,7 +81,7 @@ impl Processor for MidiVelocity {
         for (midi, velocity) in iter_proc_io_as!(inputs as [MidiMessage], outputs as [Float]) {
             if let Some(msg) = midi {
                 if msg.status() == 0x90 {
-                    *velocity = Some(msg.data2() as Float);
+                    velocity.set(msg.data2() as Float);
                 }
             }
         }
@@ -220,7 +220,7 @@ impl Processor for MidiChannel {
     ) -> Result<(), ProcessorError> {
         for (midi, channel) in iter_proc_io_as!(inputs as [MidiMessage], outputs as [Float]) {
             if let Some(msg) = midi {
-                *channel = Some(msg.channel() as Float);
+                channel.set(msg.channel() as Float);
             }
         }
 

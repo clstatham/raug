@@ -1,7 +1,7 @@
 //! The audio graph processing runtime.
 
 use std::{
-    sync::{mpsc, Arc, Mutex},
+    sync::{Arc, Mutex, mpsc},
     time::Duration,
 };
 
@@ -12,7 +12,7 @@ use rustc_hash::{FxBuildHasher, FxHashMap};
 use crate::{
     graph::{Graph, GraphRunError, GraphRunErrorType, NodeIndex},
     midi::MidiMessage,
-    prelude::{Param, ProcessorInputs, SignalSpec},
+    prelude::{Optional, Param, ProcessorInputs, SignalSpec},
     processor::{ProcEnv, ProcessMode, ProcessorError, ProcessorOutputs},
     signal::{Float, SignalBuffer},
 };

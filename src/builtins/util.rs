@@ -87,7 +87,7 @@ impl Processor for Passthrough {
     ) -> Result<(), ProcessorError> {
         for (input, mut output) in iter_proc_io_as!(inputs as [Any], outputs as [Any]) {
             if let Some(input) = input {
-                output.clone_from_opt_ref(input);
+                output.set_any_opt(input);
             }
         }
 
@@ -139,9 +139,9 @@ impl Processor for Cast {
     ) -> Result<(), ProcessorError> {
         for (input, mut output) in iter_proc_io_as!(inputs as [Any], outputs as [Any]) {
             if let Some(input) = input {
-                if let Some(signal) = input.as_any_signal_ref() {
+                if let Some(signal) = input.try_into_any_signal() {
                     if let Some(cast) = signal.to_owned().cast(self.to) {
-                        output.clone_from_ref(cast.as_ref());
+                        output.set_any(cast);
                     } else {
                         return Err(ProcessorError::InvalidCast(signal.signal_type(), self.to));
                     }
@@ -214,9 +214,9 @@ impl Processor for Message {
                             actual: message.signal_type(),
                         });
                     }
-                    self.message.clone_from_ref(message);
+                    self.message = message;
                 }
-                output.clone_from_opt_ref(self.message.as_ref());
+                output.set_any_opt(self.message);
             }
         }
 
@@ -285,7 +285,7 @@ impl Processor for Print {
                         actual: message.signal_type(),
                     });
                 }
-                self.msg.clone_from_ref(message);
+                self.msg = message;
             }
 
             if trig.unwrap_or(false) {
@@ -327,7 +327,9 @@ impl Processor for SampleRate {
         inputs: ProcessorInputs,
         mut outputs: ProcessorOutputs,
     ) -> Result<(), ProcessorError> {
-        outputs.output(0).fill_as(inputs.sample_rate());
+        outputs
+            .output(0)
+            .fill_as::<Float>(OptSignal::<Float>::some(inputs.sample_rate()));
 
         Ok(())
     }
@@ -743,14 +745,14 @@ impl Processor for Param {
         outputs: ProcessorOutputs,
     ) -> Result<(), ProcessorError> {
         for (set, mut get) in iter_proc_io_as!(inputs as [Any], outputs as [Any]) {
-            if let Some(set) = set.and_then(|set| set.as_any_signal_ref()) {
+            if let Some(Some(set)) = set.map(|signal| signal.try_into_any_signal()) {
                 self.tx().send(set.to_owned());
             }
 
             if let Some(msg) = self.rx_mut().recv() {
-                get.clone_from_ref(msg.as_ref());
+                get.set_any(msg);
             } else if let Some(last) = self.rx().last() {
-                get.clone_from_ref(last.as_ref());
+                get.set_any(last);
             } else {
                 get.set_none();
             }
@@ -1052,9 +1054,11 @@ impl Processor for Dedup {
         outputs: ProcessorOutputs,
     ) -> Result<(), ProcessorError> {
         for (in_signal, mut out_signal) in iter_proc_io_as!(inputs as [Any], outputs as [Any]) {
-            if let Some(in_signal) = in_signal.and_then(|in_signal| in_signal.as_any_signal_ref()) {
-                if in_signal != self.last.unwrap_or_else(|| in_signal.to_owned()).as_ref() {
-                    out_signal.clone_from_ref(in_signal);
+            if let Some(Some(in_signal)) =
+                in_signal.map(|in_signal| in_signal.try_into_any_signal())
+            {
+                if in_signal != self.last.unwrap_or_else(|| in_signal.to_owned()) {
+                    out_signal.set_any(in_signal.to_owned());
                     self.last = Some(in_signal.to_owned());
                 }
             }
@@ -1106,13 +1110,13 @@ impl Processor for IsSome {
         outputs: ProcessorOutputs,
     ) -> Result<(), ProcessorError> {
         for (in_signal, mut out_signal) in iter_proc_io_as!(inputs as [Any], outputs as [Any]) {
-            if in_signal
-                .and_then(|in_signal| in_signal.as_any_signal_ref())
-                .is_some()
+            if let Some(Some(_)) = in_signal
+                .map(|in_signal| in_signal.try_into_any_signal())
+                .as_ref()
             {
-                out_signal.clone_from_ref(true.into_any_signal().as_ref());
+                out_signal.set(true);
             } else {
-                out_signal.clone_from_ref(false.into_any_signal().as_ref());
+                out_signal.set(false);
             }
         }
 
@@ -1162,13 +1166,13 @@ impl Processor for IsNone {
         outputs: ProcessorOutputs,
     ) -> Result<(), ProcessorError> {
         for (in_signal, mut out_signal) in iter_proc_io_as!(inputs as [Any], outputs as [Any]) {
-            if in_signal
-                .and_then(|in_signal| in_signal.as_any_signal_ref())
-                .is_some()
+            if let Some(Some(_)) = in_signal
+                .map(|in_signal| in_signal.try_into_any_signal())
+                .as_ref()
             {
-                out_signal.clone_from_ref(false.into_any_signal().as_ref());
+                out_signal.set(false);
             } else {
-                out_signal.clone_from_ref(true.into_any_signal().as_ref());
+                out_signal.set(true);
             }
         }
 
@@ -1220,10 +1224,13 @@ impl Processor for OrElse {
         outputs: ProcessorOutputs,
     ) -> Result<(), ProcessorError> {
         for (in_signal, mut out_signal) in iter_proc_io_as!(inputs as [Any], outputs as [Any]) {
-            if let Some(in_signal) = in_signal.and_then(|in_signal| in_signal.as_any_signal_ref()) {
-                out_signal.clone_from_ref(in_signal);
+            if let Some(Some(in_signal)) = in_signal
+                .map(|in_signal| in_signal.try_into_any_signal())
+                .as_ref()
+            {
+                out_signal.set_any(in_signal.to_owned());
             } else {
-                out_signal.clone_from_ref(self.default.as_ref());
+                out_signal.set_any(self.default.to_owned());
             }
         }
 

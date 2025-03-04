@@ -1,7 +1,7 @@
 use std::ops::{Deref, DerefMut};
 
 /// A 3-byte MIDI message.
-#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Ord, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Ord, Eq, Hash, Default)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct MidiMessage {
     /// The MIDI message data.

@@ -96,10 +96,10 @@ impl Processor for MidiToFreq {
         outputs: ProcessorOutputs,
     ) -> Result<(), ProcessorError> {
         for (note, freq) in raug_macros::iter_proc_io_as!(inputs as [Float], outputs as [Float]) {
-            if let Some(note) = note {
-                *freq = Some((2.0 as Float).powf((note - 69.0) / 12.0) * 440.0);
+            if let Some(note) = note.into_option() {
+                freq.set((2.0 as Float).powf((note - 69.0) / 12.0) * 440.0);
             } else {
-                *freq = None;
+                freq.set_none();
             }
         }
 
@@ -140,10 +140,10 @@ impl Processor for FreqToMidi {
         outputs: ProcessorOutputs,
     ) -> Result<(), ProcessorError> {
         for (freq, note) in raug_macros::iter_proc_io_as!(inputs as [Float], outputs as [Float]) {
-            if let Some(freq) = freq {
-                *note = Some(12.0 * (freq / 440.0).log2() + 69.0);
+            if let Some(freq) = freq.into_option() {
+                note.set(69.0 + 12.0 * (freq / 440.0).log2());
             } else {
-                *note = None;
+                note.set_none();
             }
         }
 
@@ -189,7 +189,7 @@ macro_rules! impl_binary_proc {
                 inputs: ProcessorInputs,
                 outputs: ProcessorOutputs,
             ) -> Result<(), ProcessorError> {
-                for (in1, in2, out) in raug_macros::iter_proc_io_as!(inputs as [Any, Any], outputs as [Any]) {
+                for (in1, in2, mut out) in raug_macros::iter_proc_io_as!(inputs as [Any, Any], outputs as [Any]) {
                     if let Some(in1) = in1 {
                         if in1.signal_type() != self.a.signal_type() {
                             return Err(ProcessorError::InputSpecMismatch {
@@ -198,7 +198,7 @@ macro_rules! impl_binary_proc {
                                 actual: in1.signal_type(),
                             });
                         }
-                        self.a.clone_from_ref(in1);
+                        self.a = in1;
                     } else {
                         out.set_none();
                         return Ok(());
@@ -212,7 +212,7 @@ macro_rules! impl_binary_proc {
                                 actual: in2.signal_type(),
                             });
                         }
-                        self.b.clone_from_ref(in2);
+                        self.b = in2;
                     } else {
                         out.set_none();
                         return Ok(());
@@ -220,9 +220,9 @@ macro_rules! impl_binary_proc {
 
                     match out {
                         $(AnySignalOptMut::$data(sample) => {
-                            let a = self.a.as_type::<$ty>().unwrap();
-                            let b = self.b.as_type::<$ty>().unwrap();
-                            *sample = Some(a.$method(b));
+                            let a = self.a.as_type::<$ty>().unwrap_or_default();
+                            let b = self.b.as_type::<$ty>().unwrap_or_default();
+                            sample.set(a.$method(b));
                         })*
                         sample => {
                             return Err(ProcessorError::OutputSpecMismatch {
@@ -335,7 +335,7 @@ macro_rules! impl_unary_proc {
                 inputs: ProcessorInputs,
                 outputs: ProcessorOutputs,
             ) -> Result<(), ProcessorError> {
-                for (a, out) in raug_macros::iter_proc_io_as!(inputs as [Any], outputs as [Any]) {
+                for (a, mut out) in raug_macros::iter_proc_io_as!(inputs as [Any], outputs as [Any]) {
                     if let Some(a) = a {
                         if a.signal_type() != self.a.signal_type() {
                             return Err(ProcessorError::InputSpecMismatch {
@@ -344,7 +344,7 @@ macro_rules! impl_unary_proc {
                                 actual: a.signal_type(),
                             });
                         }
-                        self.a.clone_from_ref(a);
+                        self.a = a;
                     } else {
                         out.set_none();
                         return Ok(());
@@ -353,7 +353,7 @@ macro_rules! impl_unary_proc {
                     match out {
                         $(AnySignalOptMut::$data(sample) => {
                             let a = self.a.as_type::<$ty>().unwrap();
-                            *sample = Some(a.$method());
+                            sample.set(a.$method());
                         })*
                         sample => {
                             return Err(ProcessorError::OutputSpecMismatch {

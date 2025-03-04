@@ -3,7 +3,7 @@ name = "raug"
 description = "raug - Rusty Audio Graphs"
 license = "MIT OR Apache-2.0"
 version = "0.0.4"
-edition = "2021"
+edition = "2024"
 documentation = "https://docs.rs/raug"
 repository = "https://github.com/clstatham/raug"
 
