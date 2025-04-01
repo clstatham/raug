@@ -37,7 +37,7 @@ pub mod prelude {
     pub use crate::runtime::{AudioBackend, AudioDevice, MidiPort, Runtime, RuntimeHandle};
     pub use crate::signal::{
         AnySignal, AnySignalOpt, Float, OptRepr, OptSignal, PI, Signal, SignalBuffer, SignalType,
-        TAU, buffer::Buffer,
+        TAU, buffer::Buffer, optional::Repr,
     };
     pub use crate::util::*;
     pub use raug_macros::{Processor, iter_proc_io_as, note, note_array};
