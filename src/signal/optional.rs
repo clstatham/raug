@@ -3,6 +3,23 @@ use std::{
     num::{NonZeroU32, NonZeroU64},
 };
 
+use super::{Float, Signal};
+
+pub trait Repr<T: Signal> {
+    fn from_signal(value: T) -> Self;
+    fn into_signal(self) -> T;
+}
+
+impl<T: Signal> Repr<T> for T {
+    fn from_signal(value: T) -> Self {
+        value
+    }
+
+    fn into_signal(self) -> T {
+        self
+    }
+}
+
 #[derive(Clone, Copy)]
 #[repr(transparent)]
 pub struct FloatRepr32(NonZeroU32);
@@ -113,6 +130,18 @@ impl From<f64> for FloatRepr64 {
 pub type FloatRepr = FloatRepr32;
 #[cfg(not(feature = "f32_samples"))]
 pub type FloatRepr = FloatRepr64;
+
+impl Repr<Float> for FloatRepr {
+    #[inline]
+    fn from_signal(value: Float) -> Self {
+        FloatRepr::new(value)
+    }
+
+    #[inline]
+    fn into_signal(self) -> Float {
+        self.get()
+    }
+}
 
 #[cfg(test)]
 mod tests {

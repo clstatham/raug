@@ -118,6 +118,7 @@ where
 {
     type Item = A::Item;
 
+    #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         match self {
             Ternary::A(a) => a.next(),

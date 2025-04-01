@@ -4,7 +4,7 @@ use std::{
     path::Path,
 };
 
-use super::{Float, Signal};
+use super::{Float, Signal, optional::Repr};
 
 /// A contiguous buffer of signals.
 ///
@@ -91,7 +91,7 @@ impl Buffer<Float> {
         let mut writer = hound::WavWriter::create(path, spec)?;
         for sample in self.buf.iter() {
             if let Some(sample) = sample.as_ref() {
-                writer.write_sample(*sample as f32)?;
+                writer.write_sample(sample.into_signal() as f32)?;
             } else {
                 writer.write_sample(0.0)?;
             }
@@ -105,7 +105,10 @@ impl Buffer<Float> {
     /// If the buffer is empty, this returns [`Float::MIN`].
     #[inline]
     pub fn max(&self) -> Float {
-        self.buf.iter().flatten().fold(Float::MIN, |a, b| a.max(*b))
+        self.buf
+            .iter()
+            .flatten()
+            .fold(Float::MIN, |a, b| a.max(b.into_signal()))
     }
 
     /// Returns the minimum value in the buffer out of all entries that are [`Some`].
@@ -113,7 +116,10 @@ impl Buffer<Float> {
     /// If the buffer is empty, this returns [`Float::MAX`].
     #[inline]
     pub fn min(&self) -> Float {
-        self.buf.iter().flatten().fold(Float::MAX, |a, b| a.min(*b))
+        self.buf
+            .iter()
+            .flatten()
+            .fold(Float::MAX, |a, b| a.min(b.into_signal()))
     }
 
     /// Returns the sum of all entries that are [`Some`].
@@ -121,7 +127,10 @@ impl Buffer<Float> {
     /// If the buffer is empty, this returns `0.0`.
     #[inline]
     pub fn sum(&self) -> Float {
-        self.buf.iter().flatten().fold(0.0, |a, b| a + *b)
+        self.buf
+            .iter()
+            .flatten()
+            .fold(0.0, |a, b| a + b.into_signal())
     }
 
     /// Returns the mean of all entries that are [`Some`].
@@ -139,7 +148,11 @@ impl Buffer<Float> {
     /// If the buffer is empty, this returns `0.0`.
     #[inline]
     pub fn rms(&self) -> Float {
-        self.buf.iter().flatten().fold(0.0, |a, b| a + b * b).sqrt()
+        self.buf
+            .iter()
+            .flatten()
+            .fold(0.0, |a, b| a + b.into_signal() * b.into_signal())
+            .sqrt()
     }
 
     /// Returns the variance of all entries that are [`Some`].
@@ -151,11 +164,9 @@ impl Buffer<Float> {
             return 0.0;
         }
         let mean = self.mean();
-        let sum = self
-            .buf
-            .iter()
-            .flatten()
-            .fold(0.0, |a, b| a + (b - mean) * (b - mean));
+        let sum = self.buf.iter().flatten().fold(0.0, |a, b| {
+            a + (b.into_signal() - mean) * (b.into_signal() - mean)
+        });
         sum / (self.len() - 1) as Float
     }
 

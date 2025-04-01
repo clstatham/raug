@@ -3,6 +3,7 @@
 use std::fmt::Debug;
 
 use buffer::Buffer;
+use optional::{FloatRepr, Repr};
 
 use crate::midi::MidiMessage;
 
@@ -43,7 +44,7 @@ mod sealed {
 
 /// A type that can be stored in a [`Buffer`] and processed by a [`Processor`](crate::processor::Processor).
 pub trait Signal: sealed::Sealed + Copy + Debug + Send + Sync + PartialEq + 'static {
-    type Repr: Copy + Debug + Send + Sync + PartialEq + 'static;
+    type Repr: Repr<Self> + Copy + Debug + Send + Sync + PartialEq + 'static;
 
     fn from_repr(repr: Self::Repr) -> Self;
     fn into_repr(self) -> Self::Repr;
@@ -107,15 +108,15 @@ impl<T: Signal> OptRepr<T> for Option<T::Repr> {
 }
 
 impl Signal for Float {
-    type Repr = Float;
+    type Repr = FloatRepr;
 
     fn from_repr(repr: Self::Repr) -> Self {
-        repr
+        repr.into_signal()
     }
 
     fn into_repr(self) -> Self::Repr {
         // FloatRepr::new(self)
-        self
+        Self::Repr::from_signal(self)
     }
 
     #[inline]

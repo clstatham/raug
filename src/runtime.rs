@@ -14,7 +14,7 @@ use crate::{
     midi::MidiMessage,
     prelude::{Param, ProcessorInputs, SignalSpec},
     processor::{ProcEnv, ProcessMode, ProcessorError, ProcessorOutputs},
-    signal::{Float, SignalBuffer},
+    signal::{Float, SignalBuffer, optional::Repr},
 };
 
 /// Errors that can occur related to the runtime.
@@ -403,7 +403,7 @@ impl Runtime {
                 };
 
                 for (j, &sample) in buffer[..actual_block_size].iter().enumerate() {
-                    output[sample_count + j] = sample.unwrap_or_default();
+                    output[sample_count + j] = sample.unwrap_or_default().into_signal();
                 }
             }
 
@@ -669,7 +669,7 @@ impl Runtime {
                                 panic!("output {channel_idx} signal type mismatch");
                             };
                             let value = buffer[frame_idx].unwrap_or_default();
-                            *sample = T::from_sample(value);
+                            *sample = T::from_sample(value.into_signal());
                         }
                     }
                 },

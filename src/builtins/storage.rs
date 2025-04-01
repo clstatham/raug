@@ -1,6 +1,6 @@
 //! Storage-related processors.
 
-use crate::prelude::*;
+use crate::{prelude::*, signal::optional::Repr};
 
 /// A processor that reads from and writes to a buffer of audio samples.
 ///
@@ -58,8 +58,8 @@ impl AudioBuffer {
             let pos_floor = self.index.floor() as usize;
             let pos_ceil = self.index.ceil() as usize;
 
-            let value_floor = buffer[pos_floor].unwrap_or_default();
-            let value_ceil = buffer[pos_ceil].unwrap_or_default();
+            let value_floor = buffer[pos_floor].unwrap_or_default().into_signal();
+            let value_ceil = buffer[pos_ceil].unwrap_or_default().into_signal();
 
             let t = self.index.fract();
 
@@ -73,7 +73,9 @@ impl AudioBuffer {
                 self.index = index as Float;
             }
 
-            self.out = buffer[self.index as usize].unwrap_or_default();
+            self.out = buffer[self.index as usize]
+                .unwrap_or_default()
+                .into_signal();
         }
 
         self.length = buffer.len() as i64;
