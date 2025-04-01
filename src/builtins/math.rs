@@ -96,10 +96,10 @@ impl Processor for MidiToFreq {
         outputs: ProcessorOutputs,
     ) -> Result<(), ProcessorError> {
         for (note, freq) in raug_macros::iter_proc_io_as!(inputs as [Float], outputs as [Float]) {
-            if let Some(note) = note.into_option() {
+            if let Some(note) = note {
                 freq.set((2.0 as Float).powf((note - 69.0) / 12.0) * 440.0);
             } else {
-                freq.set_none();
+                *freq = None;
             }
         }
 
@@ -140,10 +140,10 @@ impl Processor for FreqToMidi {
         outputs: ProcessorOutputs,
     ) -> Result<(), ProcessorError> {
         for (freq, note) in raug_macros::iter_proc_io_as!(inputs as [Float], outputs as [Float]) {
-            if let Some(freq) = freq.into_option() {
+            if let Some(freq) = freq {
                 note.set(69.0 + 12.0 * (freq / 440.0).log2());
             } else {
-                note.set_none();
+                *note = None;
             }
         }
 

@@ -87,8 +87,8 @@ impl Processor for PeakLimiter {
             self.attack = attack.unwrap_or(self.attack);
             self.release = release.unwrap_or(self.release);
 
-            let Some(in_signal) = in_signal.into_option() else {
-                out.set_none();
+            let Some(in_signal) = in_signal else {
+                *out = None;
                 continue;
             };
 
@@ -203,8 +203,8 @@ impl Processor for Compressor {
             self.attack = attack.unwrap_or(self.attack);
             self.release = release.unwrap_or(self.release);
 
-            let Some(in_signal) = in_signal.into_option() else {
-                out.set_none();
+            let Some(in_signal) = in_signal else {
+                *out = None;
                 continue;
             };
 
@@ -346,8 +346,8 @@ impl Processor for RmsCompressor {
             self.release = release.unwrap_or(self.release);
             self.window_size = window_size.unwrap_or(self.window_size);
 
-            let Some(in_signal) = in_signal.into_option() else {
-                out.set_none();
+            let Some(in_signal) = in_signal else {
+                *out = None;
                 continue;
             };
 

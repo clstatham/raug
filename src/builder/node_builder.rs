@@ -14,7 +14,7 @@ use super::graph_builder::GraphBuilder;
 #[track_caller]
 fn assert_signals_compatible(a: &SignalType, b: &SignalType, op: impl Into<String>) {
     assert!(
-        a.is_compatible_with(b),
+        a.is_same_as(b),
         "{}: signal types are not compatible: {:?} and {:?}",
         op.into(),
         a,

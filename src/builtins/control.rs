@@ -374,7 +374,7 @@ impl Processor for Select {
         };
 
         for (sample_index, index) in index.iter().enumerate() {
-            let Some(index) = index.into_option() else {
+            let Some(&index) = index.as_ref() else {
                 for j in 0..self.num_outputs {
                     outputs.output(j).set_none(sample_index);
                 }
@@ -439,7 +439,7 @@ impl Processor for Merge {
         };
 
         for (sample_index, index) in index.iter().enumerate() {
-            let Some(index) = index.into_option() else {
+            let Some(&index) = index.as_ref() else {
                 outputs.output(0).set_none(sample_index);
                 continue;
             };

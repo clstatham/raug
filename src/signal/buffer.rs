@@ -4,7 +4,7 @@ use std::{
     path::Path,
 };
 
-use super::{Float, OptSignal, Signal, optional::Optional};
+use super::{Float, Signal};
 
 /// A contiguous buffer of signals.
 ///
@@ -14,7 +14,7 @@ use super::{Float, OptSignal, Signal, optional::Optional};
 #[derive(PartialEq, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Buffer<T: Signal> {
-    buf: Vec<OptSignal<T>>,
+    buf: Vec<Option<T::Repr>>,
 }
 
 impl<T: Signal> Debug for Buffer<T> {
@@ -27,21 +27,16 @@ impl<T: Signal> Buffer<T> {
     /// Creates a new buffer of the given length filled with `None`.
     #[inline]
     pub fn zeros(length: usize) -> Self {
-        let mut buf = Vec::with_capacity(length);
-        for _ in 0..length {
-            buf.push(OptSignal::<T>::none());
+        Buffer {
+            buf: vec![None; length],
         }
-        Buffer { buf }
     }
 
     /// Clones the slice into a new buffer. All elements are wrapped in `Some`.
     #[inline]
     pub fn from_slice(value: &[T]) -> Self {
         Buffer {
-            buf: value
-                .iter()
-                .map(|v| OptSignal::<T>::from_option(Some(*v)))
-                .collect(),
+            buf: value.iter().map(|v| Some(v.into_repr())).collect(),
         }
     }
 
@@ -51,7 +46,7 @@ impl<T: Signal> Buffer<T> {
     ///
     /// This is faster than using [`Buffer::from_slice`] for large buffers that are already allocated.
     #[inline]
-    pub fn copy_from(&mut self, value: impl AsRef<[OptSignal<T>]>)
+    pub fn copy_from(&mut self, value: impl AsRef<[Option<T::Repr>]>)
     where
         T: Copy,
     {
@@ -95,7 +90,11 @@ impl Buffer<Float> {
         };
         let mut writer = hound::WavWriter::create(path, spec)?;
         for sample in self.buf.iter() {
-            writer.write_sample(sample.into_option().unwrap_or_default() as f32)?;
+            if let Some(sample) = sample.as_ref() {
+                writer.write_sample(*sample as f32)?;
+            } else {
+                writer.write_sample(0.0)?;
+            }
         }
         writer.finalize()?;
         Ok(())
@@ -106,10 +105,7 @@ impl Buffer<Float> {
     /// If the buffer is empty, this returns [`Float::MIN`].
     #[inline]
     pub fn max(&self) -> Float {
-        self.buf
-            .iter()
-            .filter_map(|v| v.into_option())
-            .fold(Float::MIN, |a, b| a.max(b))
+        self.buf.iter().flatten().fold(Float::MIN, |a, b| a.max(*b))
     }
 
     /// Returns the minimum value in the buffer out of all entries that are [`Some`].
@@ -117,10 +113,7 @@ impl Buffer<Float> {
     /// If the buffer is empty, this returns [`Float::MAX`].
     #[inline]
     pub fn min(&self) -> Float {
-        self.buf
-            .iter()
-            .filter_map(|v| v.into_option())
-            .fold(Float::MAX, |a, b| a.min(b))
+        self.buf.iter().flatten().fold(Float::MAX, |a, b| a.min(*b))
     }
 
     /// Returns the sum of all entries that are [`Some`].
@@ -128,10 +121,7 @@ impl Buffer<Float> {
     /// If the buffer is empty, this returns `0.0`.
     #[inline]
     pub fn sum(&self) -> Float {
-        self.buf
-            .iter()
-            .filter_map(|v| v.into_option())
-            .fold(0.0, |a, b| a + b)
+        self.buf.iter().flatten().fold(0.0, |a, b| a + *b)
     }
 
     /// Returns the mean of all entries that are [`Some`].
@@ -149,11 +139,7 @@ impl Buffer<Float> {
     /// If the buffer is empty, this returns `0.0`.
     #[inline]
     pub fn rms(&self) -> Float {
-        self.buf
-            .iter()
-            .filter_map(|v| v.into_option())
-            .fold(0.0, |a, b| a + b * b)
-            .sqrt()
+        self.buf.iter().flatten().fold(0.0, |a, b| a + b * b).sqrt()
     }
 
     /// Returns the variance of all entries that are [`Some`].
@@ -168,7 +154,7 @@ impl Buffer<Float> {
         let sum = self
             .buf
             .iter()
-            .filter_map(|v| v.into_option())
+            .flatten()
             .fold(0.0, |a, b| a + (b - mean) * (b - mean));
         sum / (self.len() - 1) as Float
     }
@@ -183,7 +169,7 @@ impl Buffer<Float> {
 }
 
 impl<T: Signal> Deref for Buffer<T> {
-    type Target = Vec<OptSignal<T>>;
+    type Target = Vec<Option<T::Repr>>;
     #[inline]
     fn deref(&self) -> &Self::Target {
         self.buf.as_ref()
@@ -197,16 +183,16 @@ impl<T: Signal> DerefMut for Buffer<T> {
     }
 }
 
-impl<T: Signal> AsRef<Vec<OptSignal<T>>> for Buffer<T> {
+impl<T: Signal> AsRef<Vec<Option<T::Repr>>> for Buffer<T> {
     #[inline]
-    fn as_ref(&self) -> &Vec<OptSignal<T>> {
+    fn as_ref(&self) -> &Vec<Option<T::Repr>> {
         self.buf.as_ref()
     }
 }
 
 impl<'a, T: Signal> IntoIterator for &'a Buffer<T> {
-    type Item = &'a OptSignal<T>;
-    type IntoIter = std::slice::Iter<'a, OptSignal<T>>;
+    type Item = &'a Option<T::Repr>;
+    type IntoIter = std::slice::Iter<'a, Option<T::Repr>>;
 
     #[inline]
     fn into_iter(self) -> Self::IntoIter {
@@ -215,8 +201,8 @@ impl<'a, T: Signal> IntoIterator for &'a Buffer<T> {
 }
 
 impl<'a, T: Signal> IntoIterator for &'a mut Buffer<T> {
-    type Item = &'a mut OptSignal<T>;
-    type IntoIter = std::slice::IterMut<'a, OptSignal<T>>;
+    type Item = &'a mut Option<T::Repr>;
+    type IntoIter = std::slice::IterMut<'a, Option<T::Repr>>;
 
     #[inline]
     fn into_iter(self) -> Self::IntoIter {
@@ -227,7 +213,7 @@ impl<'a, T: Signal> IntoIterator for &'a mut Buffer<T> {
 impl<T: Signal> FromIterator<T> for Buffer<T> {
     fn from_iter<I: IntoIterator<Item = T>>(iter: I) -> Self {
         Buffer {
-            buf: iter.into_iter().map(|v| OptSignal::<T>::some(v)).collect(),
+            buf: iter.into_iter().map(|v| Some(v.into_repr())).collect(),
         }
     }
 }

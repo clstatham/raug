@@ -3,7 +3,6 @@
 use std::fmt::Debug;
 
 use buffer::Buffer;
-use optional::{OptFloat, Optional};
 
 use crate::midi::MidiMessage;
 
@@ -44,7 +43,10 @@ mod sealed {
 
 /// A type that can be stored in a [`Buffer`] and processed by a [`Processor`](crate::processor::Processor).
 pub trait Signal: sealed::Sealed + Copy + Debug + Send + Sync + PartialEq + 'static {
-    type Optional: Optional<Self> + Debug + Clone + Copy + PartialEq + 'static;
+    type Repr: Copy + Debug + Send + Sync + PartialEq + 'static;
+
+    fn from_repr(repr: Self::Repr) -> Self;
+    fn into_repr(self) -> Self::Repr;
 
     /// The type of the signal.
     fn signal_type() -> SignalType;
@@ -62,10 +64,59 @@ pub trait Signal: sealed::Sealed + Copy + Debug + Send + Sync + PartialEq + 'sta
     fn try_convert_buffer_mut(buffer: &mut SignalBuffer) -> Option<&mut Buffer<Self>>;
 }
 
-pub type OptSignal<T> = <T as Signal>::Optional;
+pub type OptionRepr<T> = Option<<T as Signal>::Repr>;
+
+pub trait OptSignal<T: Signal> {
+    fn into_repr(self) -> Option<T::Repr>;
+    fn set_repr(&mut self, value: Option<T::Repr>);
+    fn set_none(&mut self);
+}
+
+impl<T: Signal> OptSignal<T> for Option<T> {
+    #[inline]
+    fn into_repr(self) -> Option<T::Repr> {
+        self.map(|v| v.into_repr())
+    }
+
+    #[inline]
+    fn set_repr(&mut self, value: Option<T::Repr>) {
+        *self = value.map(T::from_repr);
+    }
+
+    #[inline]
+    fn set_none(&mut self) {
+        *self = None;
+    }
+}
+
+pub trait OptRepr<T: Signal> {
+    fn into_signal(self) -> Option<T>;
+    fn set(&mut self, value: T);
+}
+
+impl<T: Signal> OptRepr<T> for Option<T::Repr> {
+    #[inline]
+    fn into_signal(self) -> Option<T> {
+        self.map(|v| T::from_repr(v))
+    }
+
+    #[inline]
+    fn set(&mut self, value: T) {
+        *self = Some(value.into_repr());
+    }
+}
 
 impl Signal for Float {
-    type Optional = OptFloat;
+    type Repr = Float;
+
+    fn from_repr(repr: Self::Repr) -> Self {
+        repr
+    }
+
+    fn into_repr(self) -> Self::Repr {
+        // FloatRepr::new(self)
+        self
+    }
 
     #[inline]
     fn signal_type() -> SignalType {
@@ -103,7 +154,15 @@ impl Signal for Float {
 }
 
 impl Signal for i64 {
-    type Optional = Option<i64>;
+    type Repr = i64;
+
+    fn from_repr(repr: Self::Repr) -> Self {
+        repr
+    }
+
+    fn into_repr(self) -> Self::Repr {
+        self
+    }
 
     #[inline]
     fn signal_type() -> SignalType {
@@ -141,7 +200,15 @@ impl Signal for i64 {
 }
 
 impl Signal for bool {
-    type Optional = Option<bool>;
+    type Repr = bool;
+
+    fn from_repr(repr: Self::Repr) -> Self {
+        repr
+    }
+
+    fn into_repr(self) -> Self::Repr {
+        self
+    }
 
     #[inline]
     fn signal_type() -> SignalType {
@@ -179,7 +246,15 @@ impl Signal for bool {
 }
 
 impl Signal for MidiMessage {
-    type Optional = Option<MidiMessage>;
+    type Repr = MidiMessage;
+
+    fn from_repr(repr: Self::Repr) -> Self {
+        repr
+    }
+
+    fn into_repr(self) -> Self::Repr {
+        self
+    }
 
     #[inline]
     fn signal_type() -> SignalType {
@@ -280,10 +355,10 @@ impl AnySignal {
     #[inline]
     pub fn into_any_signal_opt(self) -> AnySignalOpt {
         match self {
-            Self::Float(float) => AnySignalOpt::Float(OptSignal::<Float>::some(float)),
-            Self::Int(int) => AnySignalOpt::Int(OptSignal::<i64>::some(int)),
-            Self::Bool(bool) => AnySignalOpt::Bool(OptSignal::<bool>::some(bool)),
-            Self::Midi(midi) => AnySignalOpt::Midi(OptSignal::<MidiMessage>::some(midi)),
+            Self::Float(float) => AnySignalOpt::Float(Some(float)),
+            Self::Int(int) => AnySignalOpt::Int(Some(int)),
+            Self::Bool(bool) => AnySignalOpt::Bool(Some(bool)),
+            Self::Midi(midi) => AnySignalOpt::Midi(Some(midi)),
         }
     }
 
@@ -300,26 +375,26 @@ impl AnySignal {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum AnySignalOpt {
     /// A floating-point value.
-    Float(OptSignal<Float>),
+    Float(Option<Float>),
 
     /// An integer.
-    Int(OptSignal<i64>),
+    Int(Option<i64>),
 
     /// A boolean.
-    Bool(OptSignal<bool>),
+    Bool(Option<bool>),
 
     /// A MIDI message.
-    Midi(OptSignal<MidiMessage>),
+    Midi(Option<MidiMessage>),
 }
 
 impl AnySignalOpt {
     /// Creates a new signal of the given type with no value.
     pub fn default_of_type(signal_type: &SignalType) -> Self {
         match signal_type {
-            SignalType::Float => AnySignalOpt::Float(OptSignal::<Float>::none()),
-            SignalType::Int => AnySignalOpt::Int(OptSignal::<i64>::none()),
-            SignalType::Bool => AnySignalOpt::Bool(OptSignal::<bool>::none()),
-            SignalType::Midi => AnySignalOpt::Midi(OptSignal::<MidiMessage>::none()),
+            SignalType::Float => AnySignalOpt::Float(None),
+            SignalType::Int => AnySignalOpt::Int(None),
+            SignalType::Bool => AnySignalOpt::Bool(None),
+            SignalType::Midi => AnySignalOpt::Midi(None),
         }
     }
 
@@ -386,21 +461,15 @@ impl AnySignalOpt {
             return Some(*self);
         }
         match (self, target) {
-            (Self::Float(float), SignalType::Int) => {
-                float.map(|f| Self::Int(OptSignal::<i64>::some(f as i64)))
-            }
-            (Self::Float(float), SignalType::Bool) => {
-                float.map(|f| Self::Bool(OptSignal::<bool>::some(f != 0.0)))
-            }
-            (Self::Int(int), SignalType::Float) => {
-                int.map(|i| Self::Float(OptSignal::<Float>::some(i as Float)))
-            }
+            (Self::Float(float), SignalType::Int) => float.map(|f| Self::Int(Some(f as i64))),
+            (Self::Float(float), SignalType::Bool) => float.map(|f| Self::Bool(Some(f != 0.0))),
+            (Self::Int(int), SignalType::Float) => int.map(|i| Self::Float(Some(i as Float))),
             (Self::Int(int), SignalType::Bool) => int.map(|i| Self::Bool(Some(i != 0))),
             (Self::Bool(bool), SignalType::Float) => {
-                bool.map(|b| Self::Float(OptSignal::<Float>::some(if b { 1.0 } else { 0.0 })))
+                bool.map(|b| Self::Float(Some(if b { 1.0 } else { 0.0 })))
             }
             (Self::Bool(bool), SignalType::Int) => {
-                bool.map(|b| Self::Int(OptSignal::<i64>::some(if b { 1 } else { 0 })))
+                bool.map(|b| Self::Int(Some(if b { 1 } else { 0 })))
             }
 
             _ => None,
@@ -421,19 +490,19 @@ impl AnySignalOpt {
     #[inline]
     pub fn set_none(&mut self) {
         match self {
-            Self::Float(float) => *float = OptSignal::<Float>::none(),
-            Self::Int(int) => *int = OptSignal::<i64>::none(),
-            Self::Bool(bool) => *bool = OptSignal::<bool>::none(),
-            Self::Midi(midi) => *midi = OptSignal::<MidiMessage>::none(),
+            Self::Float(float) => *float = None,
+            Self::Int(int) => *int = None,
+            Self::Bool(bool) => *bool = None,
+            Self::Midi(midi) => *midi = None,
         }
     }
 }
 
 pub enum AnySignalOptMut<'a> {
-    Float(&'a mut OptSignal<Float>),
-    Int(&'a mut OptSignal<i64>),
-    Bool(&'a mut OptSignal<bool>),
-    Midi(&'a mut OptSignal<MidiMessage>),
+    Float(&'a mut OptionRepr<Float>),
+    Int(&'a mut OptionRepr<i64>),
+    Bool(&'a mut OptionRepr<bool>),
+    Midi(&'a mut OptionRepr<MidiMessage>),
 }
 
 impl AnySignalOptMut<'_> {
@@ -498,10 +567,10 @@ impl AnySignalOptMut<'_> {
     #[inline]
     pub fn set_any_opt(&mut self, value: AnySignalOpt) {
         match (self, value) {
-            (Self::Float(float), AnySignalOpt::Float(value)) => **float = value,
-            (Self::Int(int), AnySignalOpt::Int(value)) => **int = value,
-            (Self::Bool(bool), AnySignalOpt::Bool(value)) => **bool = value,
-            (Self::Midi(midi), AnySignalOpt::Midi(value)) => **midi = value,
+            (Self::Float(float), AnySignalOpt::Float(value)) => **float = value.into_repr(),
+            (Self::Int(int), AnySignalOpt::Int(value)) => **int = value.into_repr(),
+            (Self::Bool(bool), AnySignalOpt::Bool(value)) => **bool = value.into_repr(),
+            (Self::Midi(midi), AnySignalOpt::Midi(value)) => **midi = value.into_repr(),
             _ => panic!("Cannot set signal of different type"),
         }
     }
@@ -509,10 +578,10 @@ impl AnySignalOptMut<'_> {
     #[inline]
     pub fn set_none(&mut self) {
         match self {
-            Self::Float(float) => **float = OptSignal::<Float>::none(),
-            Self::Int(int) => **int = OptSignal::<i64>::none(),
-            Self::Bool(bool) => **bool = OptSignal::<bool>::none(),
-            Self::Midi(midi) => **midi = OptSignal::<MidiMessage>::none(),
+            Self::Float(float) => **float = None,
+            Self::Int(int) => **int = None,
+            Self::Bool(bool) => **bool = None,
+            Self::Midi(midi) => **midi = None,
         }
     }
 }
@@ -537,7 +606,7 @@ pub enum SignalType {
 impl SignalType {
     /// Returns `true` if the signal type is compatible with the other signal type.
     #[inline]
-    pub fn is_compatible_with(&self, other: &Self) -> bool {
+    pub fn is_same_as(&self, other: &Self) -> bool {
         matches!(
             (self, other),
             (Self::Float, Self::Float)
@@ -630,10 +699,18 @@ impl SignalBuffer {
     pub fn resize(&mut self, length: usize, value: impl Into<AnySignalOpt>) {
         let value = value.into();
         match (self, value) {
-            (Self::Float(buffer), AnySignalOpt::Float(value)) => buffer.resize(length, value),
-            (Self::Int(buffer), AnySignalOpt::Int(value)) => buffer.resize(length, value),
-            (Self::Bool(buffer), AnySignalOpt::Bool(value)) => buffer.resize(length, value),
-            (Self::Midi(buffer), AnySignalOpt::Midi(value)) => buffer.resize(length, value),
+            (Self::Float(buffer), AnySignalOpt::Float(value)) => {
+                buffer.resize(length, value.into_repr())
+            }
+            (Self::Int(buffer), AnySignalOpt::Int(value)) => {
+                buffer.resize(length, value.into_repr())
+            }
+            (Self::Bool(buffer), AnySignalOpt::Bool(value)) => {
+                buffer.resize(length, value.into_repr())
+            }
+            (Self::Midi(buffer), AnySignalOpt::Midi(value)) => {
+                buffer.resize(length, value.into_repr())
+            }
             _ => panic!("Cannot resize buffer with value of different type"),
         }
     }
@@ -646,10 +723,10 @@ impl SignalBuffer {
     pub fn fill(&mut self, value: impl Into<AnySignalOpt>) {
         let value = value.into();
         match (self, value) {
-            (Self::Float(buffer), AnySignalOpt::Float(value)) => buffer.fill(value),
-            (Self::Int(buffer), AnySignalOpt::Int(value)) => buffer.fill(value),
-            (Self::Bool(buffer), AnySignalOpt::Bool(value)) => buffer.fill(value),
-            (Self::Midi(buffer), AnySignalOpt::Midi(value)) => buffer.fill(value),
+            (Self::Float(buffer), AnySignalOpt::Float(value)) => buffer.fill(value.into_repr()),
+            (Self::Int(buffer), AnySignalOpt::Int(value)) => buffer.fill(value.into_repr()),
+            (Self::Bool(buffer), AnySignalOpt::Bool(value)) => buffer.fill(value.into_repr()),
+            (Self::Midi(buffer), AnySignalOpt::Midi(value)) => buffer.fill(value.into_repr()),
             _ => panic!("Cannot fill buffer with value of different type"),
         }
     }
@@ -657,17 +734,17 @@ impl SignalBuffer {
     /// Resizes the buffer to the given length, filling the new elements with `None`.
     pub fn resize_default(&mut self, length: usize) {
         match self {
-            Self::Float(buffer) => buffer.resize(length, OptSignal::<Float>::none()),
-            Self::Int(buffer) => buffer.resize(length, OptSignal::<i64>::none()),
-            Self::Bool(buffer) => buffer.resize(length, OptSignal::<bool>::none()),
-            Self::Midi(buffer) => buffer.resize(length, OptSignal::<MidiMessage>::none()),
+            Self::Float(buffer) => buffer.resize(length, None),
+            Self::Int(buffer) => buffer.resize(length, None),
+            Self::Bool(buffer) => buffer.resize(length, None),
+            Self::Midi(buffer) => buffer.resize(length, None),
         }
     }
 
     /// Resizes the buffer based on the given type hint.
     pub fn resize_with_hint(&mut self, length: usize, type_hint: &SignalType) {
         let signal_type = self.signal_type();
-        if signal_type.is_compatible_with(type_hint) {
+        if signal_type.is_same_as(type_hint) {
             self.resize_default(length);
         } else {
             *self = Self::new_of_type(type_hint, length);
@@ -677,17 +754,17 @@ impl SignalBuffer {
     /// Fills the buffer with `None`.
     pub fn fill_none(&mut self) {
         match self {
-            Self::Float(buffer) => buffer.fill(OptSignal::<Float>::none()),
-            Self::Int(buffer) => buffer.fill(OptSignal::<i64>::none()),
-            Self::Bool(buffer) => buffer.fill(OptSignal::<bool>::none()),
-            Self::Midi(buffer) => buffer.fill(OptSignal::<MidiMessage>::none()),
+            Self::Float(buffer) => buffer.fill(None),
+            Self::Int(buffer) => buffer.fill(None),
+            Self::Bool(buffer) => buffer.fill(None),
+            Self::Midi(buffer) => buffer.fill(None),
         }
     }
 
     /// Fills the buffer based on the given type hint.
     pub fn fill_with_hint(&mut self, type_hint: &SignalType) {
         let signal_type = self.signal_type();
-        if signal_type.is_compatible_with(type_hint) {
+        if signal_type.is_same_as(type_hint) {
             self.fill_none();
         } else {
             *self = Self::new_of_type(type_hint, self.len());
@@ -698,7 +775,10 @@ impl SignalBuffer {
     #[inline]
     pub fn get(&self, index: usize) -> Option<AnySignalOpt> {
         match self {
-            Self::Float(buffer) => buffer.get(index).copied().map(AnySignalOpt::Float),
+            Self::Float(buffer) => buffer
+                .get(index)
+                .copied()
+                .map(|v| AnySignalOpt::Float(v.into_signal())),
             Self::Int(buffer) => buffer.get(index).copied().map(AnySignalOpt::Int),
             Self::Bool(buffer) => buffer.get(index).copied().map(AnySignalOpt::Bool),
             Self::Midi(buffer) => buffer.get(index).copied().map(AnySignalOpt::Midi),
@@ -718,21 +798,15 @@ impl SignalBuffer {
 
     /// Returns the signal at the given index.
     #[inline]
-    pub fn get_as<S: Signal>(&self, index: usize) -> Option<&OptSignal<S>> {
-        S::try_convert_buffer(self)?.get(index)
-    }
-
-    /// Returns a copy of the signal at the given index.
-    #[inline]
-    pub fn get_copy_as<S: Signal + Copy>(&self, index: usize) -> OptSignal<S> {
-        self.get_as::<S>(index)
-            .copied()
-            .unwrap_or(OptSignal::<S>::none())
+    pub fn get_as<S: Signal>(&self, index: usize) -> Option<S> {
+        S::try_convert_buffer(self)?
+            .get(index)?
+            .map(|v| S::from_repr(v))
     }
 
     /// Returns a mutable reference to the signal at the given index.
     #[inline]
-    pub fn get_mut_as<S: Signal>(&mut self, index: usize) -> Option<&mut OptSignal<S>> {
+    pub fn get_mut_as<S: Signal>(&mut self, index: usize) -> Option<&mut Option<S::Repr>> {
         S::try_convert_buffer_mut(self)?.get_mut(index)
     }
 
@@ -744,10 +818,10 @@ impl SignalBuffer {
     #[inline]
     pub fn set(&mut self, index: usize, value: AnySignalOpt) {
         match (self, value) {
-            (Self::Float(buffer), AnySignalOpt::Float(value)) => buffer[index] = value,
-            (Self::Int(buffer), AnySignalOpt::Int(value)) => buffer[index] = value,
-            (Self::Bool(buffer), AnySignalOpt::Bool(value)) => buffer[index] = value,
-            (Self::Midi(buffer), AnySignalOpt::Midi(value)) => buffer[index] = value,
+            (Self::Float(buffer), AnySignalOpt::Float(value)) => buffer[index] = value.into_repr(),
+            (Self::Int(buffer), AnySignalOpt::Int(value)) => buffer[index] = value.into_repr(),
+            (Self::Bool(buffer), AnySignalOpt::Bool(value)) => buffer[index] = value.into_repr(),
+            (Self::Midi(buffer), AnySignalOpt::Midi(value)) => buffer[index] = value.into_repr(),
             (this, value) => {
                 panic!(
                     "Cannot set signal of different type: {:?} != {:?}",
@@ -762,10 +836,10 @@ impl SignalBuffer {
     /// Returns `true` if the signal was set successfully.
     #[cfg_attr(feature = "profiling", inline(never))]
     #[cfg_attr(not(feature = "profiling"), inline)]
-    pub fn set_as<S: Signal + Clone>(&mut self, index: usize, value: &OptSignal<S>) -> bool {
+    pub fn set_as<S: Signal + Clone>(&mut self, index: usize, value: Option<S>) -> bool {
         if let Some(buf) = S::try_convert_buffer_mut(self) {
             let slot = buf.get_mut(index).unwrap();
-            slot.clone_from(value); // `clone_from` is used to possibly avoid cloning the value twice
+            slot.clone_from(&value.into_repr()); // `clone_from` is used to possibly avoid cloning the value twice
             true
         } else {
             false
@@ -780,10 +854,10 @@ impl SignalBuffer {
     #[inline]
     pub fn set_none(&mut self, index: usize) {
         match self {
-            Self::Float(buffer) => buffer[index] = OptSignal::<Float>::none(),
-            Self::Int(buffer) => buffer[index] = OptSignal::<i64>::none(),
-            Self::Bool(buffer) => buffer[index] = OptSignal::<bool>::none(),
-            Self::Midi(buffer) => buffer[index] = OptSignal::<MidiMessage>::none(),
+            Self::Float(buffer) => buffer[index] = None,
+            Self::Int(buffer) => buffer[index] = None,
+            Self::Bool(buffer) => buffer[index] = None,
+            Self::Midi(buffer) => buffer[index] = None,
         }
     }
 
@@ -844,10 +918,12 @@ impl Iterator for SignalBufferIter<'_> {
     fn next(&mut self) -> Option<Self::Item> {
         if self.index < self.buffer.len() {
             let signal = match self.buffer {
-                SignalBuffer::Float(buffer) => AnySignalOpt::Float(buffer[self.index]),
-                SignalBuffer::Int(buffer) => AnySignalOpt::Int(buffer[self.index]),
-                SignalBuffer::Bool(buffer) => AnySignalOpt::Bool(buffer[self.index]),
-                SignalBuffer::Midi(buffer) => AnySignalOpt::Midi(buffer[self.index]),
+                SignalBuffer::Float(buffer) => {
+                    AnySignalOpt::Float(buffer[self.index].into_signal())
+                }
+                SignalBuffer::Int(buffer) => AnySignalOpt::Int(buffer[self.index].into_signal()),
+                SignalBuffer::Bool(buffer) => AnySignalOpt::Bool(buffer[self.index].into_signal()),
+                SignalBuffer::Midi(buffer) => AnySignalOpt::Midi(buffer[self.index].into_signal()),
             };
             self.index += 1;
             Some(signal)
@@ -890,16 +966,16 @@ impl<'a> Iterator for SignalBufferIterMut<'a> {
             unsafe {
                 let signal = match self.buffer {
                     SignalBuffer::Float(buffer) => AnySignalOptMut::Float(
-                        &mut *(&mut buffer[self.index] as *mut OptSignal<Float>),
+                        &mut *(&mut buffer[self.index] as *mut OptionRepr<Float>),
                     ),
-                    SignalBuffer::Int(buffer) => {
-                        AnySignalOptMut::Int(&mut *(&mut buffer[self.index] as *mut OptSignal<i64>))
-                    }
+                    SignalBuffer::Int(buffer) => AnySignalOptMut::Int(
+                        &mut *(&mut buffer[self.index] as *mut OptionRepr<i64>),
+                    ),
                     SignalBuffer::Bool(buffer) => AnySignalOptMut::Bool(
-                        &mut *(&mut buffer[self.index] as *mut OptSignal<bool>),
+                        &mut *(&mut buffer[self.index] as *mut OptionRepr<bool>),
                     ),
                     SignalBuffer::Midi(buffer) => AnySignalOptMut::Midi(
-                        &mut *(&mut buffer[self.index] as *mut OptSignal<MidiMessage>),
+                        &mut *(&mut buffer[self.index] as *mut OptionRepr<MidiMessage>),
                     ),
                 };
                 self.index += 1;

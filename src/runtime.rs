@@ -12,7 +12,7 @@ use rustc_hash::{FxBuildHasher, FxHashMap};
 use crate::{
     graph::{Graph, GraphRunError, GraphRunErrorType, NodeIndex},
     midi::MidiMessage,
-    prelude::{Optional, Param, ProcessorInputs, SignalSpec},
+    prelude::{Param, ProcessorInputs, SignalSpec},
     processor::{ProcEnv, ProcessMode, ProcessorError, ProcessorOutputs},
     signal::{Float, SignalBuffer},
 };
@@ -66,10 +66,6 @@ pub enum RuntimeError {
 
     /// An error occurred while processing a node in the audio graph.
     ProcessorError(#[from] ProcessorError),
-
-    /// The number of channels in the audio stream does not match the number of outputs in the graph.
-    #[error("Channel mismatch: expected {0} channels, got {1}")]
-    ChannelMismatch(usize, usize),
 }
 
 /// Result type for runtime operations.
@@ -403,7 +399,7 @@ impl Runtime {
             for (i, output) in outputs.iter_mut().enumerate() {
                 let buffer = self.get_output(i);
                 let Some(SignalBuffer::Float(buffer)) = buffer else {
-                    return Err(RuntimeError::ChannelMismatch(0, i));
+                    continue;
                 };
 
                 for (j, &sample) in buffer[..actual_block_size].iter().enumerate() {
@@ -529,14 +525,6 @@ impl Runtime {
 
         let config = cpal_device.default_output_config()?;
 
-        let channels = config.channels();
-        if self.graph.num_audio_outputs() != channels as usize {
-            return Err(RuntimeError::ChannelMismatch(
-                self.graph.num_audio_outputs(),
-                channels as usize,
-            ));
-        }
-
         log::info!("Configuration: {:#?}", config);
 
         let audio_rate = config.sample_rate().0 as Float;
@@ -659,6 +647,7 @@ impl Runtime {
         T: cpal::SizedSample + cpal::FromSample<Float>,
     {
         let channels = config.channels as usize;
+        let num_outputs = self.graph.num_audio_outputs();
 
         let mut last_block_size = 0;
         let stream = device
@@ -674,7 +663,7 @@ impl Runtime {
                     self.process().unwrap();
 
                     for (frame_idx, frame) in data.chunks_mut(channels).enumerate() {
-                        for (channel_idx, sample) in frame.iter_mut().enumerate() {
+                        for (channel_idx, sample) in frame[..num_outputs].iter_mut().enumerate() {
                             let buffer = self.get_output(channel_idx);
                             let Some(SignalBuffer::Float(buffer)) = buffer else {
                                 panic!("output {channel_idx} signal type mismatch");
