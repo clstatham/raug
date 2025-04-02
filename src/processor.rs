@@ -118,7 +118,7 @@ where
 {
     type Item = A::Item;
 
-    #[inline]
+    #[inline] // this function is ***VERY*** hot - do not change this (#[inline(always)] also slows it down for some reason)
     fn next(&mut self) -> Option<Self::Item> {
         match self {
             Ternary::A(a) => a.next(),
@@ -277,7 +277,7 @@ impl<'a, 'b> ProcessorInputs<'a, 'b> {
                     .unwrap()
                     .iter()
                     .copied()
-                    .map(|s| s.map(|s| S::from_repr(s))),
+                    .map(|s| s.map(S::from_repr)),
             ))
         } else {
             Err(ProcessorError::InputSpecMismatch {
