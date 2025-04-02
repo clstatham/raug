@@ -203,64 +203,7 @@ impl Processor for Message {
         inputs: ProcessorInputs,
         outputs: ProcessorOutputs,
     ) -> Result<(), ProcessorError> {
-        let raug::processor::ProcessorInputs {
-            input_specs,
-            inputs,
-            env,
-            ..
-        } = inputs;
-        let [in0, in1] = inputs else {
-            panic!("Expected {} inputs, got {}", 2usize, inputs.len());
-        };
-        let raug::processor::ProcessorOutputs {
-            output_spec,
-            outputs,
-            mode,
-            ..
-        } = outputs;
-        let [out0] = outputs else {
-            panic!("Expected {} outputs, got {}", 1usize, outputs.len());
-        };
-        let a = raug::processor::ProcessorInputs::new(
-            std::slice::from_ref(&input_specs[0usize]),
-            std::slice::from_ref(in0),
-            env,
-        );
-        let b = raug::processor::ProcessorInputs::new(
-            std::slice::from_ref(&input_specs[1usize]),
-            std::slice::from_ref(in1),
-            env,
-        );
-        let mut c = raug::processor::ProcessorOutputs::new(
-            std::slice::from_ref(&output_spec[0usize]),
-            std::slice::from_mut(out0),
-            mode,
-        );
-        for (trig, message, mut output) in raug::__itertools::izip!(
-            a.iter_input_as::<bool>(0)?,
-            b.iter_input(0),
-            c.iter_output_mut(0)
-        )
-        // raug::__itertools::izip!(
-        //     raug::processor::ProcessorInputs::new(
-        //         std::slice::from_ref(&input_specs[0usize]),
-        //         std::slice::from_ref(in0),
-        //         env,
-        //     )
-        //     .iter_input_as::<bool>(0)?,
-        //     raug::processor::ProcessorInputs::new(
-        //         std::slice::from_ref(&input_specs[1usize]),
-        //         std::slice::from_ref(in1),
-        //         env,
-        //     )
-        //     .iter_input(0),
-        //     raug::processor::ProcessorOutputs::new(
-        //         std::slice::from_ref(&output_spec[0usize]),
-        //         std::slice::from_mut(out0),
-        //         mode,
-        //     )
-        //     .iter_output_mut(0)
-        // )
+        for (trig, message, mut output) in iter_proc_io_as!(inputs as [bool, Any], outputs as [Any])
         {
             if trig.unwrap_or(false) {
                 if let Some(message) = message {
