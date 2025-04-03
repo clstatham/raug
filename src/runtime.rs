@@ -7,13 +7,12 @@ use std::{
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use petgraph::prelude::*;
-use rustc_hash::{FxBuildHasher, FxHashMap};
 
 use crate::{
     graph::{Graph, GraphRunError, GraphRunErrorType, NodeIndex},
     midi::MidiMessage,
-    prelude::{Param, ProcessorInputs, SignalSpec},
-    processor::{ProcEnv, ProcessMode, ProcessorError, ProcessorOutputs},
+    prelude::Param,
+    processor::{ProcEnv, ProcessMode, ProcessorError},
     signal::{Float, SignalBuffer, optional::Repr},
 };
 
@@ -112,28 +111,11 @@ pub enum MidiPort {
     Name(String),
 }
 
-#[derive(Clone)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub(crate) struct NodeBuffers {
-    input_spec: Vec<SignalSpec>,
-    outputs: Vec<SignalBuffer>,
-    output_spec: Vec<SignalSpec>,
-}
-
-impl NodeBuffers {
-    fn resize(&mut self, block_size: usize) {
-        for (spec, buffer) in self.output_spec.iter().zip(&mut self.outputs) {
-            buffer.resize_with_hint(block_size, &spec.signal_type);
-        }
-    }
-}
-
 /// The audio graph processing runtime.
 #[derive(Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Runtime {
     graph: Graph,
-    buffer_cache: FxHashMap<NodeIndex, NodeBuffers>,
     sample_rate: Float,
     block_size: usize,
     max_block_size: usize,
@@ -141,37 +123,8 @@ pub struct Runtime {
 
 impl Runtime {
     /// Creates a new runtime from the given graph.
-    pub fn new(mut graph: Graph) -> Self {
-        let mut buffer_cache =
-            FxHashMap::with_capacity_and_hasher(graph.digraph().node_count(), FxBuildHasher);
-
-        graph
-            .visit(|graph, node_id| -> RuntimeResult<()> {
-                let node = &graph.digraph()[node_id];
-                let output_spec = node.output_spec();
-
-                let mut outputs = Vec::with_capacity(output_spec.len());
-
-                for spec in output_spec {
-                    let buffer = SignalBuffer::new_of_type(&spec.signal_type, 0);
-                    outputs.push(buffer);
-                }
-
-                buffer_cache.insert(
-                    node_id,
-                    NodeBuffers {
-                        input_spec: node.input_spec().to_vec(),
-                        output_spec: output_spec.to_vec(),
-                        outputs,
-                    },
-                );
-
-                Ok(())
-            })
-            .unwrap();
-
+    pub fn new(graph: Graph) -> Self {
         Runtime {
-            buffer_cache,
             graph,
             sample_rate: 0.0,
             block_size: 0,
@@ -204,10 +157,6 @@ impl Runtime {
 
         self.graph.allocate(sample_rate, max_block_size);
         self.graph.resize_buffers(sample_rate, max_block_size);
-
-        for buffers in self.buffer_cache.values_mut() {
-            buffers.resize(max_block_size);
-        }
     }
 
     /// Resets the runtime for the given sample rate and block size.
@@ -226,10 +175,6 @@ impl Runtime {
         self.block_size = block_size;
 
         self.graph.resize_buffers(self.sample_rate, block_size);
-
-        for buffers in self.buffer_cache.values_mut() {
-            buffers.resize(block_size);
-        }
 
         Ok(())
     }
@@ -268,11 +213,11 @@ impl Runtime {
 
     #[cfg_attr(feature = "profiling", inline(never))]
     fn process_node(&mut self, node_id: NodeIndex, mode: ProcessMode) -> RuntimeResult<()> {
-        let num_inputs = self.buffer_cache[&node_id].input_spec.len();
+        let num_inputs = self.graph.digraph()[node_id].num_inputs();
 
         let mut inputs: smallvec::SmallVec<[_; 8]> = smallvec::smallvec![None; num_inputs];
 
-        let mut buffers = self.buffer_cache.remove(&node_id).unwrap();
+        let mut buffers = self.graph.digraph_mut()[node_id].outputs.take().unwrap();
 
         for (source_id, edge) in self
             .graph
@@ -280,30 +225,28 @@ impl Runtime {
             .edges_directed(node_id, Direction::Incoming)
             .map(|edge| (edge.source(), edge.weight()))
         {
-            let source_buffers = self.buffer_cache.get(&source_id).unwrap();
-            let buffer = &source_buffers.outputs[edge.source_output as usize];
+            let source_buffers = self.graph.digraph[source_id].outputs.as_ref().unwrap();
+            let buffer = &source_buffers[edge.source_output as usize] as *const SignalBuffer;
 
             inputs[edge.target_input as usize] = Some(buffer);
         }
 
-        let node = self.graph.digraph.node_weight_mut(node_id).unwrap();
+        let node = &mut self.graph.digraph[node_id];
 
-        for buffer in &mut buffers.outputs {
+        for buffer in &mut buffers {
             buffer.fill_none();
         }
 
         let result = node.process(
-            ProcessorInputs::new(
-                &buffers.input_spec,
-                &inputs[..],
-                ProcEnv {
-                    sample_rate: self.sample_rate,
-                    block_size: self.block_size,
-                    mode,
-                    assets: &self.graph.assets,
-                },
-            ),
-            ProcessorOutputs::new(&buffers.output_spec, &mut buffers.outputs, mode),
+            &inputs[..],
+            ProcEnv {
+                sample_rate: self.sample_rate,
+                block_size: self.block_size,
+                mode,
+                assets: &self.graph.assets,
+            },
+            &mut buffers,
+            mode,
         );
 
         if let Err(err) = result {
@@ -319,7 +262,7 @@ impl Runtime {
 
         drop(inputs);
 
-        self.buffer_cache.insert(node_id, buffers);
+        self.graph.digraph_mut()[node_id].outputs = Some(buffers);
 
         Ok(())
     }
@@ -327,17 +270,21 @@ impl Runtime {
     /// Returns a reference to the runtime's input buffer for the given input index.
     #[inline]
     pub fn get_input_mut(&mut self, input_index: usize) -> Option<&mut SignalBuffer> {
-        self.buffer_cache
-            .get_mut(self.graph.input_indices().get(input_index)?)
-            .map(|buffers| &mut buffers.outputs[0])
+        let input_index = *self.graph.input_indices().get(input_index)?;
+        self.graph
+            .digraph_mut()
+            .node_weight_mut(input_index)
+            .map(|buffers| &mut buffers.outputs.as_mut().unwrap()[0])
     }
 
     /// Returns a reference to the runtime's output buffer for the given output index.
     #[inline]
     pub fn get_output(&self, output_index: usize) -> Option<&SignalBuffer> {
-        self.buffer_cache
-            .get(self.graph.output_indices().get(output_index)?)
-            .map(|buffers| &buffers.outputs[0])
+        let output_index = *self.graph.output_indices().get(output_index)?;
+        self.graph
+            .digraph()
+            .node_weight(output_index)
+            .map(|buffers| &buffers.outputs.as_ref().unwrap()[0])
     }
 
     /// Returns a reference to the [`Param`] with the given name.
@@ -380,7 +327,7 @@ impl Runtime {
 
         self.allocate_for_block_size(sample_rate, block_size);
 
-        let num_outputs: usize = self.graph.num_audio_outputs();
+        let num_outputs = self.graph.num_audio_outputs();
 
         let mut outputs: Box<[Box<[Float]>]> =
             vec![vec![0.0; samples].into_boxed_slice(); num_outputs].into_boxed_slice();

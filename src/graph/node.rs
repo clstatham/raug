@@ -3,8 +3,9 @@
 use std::fmt::Debug;
 
 use crate::{
-    prelude::{Processor, ProcessorError, ProcessorInputs, ProcessorOutputs, SignalSpec},
-    signal::Float,
+    prelude::{ProcEnv, Processor, ProcessorError, ProcessorInputs, ProcessorOutputs, SignalSpec},
+    processor::ProcessMode,
+    signal::{Float, SignalBuffer},
 };
 
 /// A node in the audio graph that processes signals.
@@ -14,6 +15,7 @@ pub struct ProcessorNode {
     processor: Box<dyn Processor>,
     input_spec: Vec<SignalSpec>,
     output_spec: Vec<SignalSpec>,
+    pub(crate) outputs: Option<Vec<SignalBuffer>>,
 }
 
 impl Debug for ProcessorNode {
@@ -32,10 +34,15 @@ impl ProcessorNode {
     pub fn new_from_boxed(processor: Box<dyn Processor>) -> Self {
         let input_spec = processor.input_spec();
         let output_spec = processor.output_spec();
+        let mut outputs = Vec::with_capacity(output_spec.len());
+        for spec in output_spec.iter() {
+            outputs.push(SignalBuffer::new_of_type(&spec.signal_type, 0));
+        }
         Self {
             processor,
             input_spec,
             output_spec,
+            outputs: Some(outputs),
         }
     }
 
@@ -85,6 +92,13 @@ impl ProcessorNode {
     #[inline]
     pub fn allocate(&mut self, sample_rate: Float, max_block_size: usize) {
         self.processor.allocate(sample_rate, max_block_size);
+        for (spec, output) in self
+            .output_spec
+            .iter()
+            .zip(self.outputs.as_mut().unwrap().iter_mut())
+        {
+            output.resize_with_hint(max_block_size, &spec.signal_type);
+        }
     }
 
     /// Resizes the internal buffers of the processor and updates the sample rate and block size.
@@ -99,9 +113,21 @@ impl ProcessorNode {
     #[inline]
     pub fn process(
         &mut self,
-        inputs: ProcessorInputs,
-        outputs: ProcessorOutputs,
+        inputs: &[Option<*const SignalBuffer>],
+        env: ProcEnv<'_>,
+        outputs: &mut [SignalBuffer],
+        mode: ProcessMode,
     ) -> Result<(), ProcessorError> {
+        let inputs = ProcessorInputs {
+            input_specs: &self.input_spec,
+            inputs,
+            env,
+        };
+        let outputs = ProcessorOutputs {
+            output_spec: &self.output_spec,
+            outputs,
+            mode,
+        };
         self.processor.process(inputs, outputs)
     }
 }

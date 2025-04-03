@@ -118,7 +118,7 @@ where
 {
     type Item = A::Item;
 
-    #[inline] // this function is ***VERY*** hot - do not change this (#[inline(always)] also slows it down for some reason)
+    #[inline] // this function is ***VERY*** hot - do not change this
     fn next(&mut self) -> Option<Self::Item> {
         match self {
             Ternary::A(a) => a.next(),
@@ -159,23 +159,23 @@ impl ProcEnv<'_> {
 
 /// A collection of input signals for a [`Processor`] and their specifications.
 #[derive(Clone, Copy)]
-pub struct ProcessorInputs<'a, 'b> {
+pub struct ProcessorInputs<'a> {
     /// The specifications of the input signals.
     pub input_specs: &'a [SignalSpec],
 
     /// The input signals.
-    pub inputs: &'a [Option<&'b SignalBuffer>],
+    pub inputs: &'a [Option<*const SignalBuffer>],
 
     /// Environment information for the processor.
     pub env: ProcEnv<'a>,
 }
 
-impl<'a, 'b> ProcessorInputs<'a, 'b> {
+impl<'a> ProcessorInputs<'a> {
     /// Creates a new collection of input signals.
     #[inline]
     pub fn new(
         input_specs: &'a [SignalSpec],
-        inputs: &'a [Option<&'b SignalBuffer>],
+        inputs: &'a [Option<*const SignalBuffer>],
         env: ProcEnv<'a>,
     ) -> Self {
         Self {
@@ -221,9 +221,15 @@ impl<'a, 'b> ProcessorInputs<'a, 'b> {
     /// Returns the input signal at the given index. Unconnected inputs are represented as `None`.
     #[inline]
     pub fn input(&self, index: usize) -> Option<&SignalBuffer> {
-        self.inputs
+        let ptr = self
+            .inputs
             .get(index)
-            .and_then(|input| input.as_ref().copied())
+            .and_then(|input| input.as_ref().copied())?;
+        // SAFETY: The pointer is valid because ProcessorInputs is only created
+        // during `Runtime::process_node` which limits the lifetime of the inputs to the
+        // lifetime of that call.
+        let buffer = unsafe { &*ptr };
+        Some(buffer)
     }
 
     #[inline]
@@ -234,9 +240,8 @@ impl<'a, 'b> ProcessorInputs<'a, 'b> {
 
     /// Returns an iterator over the input signal at the given index.
     #[inline]
-    pub fn iter_input(&self, index: usize) -> impl Iterator<Item = Option<AnySignalOpt>> + use<'b> {
-        let buffer = &self.inputs[index];
-        if let Some(buffer) = buffer.as_ref() {
+    pub fn iter_input(&self, index: usize) -> impl Iterator<Item = Option<AnySignalOpt>> + use<'_> {
+        if let Some(buffer) = self.input(index) {
             if let ProcessMode::Sample(sample_index) = self.env.mode {
                 Ternary::B(std::iter::once(buffer.get(sample_index)))
             } else {
@@ -253,8 +258,7 @@ impl<'a, 'b> ProcessorInputs<'a, 'b> {
         &self,
         index: usize,
     ) -> Result<impl Iterator<Item = Option<S>> + '_, ProcessorError> {
-        let buffer = &self.inputs[index];
-        let Some(buffer) = buffer.as_ref() else {
+        let Some(buffer) = self.input(index) else {
             return Ok(Ternary::C(std::iter::repeat(None)));
         };
 
