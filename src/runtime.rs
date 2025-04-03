@@ -215,7 +215,7 @@ impl Runtime {
     fn process_node(&mut self, node_id: NodeIndex, mode: ProcessMode) -> RuntimeResult<()> {
         let num_inputs = self.graph.digraph()[node_id].num_inputs();
 
-        let mut inputs: smallvec::SmallVec<[_; 8]> = smallvec::smallvec![None; num_inputs];
+        let mut inputs: smallvec::SmallVec<[_; 32]> = smallvec::smallvec![None; num_inputs];
 
         let mut buffers = self.graph.digraph_mut()[node_id].outputs.take().unwrap();
 
