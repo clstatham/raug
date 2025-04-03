@@ -17,7 +17,7 @@
 - Runtime capable of running signal flow graphs, either in realtime or offline
 - Save rendered audio to WAV files
 - Uses `f64` audio samples by default (can be set to `f32` with cargo feature `f32_samples`)
-- Safe API: Very few `unsafe` blocks (currently only 1)
+- Safe API: Very few `unsafe` blocks (currently only 2)
 
 ## Examples
 

@@ -111,7 +111,7 @@ impl ProcessorNode {
 
     /// Processes the input signals and writes the output signals to the given buffers.
     #[inline]
-    pub fn process(
+    pub(crate) fn process(
         &mut self,
         inputs: &[Option<*const SignalBuffer>],
         env: ProcEnv<'_>,
