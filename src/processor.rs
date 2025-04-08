@@ -8,7 +8,6 @@ use thiserror::Error;
 
 use crate::{
     GraphSerde,
-    graph::asset::{AssetRef, Assets},
     signal::{
         AnySignal, AnySignalOpt, AnySignalOptMut, Float, OptRepr, OptSignal, Signal, SignalBuffer,
         SignalType,
@@ -16,7 +15,7 @@ use crate::{
 };
 
 /// Error type for [`Processor`] operations.
-#[derive(Debug, Clone, Error)]
+#[derive(Debug, Error)]
 pub enum ProcessorError {
     /// The number of inputs must match the number returned by [`Processor::num_inputs()`].
     #[error("The number of inputs must match the number returned by Processor::num_inputs()")]
@@ -64,11 +63,6 @@ pub enum ProcessorError {
 
     #[error("Asset `{0}` not found")]
     AssetNotFound(String),
-
-    #[cfg(feature = "fft")]
-    /// FFT error.
-    #[error("FFT error: {0}")]
-    Fft(#[from] crate::fft::FftError),
 
     #[error("Other error")]
     Other,
@@ -144,17 +138,10 @@ pub enum ProcessMode {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct ProcEnv<'a> {
-    pub assets: &'a Assets,
+pub struct ProcEnv {
     pub sample_rate: Float,
     pub block_size: usize,
     pub mode: ProcessMode,
-}
-
-impl ProcEnv<'_> {
-    pub fn asset(&self, name: &str) -> Option<AssetRef> {
-        self.assets.get(name)
-    }
 }
 
 /// A collection of input signals for a [`Processor`] and their specifications.
@@ -167,7 +154,7 @@ pub struct ProcessorInputs<'a> {
     pub inputs: &'a [Option<*const SignalBuffer>],
 
     /// Environment information for the processor.
-    pub env: ProcEnv<'a>,
+    pub env: ProcEnv,
 }
 
 impl<'a> ProcessorInputs<'a> {
@@ -176,7 +163,7 @@ impl<'a> ProcessorInputs<'a> {
     pub fn new(
         input_specs: &'a [SignalSpec],
         inputs: &'a [Option<*const SignalBuffer>],
-        env: ProcEnv<'a>,
+        env: ProcEnv,
     ) -> Self {
         Self {
             input_specs,
@@ -207,15 +194,6 @@ impl<'a> ProcessorInputs<'a> {
     #[inline]
     pub fn block_size(&self) -> usize {
         self.env.block_size
-    }
-
-    /// Returns the asset with the given name, if it exists.
-    #[inline]
-    pub fn asset(&self, name: &str) -> Result<AssetRef, ProcessorError> {
-        self.env
-            .assets
-            .get(name)
-            .ok_or_else(|| ProcessorError::AssetNotFound(name.into()))
     }
 
     /// Returns the input signal at the given index. Unconnected inputs are represented as `None`.

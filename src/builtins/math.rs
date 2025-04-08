@@ -55,13 +55,6 @@ impl Processor for Constant {
     }
 }
 
-impl GraphBuilder {
-    /// Adds a node that outputs a constant value every sample.
-    pub fn constant(&self, value: impl Signal + Clone) -> Node {
-        self.add(Constant::new(value))
-    }
-}
-
 /// A processor that converts MIDI note numbers to frequencies.
 ///
 /// # Inputs

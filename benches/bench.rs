@@ -18,7 +18,7 @@ fn name(name: &str) -> String {
 }
 
 pub fn bench_demo(c: &mut Criterion) {
-    let graph = GraphBuilder::new();
+    let graph = Graph::new();
 
     let out1 = graph.add_audio_output();
 
@@ -27,17 +27,15 @@ pub fn bench_demo(c: &mut Criterion) {
     let sine = sine * 0.2;
     sine.output(0).connect(&out1.input(0));
 
-    let mut runtime = graph.build_runtime();
-
     let mut group = c.benchmark_group(name("demo"));
 
     for &block_size in BLOCK_SIZES {
-        runtime.allocate_for_block_size(SAMPLE_RATE, block_size);
+        graph.allocate(SAMPLE_RATE, block_size);
 
         group.throughput(criterion::Throughput::Elements(block_size as u64));
         group.bench_function(format!("block_size_{}", block_size), |b| {
             b.iter(|| {
-                runtime.process().unwrap();
+                graph.process().unwrap();
             });
         });
     }
@@ -45,14 +43,14 @@ pub fn bench_demo(c: &mut Criterion) {
     group.finish();
 }
 
-fn make_sine(graph: &GraphBuilder, freq: Float, amp: Float) -> Node {
+fn make_sine(graph: &Graph, freq: Float, amp: Float) -> Node {
     let sine = graph.add(SineOscillator::default());
     sine.input("frequency").connect(freq);
     sine * amp
 }
 
 pub fn bench_big_graph(c: &mut Criterion) {
-    let graph = GraphBuilder::new();
+    let graph = Graph::new();
 
     let out1 = graph.add_audio_output();
 
@@ -64,17 +62,15 @@ pub fn bench_big_graph(c: &mut Criterion) {
 
     sine.output(0).connect(&out1.input(0));
 
-    let mut runtime = graph.build_runtime();
-
     let mut group = c.benchmark_group(name("big_graph"));
 
     for &block_size in BLOCK_SIZES {
-        runtime.allocate_for_block_size(SAMPLE_RATE, block_size);
+        graph.allocate(SAMPLE_RATE, block_size);
 
         group.throughput(criterion::Throughput::Elements(block_size as u64));
         group.bench_function(format!("block_size_{}", block_size), |b| {
             b.iter(|| {
-                runtime.process().unwrap();
+                graph.process().unwrap();
             });
         });
     }
@@ -86,17 +82,15 @@ pub fn bench_generative1(c: &mut Criterion) {
     let num_tones = 20;
     let graph = generative1::generative1(num_tones);
 
-    let mut runtime = graph.build_runtime();
-
     let mut group = c.benchmark_group(name(&format!("generative1_{}", num_tones)));
 
     for &block_size in BLOCK_SIZES {
-        runtime.allocate_for_block_size(SAMPLE_RATE, block_size);
+        graph.allocate(SAMPLE_RATE, block_size);
 
         group.throughput(criterion::Throughput::Elements(block_size as u64));
         group.bench_function(format!("block_size_{}", block_size), |b| {
             b.iter(|| {
-                runtime.process().unwrap();
+                graph.process().unwrap();
             });
         });
     }

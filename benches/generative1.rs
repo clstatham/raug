@@ -1,6 +1,6 @@
 use raug::{prelude::*, signal::PI};
 
-pub fn random(graph: &GraphBuilder, trig: &Node) -> Node {
+pub fn random(graph: &Graph, trig: &Node) -> Node {
     let noise = graph.add(NoiseOscillator::new());
     let snh = graph.add(SampleAndHold::default());
     trig.output(0).connect(&snh.input("trig"));
@@ -8,7 +8,7 @@ pub fn random(graph: &GraphBuilder, trig: &Node) -> Node {
     snh
 }
 
-pub fn pick_randomly(graph: &GraphBuilder, trig: &Node, options: &[Node]) -> Node {
+pub fn pick_randomly(graph: &Graph, trig: &Node, options: &[Node]) -> Node {
     let index = random(graph, trig);
     let index = index * (options.len() + 1) as Float;
     let index = index % options.len() as Float;
@@ -36,8 +36,8 @@ pub fn pick_randomly(graph: &GraphBuilder, trig: &Node, options: &[Node]) -> Nod
     merge
 }
 
-pub fn fm_sine_osc(graph: &GraphBuilder, freq: &Node, mod_freq: &Node) -> Node {
-    let sr = graph.sample_rate();
+pub fn fm_sine_osc(graph: &Graph, freq: &Node, mod_freq: &Node) -> Node {
+    let sr = graph.add(SampleRate);
     let phase = graph.add(PhaseAccumulator::default());
     let increment = freq / sr;
     phase.input(0).connect(increment.output(0));
@@ -68,7 +68,7 @@ pub fn scale_freqs(detune: Float) -> Vec<Float> {
 }
 
 pub fn random_tones(
-    graph: &GraphBuilder,
+    graph: &Graph,
     rates: &[Float],
     ratios: &[Float],
     freqs: &[Float],
@@ -123,13 +123,13 @@ pub fn random_tones(
     carrier * amp_env * amp
 }
 
-pub fn generative1(num_tones: usize) -> GraphBuilder {
+pub fn generative1(num_tones: usize) -> Graph {
     let ratios = [0.25, 0.5, 1.0, 2.0];
     let decays = [0.02, 0.1, 0.2, 0.5];
     let amps = [0.125, 0.25, 0.5, 0.8];
     let rates = [1. / 8., 1. / 4., 1. / 2., 1., 2.];
 
-    let graph = GraphBuilder::new();
+    let graph = Graph::new();
 
     let out1 = graph.add_audio_output();
     let out2 = graph.add_audio_output();

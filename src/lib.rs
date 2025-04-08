@@ -4,37 +4,28 @@
 #![allow(clippy::unnecessary_cast)]
 #![allow(clippy::excessive_precision)]
 
-pub mod builder;
 pub mod builtins;
 pub mod graph;
 pub mod midi;
 pub mod processor;
-pub mod runtime;
 pub mod signal;
 pub mod util;
-
-#[cfg(feature = "fft")]
-pub mod fft;
-
-#[cfg(feature = "fft")]
-pub use fft::builtins as fft_builtins;
 
 extern crate self as raug;
 
 /// Re-exports of commonly used types and traits from the crate.
 #[allow(unused_imports)]
 pub mod prelude {
-    pub use crate::builder::{
-        graph_builder::GraphBuilder,
-        node_builder::{Input, IntoNode, Node, Output},
-    };
     pub use crate::builtins::*;
-    pub use crate::graph::Graph;
+    pub use crate::graph::{
+        Graph,
+        node::{Input, IntoNode, Node, Output},
+        runtime::{AudioBackend, AudioDevice, AudioStream, CpalStream, MidiPort, WavFileOutStream},
+    };
     pub use crate::midi::MidiMessage;
     pub use crate::processor::{
         ProcEnv, Processor, ProcessorError, ProcessorInputs, ProcessorOutputs, SignalSpec,
     };
-    pub use crate::runtime::{AudioBackend, AudioDevice, MidiPort, Runtime, RuntimeHandle};
     pub use crate::signal::{
         AnySignal, AnySignalOpt, Float, OptRepr, OptSignal, PI, Signal, SignalBuffer, SignalType,
         TAU, buffer::Buffer, optional::Repr,
@@ -42,15 +33,6 @@ pub mod prelude {
     pub use crate::util::*;
     pub use raug_macros::{Processor, iter_proc_io_as, note, note_array};
     pub use std::time::Duration;
-
-    #[cfg(feature = "fft")]
-    pub use crate::fft::{
-        WindowFunction,
-        builder::{FftGraphBuilder, FftNode},
-        graph::FftGraph,
-        processor::{FftProcessor, FftSpec},
-        signal::{ComplexBuf, FftBufLength, FftSignal, FftSignalType, RealBuf},
-    };
 }
 
 #[doc(hidden)]

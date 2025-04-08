@@ -10,9 +10,6 @@ pub mod storage;
 pub mod time;
 pub mod util;
 
-#[cfg(feature = "fft")]
-pub mod simple_fft;
-
 pub use control::*;
 pub use dynamics::*;
 pub use filters::*;
@@ -22,9 +19,6 @@ pub use oscillators::*;
 pub use storage::*;
 pub use time::*;
 pub use util::*;
-
-#[cfg(feature = "fft")]
-pub use simple_fft::*;
 
 use crate::prelude::*;
 

@@ -2,7 +2,7 @@
 
 use cpal::traits::{DeviceTrait, HostTrait};
 
-use crate::runtime::AudioBackend;
+use crate::graph::runtime::AudioBackend;
 
 /// Returns a list of available audio backends, as exposed by the `cpal` crate.
 pub fn available_audio_backends() -> Vec<AudioBackend> {

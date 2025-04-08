@@ -335,13 +335,6 @@ impl Processor for SampleRate {
     }
 }
 
-impl GraphBuilder {
-    /// Adds a new [`SampleRate`] processor that continuously outputs the current sample rate.
-    pub fn sample_rate(&self) -> Node {
-        self.add(SampleRate)
-    }
-}
-
 /// A processor that smooths a signal to a target value using a smoothing factor.
 ///
 /// The output signal will converge to the target value with a speed determined by the smoothing factor.
@@ -592,6 +585,15 @@ impl Default for ParamChannel {
     }
 }
 
+#[derive(Debug)]
+pub(crate) struct ParamInner {
+    name: String,
+    channel: ParamChannel,
+    signal_type: SignalType,
+    minimum: Option<Float>,
+    maximum: Option<Float>,
+}
+
 /// A processor that can be used to control a parameter from outside the graph.
 ///
 /// # Inputs
@@ -607,22 +609,20 @@ impl Default for ParamChannel {
 /// | `0` | `get` | `Any` | The current value of the parameter. |
 #[derive(Clone, Debug)]
 pub struct Param {
-    name: String,
-    channel: ParamChannel,
-    signal_type: SignalType,
-    minimum: Option<Float>,
-    maximum: Option<Float>,
+    inner: Arc<ParamInner>,
 }
 
 impl Param {
     /// Creates a new `Param` processor with the given name and optional initial value.
     pub fn new<S: Signal>(name: impl Into<String>, initial_value: impl Into<Option<S>>) -> Self {
         let this = Self {
-            name: name.into(),
-            channel: ParamChannel::default(),
-            signal_type: S::signal_type(),
-            minimum: None,
-            maximum: None,
+            inner: Arc::new(ParamInner {
+                name: name.into(),
+                channel: ParamChannel::default(),
+                signal_type: S::signal_type(),
+                minimum: None,
+                maximum: None,
+            }),
         };
         if let Some(initial_value) = initial_value.into() {
             this.send(initial_value);
@@ -638,11 +638,13 @@ impl Param {
         maximum: impl Into<Option<Float>>,
     ) -> Self {
         let this = Self {
-            name: name.into(),
-            channel: ParamChannel::default(),
-            signal_type: SignalType::Float,
-            minimum: minimum.into(),
-            maximum: maximum.into(),
+            inner: Arc::new(ParamInner {
+                name: name.into(),
+                channel: ParamChannel::default(),
+                signal_type: SignalType::Float,
+                minimum: minimum.into(),
+                maximum: maximum.into(),
+            }),
         };
         if let Some(initial_value) = initial_value.into() {
             this.send(initial_value);
@@ -652,33 +654,28 @@ impl Param {
 
     /// Returns the name of the parameter.
     pub fn name(&self) -> &str {
-        &self.name
+        &self.inner.name
     }
 
     /// Returns the signal type of the parameter.
     pub fn signal_type(&self) -> SignalType {
-        self.signal_type
+        self.inner.signal_type
     }
 
     /// Returns the transmitter for the parameter.
     pub fn tx(&self) -> &SignalTx {
-        &self.channel.0
+        &self.inner.channel.0
     }
 
     /// Returns the receiver for the parameter.
     pub fn rx(&self) -> &ParamRx {
-        &self.channel.1
-    }
-
-    /// Returns a mutable reference to the receiver for the parameter.
-    pub fn rx_mut(&mut self) -> &mut ParamRx {
-        &mut self.channel.1
+        &self.inner.channel.1
     }
 
     /// Sends a value to the parameter.
     pub fn send(&self, message: impl Signal) {
         let message = message.into_any_signal();
-        match (message, self.minimum, self.maximum) {
+        match (message, self.inner.minimum, self.inner.maximum) {
             (AnySignal::Float(value), Some(min), Some(max)) => {
                 self.tx().send(AnySignal::Float(value.clamp(min, max)));
             }
@@ -696,7 +693,7 @@ impl Param {
     pub fn recv(&self) -> Option<AnySignal> {
         let message = self.rx().recv();
 
-        match (message, self.minimum, self.maximum) {
+        match (message, self.inner.minimum, self.inner.maximum) {
             (Some(AnySignal::Float(value)), Some(min), Some(max)) => {
                 Some(AnySignal::Float(value.clamp(min, max)))
             }
@@ -714,7 +711,7 @@ impl Param {
     pub fn last(&self) -> Option<AnySignal> {
         let last = self.rx().last();
 
-        match (last, self.minimum, self.maximum) {
+        match (last, self.inner.minimum, self.inner.maximum) {
             (Some(AnySignal::Float(value)), Some(min), Some(max)) => {
                 Some(AnySignal::Float(value.clamp(min, max)))
             }
@@ -732,11 +729,11 @@ impl Param {
 #[cfg_attr(feature = "serde", typetag::serde)]
 impl Processor for Param {
     fn input_spec(&self) -> Vec<SignalSpec> {
-        vec![SignalSpec::new("set", self.signal_type)]
+        vec![SignalSpec::new("set", self.signal_type())]
     }
 
     fn output_spec(&self) -> Vec<SignalSpec> {
-        vec![SignalSpec::new("get", self.signal_type)]
+        vec![SignalSpec::new("get", self.signal_type())]
     }
 
     fn process(
@@ -749,7 +746,7 @@ impl Processor for Param {
                 self.tx().send(set.to_owned());
             }
 
-            if let Some(msg) = self.rx_mut().recv() {
+            if let Some(msg) = self.rx().recv() {
                 get.set_any(msg);
             } else if let Some(last) = self.rx().last() {
                 get.set_any(last);
