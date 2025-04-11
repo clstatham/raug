@@ -20,7 +20,7 @@ use super::lerp;
 ///
 /// | Index | Name | Type | Description |
 /// | --- | --- | --- | --- |
-/// | `0` | `out` | `Float` | The output signal. |
+/// | `0` | `out` | `f32` | The output signal. |
 #[derive(Clone, Debug, Default)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Null;
@@ -307,7 +307,7 @@ impl Processor for Print {
 ///
 /// | Index | Name | Type | Description |
 /// | --- | --- | --- | --- |
-/// | `0` | `sample_rate` | `Float` | The sample rate. |
+/// | `0` | `sample_rate` | `f32` | The sample rate. |
 #[derive(Clone, Debug, Default)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct SampleRate;
@@ -327,9 +327,7 @@ impl Processor for SampleRate {
         inputs: ProcessorInputs,
         mut outputs: ProcessorOutputs,
     ) -> Result<(), ProcessorError> {
-        outputs
-            .output(0)
-            .fill_as::<Float>(Some(inputs.sample_rate()));
+        outputs.output(0).fill_as::<f32>(Some(inputs.sample_rate()));
 
         Ok(())
     }
@@ -343,30 +341,30 @@ impl Processor for SampleRate {
 ///
 /// | Index | Name | Type | Description |
 /// | --- | --- | --- | --- |
-/// | `0` | `target` | `Float` | The target value to smooth to. |
-/// | `1` | `factor` | `Float` | The smoothing factor. |
+/// | `0` | `target` | `f32` | The target value to smooth to. |
+/// | `1` | `factor` | `f32` | The smoothing factor. |
 ///
 /// # Outputs
 ///
 /// | Index | Name | Type | Description |
 /// | --- | --- | --- | --- |
-/// | `0` | `out` | `Float` | The smoothed output signal. |
+/// | `0` | `out` | `f32` | The smoothed output signal. |
 #[derive(Clone, Debug, Default, Processor)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "serde", processor_typetag)]
 pub struct Smooth {
     #[input]
-    target: Float,
+    target: f32,
     #[input]
-    factor: Float,
+    factor: f32,
 
     #[output]
-    out: Float,
+    out: f32,
 }
 
 impl Smooth {
     /// Create a new `Smooth` processor with the given target value and smoothing factor.
-    pub fn new(target: Float, factor: Float) -> Self {
+    pub fn new(target: f32, factor: f32) -> Self {
         Self {
             target,
             factor,
@@ -386,8 +384,8 @@ impl Smooth {
 ///
 /// | Index | Name | Type | Description |
 /// | --- | --- | --- | --- |
-/// | `0` | `in` | `Float` | The input signal. |
-/// | `1` | `threshold` | `Float` | The threshold for the change detection. |
+/// | `0` | `in` | `f32` | The input signal. |
+/// | `1` | `threshold` | `f32` | The threshold for the change detection. |
 ///
 /// # Outputs
 ///
@@ -398,11 +396,11 @@ impl Smooth {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "serde", processor_typetag)]
 pub struct Changed {
-    last: Option<Float>,
+    last: Option<f32>,
     #[input]
-    input: Float,
+    input: f32,
     #[input]
-    threshold: Float,
+    threshold: f32,
     include_none: bool,
 
     #[output]
@@ -411,7 +409,7 @@ pub struct Changed {
 
 impl Changed {
     /// Create a new `Changed` processor with the given threshold.
-    pub fn new(threshold: Float, include_none: bool) -> Self {
+    pub fn new(threshold: f32, include_none: bool) -> Self {
         Self {
             last: None,
             threshold,
@@ -438,7 +436,7 @@ impl Changed {
 ///
 /// | Index | Name | Type | Description |
 /// | --- | --- | --- | --- |
-/// | `0` | `in` | `Float` | The input signal. |
+/// | `0` | `in` | `f32` | The input signal. |
 ///
 /// # Outputs
 ///
@@ -449,10 +447,10 @@ impl Changed {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "serde", processor_typetag)]
 pub struct ZeroCrossing {
-    last: Float,
+    last: f32,
 
     #[input]
-    input: Float,
+    input: f32,
     #[output]
     out: bool,
 }
@@ -590,8 +588,8 @@ pub(crate) struct ParamInner {
     name: String,
     channel: ParamChannel,
     signal_type: SignalType,
-    minimum: Option<Float>,
-    maximum: Option<Float>,
+    minimum: Option<f32>,
+    maximum: Option<f32>,
 }
 
 /// A processor that can be used to control a parameter from outside the graph.
@@ -633,9 +631,9 @@ impl Param {
     /// Creates a new `Param` processor with the given name and optional initial value, minimum, and maximum.
     pub fn bounded(
         name: impl Into<String>,
-        initial_value: impl Into<Option<Float>>,
-        minimum: impl Into<Option<Float>>,
-        maximum: impl Into<Option<Float>>,
+        initial_value: impl Into<Option<f32>>,
+        minimum: impl Into<Option<f32>>,
+        maximum: impl Into<Option<f32>>,
     ) -> Self {
         let this = Self {
             inner: Arc::new(ParamInner {
@@ -766,8 +764,8 @@ impl serde::Serialize for Param {
         struct ParamSer {
             name: String,
             signal_type: SignalType,
-            minimum: Option<Float>,
-            maximum: Option<Float>,
+            minimum: Option<f32>,
+            maximum: Option<f32>,
             initial_value: Option<AnySignal>,
         }
 
@@ -792,8 +790,8 @@ impl<'de> serde::Deserialize<'de> for Param {
         struct ParamDe {
             name: String,
             signal_type: SignalType,
-            minimum: Option<Float>,
-            maximum: Option<Float>,
+            minimum: Option<f32>,
+            maximum: Option<f32>,
             initial_value: Option<AnySignal>,
         }
 
@@ -870,27 +868,27 @@ impl Counter {
 ///
 /// | Index | Name | Type | Description |
 /// | --- | --- | --- | --- |
-/// | `0` | `in` | `Float` | The input signal. |
+/// | `0` | `in` | `f32` | The input signal. |
 /// | `1` | `trig` | `Bool` | The trigger signal. |
 ///
 /// # Outputs
 ///
 /// | Index | Name | Type | Description |
 /// | --- | --- | --- | --- |
-/// | `0` | `out` | `Float` | The output signal. |
+/// | `0` | `out` | `f32` | The output signal. |
 #[derive(Clone, Debug, Default, Processor)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "serde", processor_typetag)]
 pub struct SampleAndHold {
-    last: Option<Float>,
+    last: Option<f32>,
 
     #[input]
-    input: Float,
+    input: f32,
     #[input]
     trig: bool,
 
     #[output]
-    out: Float,
+    out: f32,
 }
 
 impl SampleAndHold {
@@ -919,13 +917,13 @@ impl SampleAndHold {
 ///
 /// | Index | Name | Type | Description |
 /// | --- | --- | --- | --- |
-/// | `0` | `in` | `Float` | The input signal. |
+/// | `0` | `in` | `f32` | The input signal. |
 ///
 /// # Outputs
 ///
 /// | Index | Name | Type | Description |
 /// | --- | --- | --- | --- |
-/// | `0` | `out` | `Float` | The input signal passed through. |
+/// | `0` | `out` | `f32` | The input signal passed through. |
 #[derive(Clone, Debug, Default, Processor)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "serde", processor_typetag)]
@@ -933,9 +931,9 @@ pub struct CheckFinite {
     context: String,
 
     #[input]
-    input: Float,
+    input: f32,
     #[output]
-    out: Float,
+    out: f32,
 }
 
 impl CheckFinite {
@@ -964,21 +962,21 @@ impl CheckFinite {
 ///
 /// | Index | Name | Type | Description |
 /// | --- | --- | --- | --- |
-/// | `0` | `in` | `Float` | The input signal. |
+/// | `0` | `in` | `f32` | The input signal. |
 ///
 /// # Outputs
 ///
 /// | Index | Name | Type | Description |
 /// | --- | --- | --- | --- |
-/// | `0` | `out` | `Float` | The input signal passed through, or 0.0 if the input signal is NaN or infinite. |
+/// | `0` | `out` | `f32` | The input signal passed through, or 0.0 if the input signal is NaN or infinite. |
 #[derive(Clone, Debug, Default, Processor)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "serde", processor_typetag)]
 pub struct FiniteOrZero {
     #[input]
-    input: Float,
+    input: f32,
     #[output]
-    out: Float,
+    out: f32,
 }
 
 impl FiniteOrZero {

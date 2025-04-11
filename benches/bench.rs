@@ -3,18 +3,11 @@ use raug::prelude::*;
 
 mod generative1;
 
-const SAMPLE_RATE: Float = 48_000.0;
+const SAMPLE_RATE: f32 = 48_000.0;
 const BLOCK_SIZES: &[usize] = &[128, 512, 2048];
 
 fn name(name: &str) -> String {
-    #[cfg(feature = "f32_samples")]
-    {
-        format!("{}_f32", name)
-    }
-    #[cfg(not(feature = "f32_samples"))]
-    {
-        format!("{}_f64", name)
-    }
+    format!("{}_f32", name)
 }
 
 pub fn bench_demo(c: &mut Criterion) {
@@ -43,7 +36,7 @@ pub fn bench_demo(c: &mut Criterion) {
     group.finish();
 }
 
-fn make_sine(graph: &Graph, freq: Float, amp: Float) -> Node {
+fn make_sine(graph: &Graph, freq: f32, amp: f32) -> Node {
     let sine = graph.add(SineOscillator::default());
     sine.input("frequency").connect(freq);
     sine * amp

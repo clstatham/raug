@@ -8,35 +8,35 @@ use crate::prelude::*;
 ///
 /// | Index | Name | Type | Description |
 /// | --- | --- | --- | --- |
-/// | `0` | `in` | `Float` | The input signal. |
-/// | `1` | `threshold` | `Float` | The amplitude threshold of the limiter. |
-/// | `2` | `attack` | `Float` | The attack factor of the limiter. |
-/// | `3` | `release` | `Float` | The release factor of the limiter. |
+/// | `0` | `in` | `f32` | The input signal. |
+/// | `1` | `threshold` | `f32` | The amplitude threshold of the limiter. |
+/// | `2` | `attack` | `f32` | The attack factor of the limiter. |
+/// | `3` | `release` | `f32` | The release factor of the limiter. |
 ///
 /// # Outputs
 ///
 /// | Index | Name | Type | Description |
 /// | --- | --- | --- | --- |
-/// | `0` | `out` | `Float` | The output signal. |
+/// | `0` | `out` | `f32` | The output signal. |
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct PeakLimiter {
-    gain: Float,
-    envelope: Float,
+    gain: f32,
+    envelope: f32,
 
     /// The amplitude threshold of the limiter.
-    pub threshold: Float,
+    pub threshold: f32,
 
     /// The attack factor of the limiter.
-    pub attack: Float,
+    pub attack: f32,
 
     /// The release factor of the limiter.
-    pub release: Float,
+    pub release: f32,
 }
 
 impl PeakLimiter {
     /// Creates a new `PeakLimiter` processor with the given threshold, attack, and release.
-    pub fn new(threshold: Float, attack: Float, release: Float) -> Self {
+    pub fn new(threshold: f32, attack: f32, release: f32) -> Self {
         Self {
             threshold,
             attack,
@@ -80,8 +80,8 @@ impl Processor for PeakLimiter {
         outputs: ProcessorOutputs,
     ) -> Result<(), ProcessorError> {
         for (in_signal, threshold, attack, release, out) in raug_macros::iter_proc_io_as!(
-            inputs as [Float, Float, Float, Float],
-            outputs as [Float]
+            inputs as [f32, f32, f32, f32],
+            outputs as [f32]
         ) {
             self.threshold = threshold.unwrap_or(self.threshold);
             self.attack = attack.unwrap_or(self.attack);
@@ -115,39 +115,39 @@ impl Processor for PeakLimiter {
 ///
 /// | Index | Name | Type | Description |
 /// | --- | --- | --- | --- |
-/// | `0` | `in` | `Float` | The input signal. |
-/// | `1` | `threshold` | `Float` | The amplitude threshold of the compressor. |
-/// | `2` | `ratio` | `Float` | The compression ratio of the compressor. |
-/// | `3` | `attack` | `Float` | The attack factor of the compressor. |
-/// | `4` | `release` | `Float` | The release factor of the compressor. |
+/// | `0` | `in` | `f32` | The input signal. |
+/// | `1` | `threshold` | `f32` | The amplitude threshold of the compressor. |
+/// | `2` | `ratio` | `f32` | The compression ratio of the compressor. |
+/// | `3` | `attack` | `f32` | The attack factor of the compressor. |
+/// | `4` | `release` | `f32` | The release factor of the compressor. |
 ///
 /// # Outputs
 ///
 /// | Index | Name | Type | Description |
 /// | --- | --- | --- | --- |
-/// | `0` | `out` | `Float` | The output signal. |
+/// | `0` | `out` | `f32` | The output signal. |
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Compressor {
-    gain: Float,
-    envelope: Float,
+    gain: f32,
+    envelope: f32,
 
     /// The amplitude threshold of the compressor.
-    pub threshold: Float,
+    pub threshold: f32,
 
     /// The compression ratio of the compressor.
-    pub ratio: Float,
+    pub ratio: f32,
 
     /// The attack factor of the compressor.
-    pub attack: Float,
+    pub attack: f32,
 
     /// The release factor of the compressor.
-    pub release: Float,
+    pub release: f32,
 }
 
 impl Compressor {
     /// Creates a new `Compressor` processor with the given threshold, ratio, attack, and release.
-    pub fn new(threshold: Float, ratio: Float, attack: Float, release: Float) -> Self {
+    pub fn new(threshold: f32, ratio: f32, attack: f32, release: f32) -> Self {
         Self {
             threshold,
             ratio,
@@ -195,8 +195,8 @@ impl Processor for Compressor {
         outputs: ProcessorOutputs,
     ) -> Result<(), ProcessorError> {
         for (in_signal, threshold, ratio, attack, release, out) in raug_macros::iter_proc_io_as!(
-            inputs as [Float, Float, Float, Float, Float],
-            outputs as [Float]
+            inputs as [f32, f32, f32, f32, f32],
+            outputs as [f32]
         ) {
             self.threshold = threshold.unwrap_or(self.threshold);
             self.ratio = ratio.unwrap_or(self.ratio);
@@ -231,50 +231,50 @@ impl Processor for Compressor {
 ///
 /// | Index | Name | Type | Description |
 /// | --- | --- | --- | --- |
-/// | `0` | `in` | `Float` | The input signal. |
-/// | `1` | `threshold` | `Float` | The amplitude threshold of the compressor. |
-/// | `2` | `ratio` | `Float` | The compression ratio of the compressor. |
-/// | `3` | `attack` | `Float` | The attack factor of the compressor. |
-/// | `4` | `release` | `Float` | The release factor of the compressor. |
-/// | `5` | `window_size` | `Float` | The window size of the RMS detector in seconds. |
+/// | `0` | `in` | `f32` | The input signal. |
+/// | `1` | `threshold` | `f32` | The amplitude threshold of the compressor. |
+/// | `2` | `ratio` | `f32` | The compression ratio of the compressor. |
+/// | `3` | `attack` | `f32` | The attack factor of the compressor. |
+/// | `4` | `release` | `f32` | The release factor of the compressor. |
+/// | `5` | `window_size` | `f32` | The window size of the RMS detector in seconds. |
 ///
 /// # Outputs
 ///
 /// | Index | Name | Type | Description |
 /// | --- | --- | --- | --- |
-/// | `0` | `out` | `Float` | The output signal. |
+/// | `0` | `out` | `f32` | The output signal. |
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct RmsCompressor {
-    gain: Float,
-    envelope: Float,
-    rms: Float,
-    window: Vec<Float>,
+    gain: f32,
+    envelope: f32,
+    rms: f32,
+    window: Vec<f32>,
 
     /// The amplitude threshold of the compressor.
-    pub threshold: Float,
+    pub threshold: f32,
 
     /// The compression ratio of the compressor.
-    pub ratio: Float,
+    pub ratio: f32,
 
     /// The attack factor of the compressor.
-    pub attack: Float,
+    pub attack: f32,
 
     /// The release factor of the compressor.
-    pub release: Float,
+    pub release: f32,
 
     /// The window size of the RMS detector in seconds.
-    pub window_size: Float,
+    pub window_size: f32,
 }
 
 impl RmsCompressor {
     /// Creates a new `RmsCompressor` processor with the given threshold, ratio, attack, release, and window size.
     pub fn new(
-        threshold: Float,
-        ratio: Float,
-        attack: Float,
-        release: Float,
-        window_size: Float,
+        threshold: f32,
+        ratio: f32,
+        attack: f32,
+        release: f32,
+        window_size: f32,
     ) -> Self {
         Self {
             threshold,
@@ -322,12 +322,12 @@ impl Processor for RmsCompressor {
         vec![SignalSpec::new("out", SignalType::Float)]
     }
 
-    fn allocate(&mut self, sample_rate: Float, _max_block_size: usize) {
+    fn allocate(&mut self, sample_rate: f32, _max_block_size: usize) {
         self.window
             .resize((self.window_size * sample_rate) as usize, 0.0);
     }
 
-    fn resize_buffers(&mut self, sample_rate: Float, _block_size: usize) {
+    fn resize_buffers(&mut self, sample_rate: f32, _block_size: usize) {
         self.window.resize(sample_rate as usize, 0.0);
     }
 
@@ -337,8 +337,8 @@ impl Processor for RmsCompressor {
         outputs: ProcessorOutputs,
     ) -> Result<(), ProcessorError> {
         for (in_signal, threshold, ratio, attack, release, window_size, out) in raug_macros::iter_proc_io_as!(
-            inputs as [Float, Float, Float, Float, Float, Float],
-            outputs as [Float]
+            inputs as [f32, f32, f32, f32, f32, f32],
+            outputs as [f32]
         ) {
             self.threshold = threshold.unwrap_or(self.threshold);
             self.ratio = ratio.unwrap_or(self.ratio);
@@ -357,7 +357,7 @@ impl Processor for RmsCompressor {
             let window_size = (self.window_size * inputs.sample_rate()) as usize;
 
             self.rms =
-                self.window[..window_size].iter().sum::<Float>() / self.window.len() as Float;
+                self.window[..window_size].iter().sum::<f32>() / self.window.len() as f32;
             self.rms = self.rms.sqrt();
             self.envelope = self.rms.max(self.envelope * self.release);
 

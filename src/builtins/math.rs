@@ -61,13 +61,13 @@ impl Processor for Constant {
 ///
 /// | Index | Name | Type | Description |
 /// | --- | --- | --- | --- |
-/// | `0` | `note` | `Float` | The MIDI note number. |
+/// | `0` | `note` | `f32` | The MIDI note number. |
 ///
 /// # Outputs
 ///
 /// | Index | Name | Type | Description |
 /// | --- | --- | --- | --- |
-/// | `0` | `freq` | `Float` | The frequency of the MIDI note. |
+/// | `0` | `freq` | `f32` | The frequency of the MIDI note. |
 #[derive(Clone, Debug, Default)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct MidiToFreq;
@@ -88,9 +88,9 @@ impl Processor for MidiToFreq {
         inputs: ProcessorInputs,
         outputs: ProcessorOutputs,
     ) -> Result<(), ProcessorError> {
-        for (note, freq) in raug_macros::iter_proc_io_as!(inputs as [Float], outputs as [Float]) {
+        for (note, freq) in raug_macros::iter_proc_io_as!(inputs as [f32], outputs as [f32]) {
             if let Some(note) = note {
-                freq.set((2.0 as Float).powf((note - 69.0) / 12.0) * 440.0);
+                freq.set((2.0 as f32).powf((note - 69.0) / 12.0) * 440.0);
             } else {
                 *freq = None;
             }
@@ -106,13 +106,13 @@ impl Processor for MidiToFreq {
 ///
 /// | Index | Name | Type | Description |
 /// | --- | --- | --- | --- |
-/// | `0` | `freq` | `Float` | The frequency to convert. |
+/// | `0` | `freq` | `f32` | The frequency to convert. |
 ///
 /// # Outputs
 ///
 /// | Index | Name | Type | Description |
 /// | --- | --- | --- | --- |
-/// | `0` | `note` | `Float` | The MIDI note number. |
+/// | `0` | `note` | `f32` | The MIDI note number. |
 #[derive(Clone, Debug, Default)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct FreqToMidi;
@@ -132,7 +132,7 @@ impl Processor for FreqToMidi {
         inputs: ProcessorInputs,
         outputs: ProcessorOutputs,
     ) -> Result<(), ProcessorError> {
-        for (freq, note) in raug_macros::iter_proc_io_as!(inputs as [Float], outputs as [Float]) {
+        for (freq, note) in raug_macros::iter_proc_io_as!(inputs as [f32], outputs as [f32]) {
             if let Some(freq) = freq {
                 note.set(69.0 + 12.0 * (freq / 440.0).log2());
             } else {
@@ -237,61 +237,61 @@ macro_rules! impl_binary_proc {
 impl_binary_proc!(
     Add,
     add,
-    (Float = Float, Int = i64),
+    (Float = f32, Int = i64),
     "A processor that adds two signals together."
 );
 impl_binary_proc!(
     Sub,
     sub,
-    (Float = Float, Int = i64),
+    (Float = f32, Int = i64),
     "A processor that subtracts one signal from another."
 );
 impl_binary_proc!(
     Mul,
     mul,
-    (Float = Float, Int = i64),
+    (Float = f32, Int = i64),
     "A processor that multiplies two signals together."
 );
 impl_binary_proc!(
     Div,
     div,
-    (Float = Float, Int = i64),
+    (Float = f32, Int = i64),
     "A processor that divides one signal by another."
 );
 impl_binary_proc!(
     Rem,
     rem,
-    (Float = Float, Int = i64),
+    (Float = f32, Int = i64),
     "A processor that calculates the remainder of dividing one signal by another."
 );
 impl_binary_proc!(
     Powf,
     powf,
-    (Float = Float),
+    (Float = f32),
     "A processor that raises one signal to the power of another."
 );
 impl_binary_proc!(
     Atan2,
     atan2,
-    (Float = Float),
+    (Float = f32),
     "A processor that calculates the arctangent of the ratio of two signals."
 );
 impl_binary_proc!(
     Hypot,
     hypot,
-    (Float = Float),
+    (Float = f32),
     "A processor that calculates the hypotenuse of two signals."
 );
 impl_binary_proc!(
     Max,
     max,
-    (Float = Float, Int = i64),
+    (Float = f32, Int = i64),
     "A processor that calculates the maximum of two signals."
 );
 impl_binary_proc!(
     Min,
     min,
-    (Float = Float, Int = i64),
+    (Float = f32, Int = i64),
     "A processor that calculates the minimum of two signals."
 );
 
@@ -368,114 +368,114 @@ macro_rules! impl_unary_proc {
 impl_unary_proc!(
     Neg,
     neg,
-    (Float = Float, Int = i64),
+    (Float = f32, Int = i64),
     "A processor that negates a signal."
 );
 impl_unary_proc!(
     Abs,
     abs,
-    (Float = Float, Int = i64),
+    (Float = f32, Int = i64),
     "A processor that calculates the absolute value of a signal."
 );
 impl_unary_proc!(
     Sqrt,
     sqrt,
-    (Float = Float),
+    (Float = f32),
     "A processor that calculates the square root of a signal."
 );
 impl_unary_proc!(
     Cbrt,
     cbrt,
-    (Float = Float),
+    (Float = f32),
     "A processor that calculates the cube root of a signal."
 );
 impl_unary_proc!(
     Ceil,
     ceil,
-    (Float = Float),
+    (Float = f32),
     "A processor that rounds a signal up to the nearest integer."
 );
 impl_unary_proc!(
     Floor,
     floor,
-    (Float = Float),
+    (Float = f32),
     "A processor that rounds a signal down to the nearest integer."
 );
 impl_unary_proc!(
     Round,
     round,
-    (Float = Float),
+    (Float = f32),
     "A processor that rounds a signal to the nearest integer."
 );
 impl_unary_proc!(
     Trunc,
     trunc,
-    (Float = Float),
+    (Float = f32),
     "A processor that truncates a signal to an integer."
 );
 impl_unary_proc!(
     Fract,
     fract,
-    (Float = Float),
+    (Float = f32),
     "A processor that outputs the fractional part of a signal."
 );
 impl_unary_proc!(
     Recip,
     recip,
-    (Float = Float),
+    (Float = f32),
     "A processor that calculates the reciprocal of a signal."
 );
 impl_unary_proc!(
     Signum,
     signum,
-    (Float = Float, Int = i64),
+    (Float = f32, Int = i64),
     "A processor that outputs the sign of a signal."
 );
 impl_unary_proc!(
     Sin,
     sin,
-    (Float = Float),
+    (Float = f32),
     "A processor that calculates the sine of a signal."
 );
 impl_unary_proc!(
     Cos,
     cos,
-    (Float = Float),
+    (Float = f32),
     "A processor that calculates the cosine of a signal."
 );
 impl_unary_proc!(
     Tan,
     tan,
-    (Float = Float),
+    (Float = f32),
     "A processor that calculates the tangent of a signal."
 );
 impl_unary_proc!(
     Tanh,
     tanh,
-    (Float = Float),
+    (Float = f32),
     "A processor that calculates the hyperbolic tangent of a signal."
 );
 impl_unary_proc!(
     Exp,
     exp,
-    (Float = Float),
+    (Float = f32),
     "A processor that calculates the natural exponential of a signal."
 );
 impl_unary_proc!(
     Ln,
     ln,
-    (Float = Float),
+    (Float = f32),
     "A processor that calculates the natural logarithm of a signal."
 );
 impl_unary_proc!(
     Log2,
     log2,
-    (Float = Float),
+    (Float = f32),
     "A processor that calculates the base-2 logarithm of a signal."
 );
 impl_unary_proc!(
     Log10,
     log10,
-    (Float = Float),
+    (Float = f32),
     "A processor that calculates the base-10 logarithm of a signal."
 );

@@ -48,7 +48,7 @@ pub enum WindowFunction {
 impl WindowFunction {
     /// Generates a window of the given length using this window function.
     pub fn generate(&self, length: usize) -> RealBuf {
-        let mut buf = vec![0.0 as Float; length].into_boxed_slice();
+        let mut buf = vec![0.0 as f32; length].into_boxed_slice();
         match self {
             Self::Rectangular => {
                 for x in buf.iter_mut() {
@@ -56,20 +56,20 @@ impl WindowFunction {
                 }
             }
             Self::Hann => {
-                buf = apodize::hanning_iter(length).map(|x| x as Float).collect();
+                buf = apodize::hanning_iter(length).map(|x| x as f32).collect();
             }
             Self::Hamming => {
-                buf = apodize::hamming_iter(length).map(|x| x as Float).collect();
+                buf = apodize::hamming_iter(length).map(|x| x as f32).collect();
             }
             Self::Blackman => {
-                buf = apodize::blackman_iter(length).map(|x| x as Float).collect();
+                buf = apodize::blackman_iter(length).map(|x| x as f32).collect();
             }
             Self::Nuttall => {
-                buf = apodize::nuttall_iter(length).map(|x| x as Float).collect();
+                buf = apodize::nuttall_iter(length).map(|x| x as f32).collect();
             }
             Self::Triangular => {
                 buf = apodize::triangular_iter(length)
-                    .map(|x| x as Float)
+                    .map(|x| x as f32)
                     .collect();
             }
         }

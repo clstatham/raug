@@ -20,7 +20,7 @@ use crate::{fft::FftError, prelude::*};
 #[derive(Clone)]
 pub struct Rfft {
     padded_length: usize,
-    plan: Arc<dyn realfft::RealToComplex<Float>>,
+    plan: Arc<dyn realfft::RealToComplex<f32>>,
     scratch: ComplexBuf,
     in_signal_copy: RealBuf,
 }
@@ -101,7 +101,7 @@ impl FftProcessor for Rfft {
 #[derive(Clone)]
 pub struct Irfft {
     padded_length: usize,
-    plan: Arc<dyn realfft::ComplexToReal<Float>>,
+    plan: Arc<dyn realfft::ComplexToReal<f32>>,
     scratch: ComplexBuf,
     in_signal_copy: ComplexBuf,
 }
@@ -210,7 +210,7 @@ impl FftProcessor for BinNumber {
         let output = output.as_real_buf_mut().unwrap();
 
         for (i, x) in output.iter_mut().enumerate() {
-            *x = i as Float;
+            *x = i as f32;
         }
 
         Ok(())

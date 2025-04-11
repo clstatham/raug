@@ -189,11 +189,6 @@ macro_rules! comparison_op {
                             let b = b.unwrap_or_default();
                             *out = Some(a $op b);
                         }
-                        (AnySignalOpt::Midi(a), AnySignalOpt::Midi(b)) => {
-                            let a = a.unwrap_or_default();
-                            let b = b.unwrap_or_default();
-                            *out = Some(a $op b);
-                        }
                         _ => unreachable!(),
                     }
                 }

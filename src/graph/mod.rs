@@ -14,7 +14,7 @@ use rustc_hash::{FxHashMap, FxHashSet};
 use crate::{
     prelude::{Constant, Null, Param, Passthrough, ProcEnv},
     processor::{ProcessMode, Processor, ProcessorError},
-    signal::{Float, Signal, SignalBuffer, SignalType},
+    signal::{Signal, SignalType, buffer::SignalBuffer},
 };
 
 pub mod edge;
@@ -145,7 +145,6 @@ pub type GraphRunResult<T> = Result<T, GraphRunError>;
 /// A result type for graph construction operations.
 pub type GraphConstructionResult<T> = Result<T, GraphConstructionError>;
 
-/// A directed graph of [`Processor`]s connected by [`Edge`]s.
 #[derive(Default, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub(crate) struct GraphInner {
@@ -166,7 +165,7 @@ pub(crate) struct GraphInner {
     // cached strongly connected components (feedback loops)
     sccs: Vec<Vec<NodeIndex>>,
 
-    pub(crate) sample_rate: Float,
+    pub(crate) sample_rate: f32,
     pub(crate) block_size: usize,
     pub(crate) max_block_size: usize,
 }
@@ -419,7 +418,7 @@ impl GraphInner {
     }
 
     /// Calls [`Processor::allocate()`] on each node in the graph.
-    pub fn allocate(&mut self, sample_rate: Float, max_block_size: usize) {
+    pub fn allocate(&mut self, sample_rate: f32, max_block_size: usize) {
         self.reset_visitor();
         self.visit(|graph, node| -> Result<(), ()> {
             graph.digraph[node].allocate(sample_rate, max_block_size);
@@ -434,7 +433,7 @@ impl GraphInner {
     }
 
     /// Calls [`Processor::resize_buffers()`] on each node in the graph.
-    pub fn resize_buffers(&mut self, sample_rate: Float, block_size: usize) {
+    pub fn resize_buffers(&mut self, sample_rate: f32, block_size: usize) {
         self.visit(|graph, node| -> Result<(), ()> {
             graph.digraph[node].resize_buffers(sample_rate, block_size);
             Ok(())
@@ -520,7 +519,7 @@ impl GraphInner {
     }
 }
 
-/// A builder for constructing audio graphs.
+/// A directed graph of [`Processor`]s connected by [`Edge`]s.
 #[derive(Clone, Default)]
 pub struct Graph {
     inner: Arc<Mutex<GraphInner>>,
@@ -532,15 +531,15 @@ impl Graph {
         Self::default()
     }
 
-    pub fn allocate(&self, sample_rate: Float, block_size: usize) {
+    pub fn allocate(&self, sample_rate: f32, block_size: usize) {
         self.with_inner(|graph| graph.allocate(sample_rate, block_size));
     }
 
-    pub fn resize_buffers(&self, sample_rate: Float, block_size: usize) {
+    pub fn resize_buffers(&self, sample_rate: f32, block_size: usize) {
         self.with_inner(|graph| graph.resize_buffers(sample_rate, block_size));
     }
 
-    pub fn sample_rate(&self) -> Float {
+    pub fn sample_rate(&self) -> f32 {
         self.with_inner(|graph| graph.sample_rate)
     }
 

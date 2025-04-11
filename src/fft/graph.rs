@@ -74,7 +74,7 @@ type FftGraphVisitor = DfsPostOrder<NodeIndex, FxHashSet<NodeIndex>>;
 #[derive(Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct FftAudioInput {
-    pub(crate) ring_buffer: VecDeque<Float>,
+    pub(crate) ring_buffer: VecDeque<f32>,
     pub(crate) time_domain: FftSignal,
 }
 
@@ -90,8 +90,8 @@ impl Default for FftAudioInput {
 #[derive(Clone, Default)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct FftAudioOutput {
-    pub(crate) ring_buffer: VecDeque<Float>,
-    pub(crate) overlap_buffer: VecDeque<Float>,
+    pub(crate) ring_buffer: VecDeque<f32>,
+    pub(crate) overlap_buffer: VecDeque<f32>,
 }
 
 /// A directed graph of nodes that process FFT signals.
@@ -133,8 +133,8 @@ impl FftGraph {
         window.rotate_right(fft_length / 2);
 
         let overlapping_frames = fft_length / hop_length;
-        let mut window_sum = window.iter().sum::<Float>();
-        window_sum *= 2.0 * overlapping_frames as Float;
+        let mut window_sum = window.iter().sum::<f32>();
+        window_sum *= 2.0 * overlapping_frames as f32;
 
         // normalize the window
         for x in window.iter_mut() {
@@ -320,7 +320,7 @@ impl FftGraph {
             };
 
             let input = inputs.input(input_index).unwrap();
-            let input = input.as_type::<Float>().unwrap();
+            let input = input.as_type::<f32>().unwrap();
 
             // fill the input buffer
             for i in 0..input.len() {
@@ -441,7 +441,7 @@ impl Processor for FftGraph {
     fn input_spec(&self) -> Vec<SignalSpec> {
         let mut specs = Vec::new();
         for i in 0..self.inputs.len() {
-            specs.push(SignalSpec::new(i.to_string(), SignalType::Float));
+            specs.push(SignalSpec::new(i.to_string(), SignalType::f32));
         }
         specs
     }
@@ -449,12 +449,12 @@ impl Processor for FftGraph {
     fn output_spec(&self) -> Vec<SignalSpec> {
         let mut specs = Vec::new();
         for i in 0..self.outputs.len() {
-            specs.push(SignalSpec::new(i.to_string(), SignalType::Float));
+            specs.push(SignalSpec::new(i.to_string(), SignalType::f32));
         }
         specs
     }
 
-    fn allocate(&mut self, _sample_rate: Float, max_block_size: usize) {
+    fn allocate(&mut self, _sample_rate: f32, max_block_size: usize) {
         self.allocate(max_block_size);
     }
 

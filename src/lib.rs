@@ -6,7 +6,6 @@
 
 pub mod builtins;
 pub mod graph;
-pub mod midi;
 pub mod processor;
 pub mod signal;
 pub mod util;
@@ -22,13 +21,12 @@ pub mod prelude {
         node::{Input, IntoNode, Node, Output},
         runtime::{AudioBackend, AudioDevice, AudioStream, CpalStream, MidiPort, WavFileOutStream},
     };
-    pub use crate::midi::MidiMessage;
     pub use crate::processor::{
         ProcEnv, Processor, ProcessorError, ProcessorInputs, ProcessorOutputs, SignalSpec,
     };
     pub use crate::signal::{
-        AnySignal, AnySignalOpt, Float, OptRepr, OptSignal, PI, Signal, SignalBuffer, SignalType,
-        TAU, buffer::Buffer, optional::Repr,
+        AnySignal, AnySignalOpt, OptRepr, OptSignal, Signal, SignalType, buffer::Buffer,
+        buffer::SignalBuffer, repr::Repr,
     };
     pub use crate::util::*;
     pub use raug_macros::{Processor, iter_proc_io_as, note, note_array};

@@ -5,7 +5,7 @@ use std::fmt::Debug;
 use crate::{
     prelude::*,
     processor::ProcessMode,
-    signal::{Float, Signal, SignalBuffer, SignalType},
+    signal::{Signal, SignalType, buffer::SignalBuffer},
 };
 
 use super::{Graph, GraphConstructionResult, NodeIndex};
@@ -38,7 +38,7 @@ impl ProcessorNode {
         let output_spec = processor.output_spec();
         let mut outputs = Vec::with_capacity(output_spec.len());
         for spec in output_spec.iter() {
-            outputs.push(SignalBuffer::new_of_type(&spec.signal_type, 0));
+            outputs.push(SignalBuffer::new_of_type(spec.signal_type, 0));
         }
         Self {
             processor,
@@ -92,14 +92,14 @@ impl ProcessorNode {
 
     /// Allocates memory for the processor.
     #[inline]
-    pub fn allocate(&mut self, sample_rate: Float, max_block_size: usize) {
+    pub fn allocate(&mut self, sample_rate: f32, max_block_size: usize) {
         self.processor.allocate(sample_rate, max_block_size);
         for (spec, output) in self
             .output_spec
             .iter()
             .zip(self.outputs.as_mut().unwrap().iter_mut())
         {
-            output.resize_with_hint(max_block_size, &spec.signal_type);
+            output.resize_with_hint(max_block_size, spec.signal_type);
         }
     }
 
@@ -107,7 +107,7 @@ impl ProcessorNode {
     ///
     /// This function is NOT ALLOWED to allocate memory.
     #[inline]
-    pub fn resize_buffers(&mut self, sample_rate: Float, block_size: usize) {
+    pub fn resize_buffers(&mut self, sample_rate: f32, block_size: usize) {
         self.processor.resize_buffers(sample_rate, block_size);
     }
 
@@ -137,9 +137,10 @@ impl ProcessorNode {
 #[inline]
 #[track_caller]
 fn assert_signals_compatible(a: &SignalType, b: &SignalType, op: impl Into<String>) {
-    assert!(
-        a.is_same_as(b),
-        "{}: signal types are not compatible: {:?} and {:?}",
+    assert_eq!(
+        a,
+        b,
+        "{}: incompatible signal types: {:?} vs {:?}",
         op.into(),
         a,
         b
@@ -386,7 +387,7 @@ impl Node {
     /// Panics if the node has multiple outputs.
     #[inline]
     #[track_caller]
-    pub fn smooth(&self, factor: Float) -> Node {
+    pub fn smooth(&self, factor: f32) -> Node {
         self.assert_single_output("smooth");
         self.output(0).smooth(factor)
     }
@@ -836,7 +837,7 @@ mod sealed {
     impl Sealed for &super::Output {}
     impl Sealed for super::AnySignal {}
     impl Sealed for crate::builtins::util::Param {}
-    impl Sealed for crate::signal::Float {}
+    impl Sealed for f32 {}
     impl Sealed for bool {}
     impl Sealed for i32 {}
     impl Sealed for i64 {}
@@ -922,7 +923,7 @@ impl IntoNode for NodeIndex {
     }
 }
 
-impl IntoNode for Float {
+impl IntoNode for f32 {
     fn into_node(self, graph: &Graph) -> Node {
         graph.constant(self)
     }
@@ -1120,27 +1121,27 @@ macro_rules! impl_binary_node_ops {
     };
 }
 
-impl_binary_node_ops!(add, Add, Add, (Float => Float, Int => i64), "Adds two signals together.");
-impl_binary_node_ops!(sub, Sub, Sub, (Float => Float, Int => i64), "Subtracts one signal from another.");
-impl_binary_node_ops!(mul, Mul, Mul, (Float => Float, Int => i64), "Multiplies two signals together.");
-impl_binary_node_ops!(div, Div, Div, (Float => Float, Int => i64), "Divides one signal by another.");
+impl_binary_node_ops!(add, Add, Add, (f32 => f32, Int => i64), "Adds two signals together.");
+impl_binary_node_ops!(sub, Sub, Sub, (f32 => f32, Int => i64), "Subtracts one signal from another.");
+impl_binary_node_ops!(mul, Mul, Mul, (f32 => f32, Int => i64), "Multiplies two signals together.");
+impl_binary_node_ops!(div, Div, Div, (f32 => f32, Int => i64), "Divides one signal by another.");
 impl_binary_node_ops!(
     rem,
     Rem,
     Rem,
-    (Float => Float, Int => i64),
+    (f32 => f32, Int => i64),
     "Calculates the remainder of one signal divided by another."
 );
-impl_binary_node_ops!(powf, Powf, (Float => Float), "Raises one signal to the power of another.");
+impl_binary_node_ops!(powf, Powf, (f32 => f32), "Raises one signal to the power of another.");
 impl_binary_node_ops!(
     atan2,
     Atan2,
-    (Float => Float),
+    (f32 => f32),
     "Calculates the arctangent of the ratio of two signals."
 );
-impl_binary_node_ops!(hypot, Hypot, (Float => Float), "Calculates the hypotenuse of two signals.");
-impl_binary_node_ops!(max, Max, (Float => Float, Int => i64), "Outputs the maximum of two signals.");
-impl_binary_node_ops!(min, Min, (Float => Float, Int => i64), "Outputs the minimum of two signals.");
+impl_binary_node_ops!(hypot, Hypot, (f32 => f32), "Calculates the hypotenuse of two signals.");
+impl_binary_node_ops!(max, Max, (f32 => f32, Int => i64), "Outputs the maximum of two signals.");
+impl_binary_node_ops!(min, Min, (f32 => f32, Int => i64), "Outputs the minimum of two signals.");
 
 macro_rules! impl_comparison_node_ops {
     ($name:ident, $proc:ident, $doc:expr) => {
@@ -1230,7 +1231,7 @@ macro_rules! impl_unary_node_ops {
     };
 }
 
-impl_unary_node_ops!(neg, Neg, (Float => Float, Int => i64), "Negates the input signal.");
+impl_unary_node_ops!(neg, Neg, (f32 => f32, Int => i64), "Negates the input signal.");
 
 impl std::ops::Neg for &Node {
     type Output = Node;
@@ -1243,88 +1244,88 @@ impl std::ops::Neg for &Node {
 impl_unary_node_ops!(
     abs,
     Abs,
-    (Float => Float, Int => i64),
+    (f32 => f32, Int => i64),
     "Outputs the absolute value of the input signal."
 );
 impl_unary_node_ops!(
     sqrt,
     Sqrt,
-    (Float => Float),
+    (f32 => f32),
     "Outputs the square root of the input signal."
 );
 impl_unary_node_ops!(
     cbrt,
     Cbrt,
-    (Float => Float),
+    (f32 => f32),
     "Outputs the cube root of the input signal."
 );
 impl_unary_node_ops!(
     ceil,
     Ceil,
-    (Float => Float),
+    (f32 => f32),
     "Rounds the input signal up to the nearest integer."
 );
 impl_unary_node_ops!(
     floor,
     Floor,
-    (Float => Float),
+    (f32 => f32),
     "Rounds the input signal down to the nearest integer."
 );
 impl_unary_node_ops!(
     round,
     Round,
-    (Float => Float),
+    (f32 => f32),
     "Rounds the input signal to the nearest integer."
 );
-impl_unary_node_ops!(sin, Sin, (Float => Float), "Outputs the sine of the input signal.");
-impl_unary_node_ops!(cos, Cos, (Float => Float), "Outputs the cosine of the input signal.");
-impl_unary_node_ops!(tan, Tan, (Float => Float), "Outputs the tangent of the input signal.");
+impl_unary_node_ops!(sin, Sin, (f32 => f32), "Outputs the sine of the input signal.");
+impl_unary_node_ops!(cos, Cos, (f32 => f32), "Outputs the cosine of the input signal.");
+impl_unary_node_ops!(tan, Tan, (f32 => f32), "Outputs the tangent of the input signal.");
 impl_unary_node_ops!(
     tanh,
     Tanh,
-    (Float => Float),
+    (f32 => f32),
     "Outputs the hyperbolic tangent of the input signal."
 );
 
 impl_unary_node_ops!(
     recip,
     Recip,
-    (Float => Float),
+    (f32 => f32),
     "Outputs the reciprocal of the input signal."
 );
 impl_unary_node_ops!(
     signum,
     Signum,
-    (Float => Float, Int => i64),
+    (f32 => f32, Int => i64),
     "Outputs the sign of the input signal."
 );
 impl_unary_node_ops!(
     fract,
     Fract,
-    (Float => Float),
+    (f32 => f32),
     "Outputs the fractional part of the input signal."
 );
 impl_unary_node_ops!(
     ln,
     Ln,
-    (Float => Float),
+    (f32 => f32),
     "Outputs the natural logarithm of the input signal."
 );
 impl_unary_node_ops!(
     log2,
     Log2,
-    (Float => Float),
+    (f32 => f32),
     "Outputs the base-2 logarithm of the input signal."
 );
 impl_unary_node_ops!(
     log10,
     Log10,
-    (Float => Float),
+    (f32 => f32),
     "Outputs the base-10 logarithm of the input signal."
 );
 impl_unary_node_ops!(
     exp,
     Exp,
-    (Float => Float),
+    (f32 => f32),
     "Outputs the natural exponential of the input signal."
 );

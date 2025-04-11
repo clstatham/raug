@@ -93,7 +93,7 @@ impl FftGraphBuilder {
         });
     }
 
-    pub fn real_splat(&self, value: Float, len: FftBufLength) -> FftNode {
+    pub fn real_splat(&self, value: f32, len: FftBufLength) -> FftNode {
         self.add(RealSplat::new(value, len))
     }
 
@@ -200,7 +200,7 @@ mod sealed {
     impl Sealed for u32 {}
     impl Sealed for i32 {}
     impl Sealed for usize {}
-    impl Sealed for Float {}
+    impl Sealed for f32 {}
     impl Sealed for &str {}
 }
 

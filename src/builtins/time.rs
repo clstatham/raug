@@ -10,7 +10,7 @@ use super::lerp;
 ///
 /// | Index | Name | Type | Description |
 /// | --- | --- | --- | --- |
-/// | `0` | `period` | `Float` | The period of the pulse in seconds. |
+/// | `0` | `period` | `f32` | The period of the pulse in seconds. |
 /// | `1` | `reset` | `Bool` | Whether to reset the pulse generator. |
 ///
 /// # Outputs
@@ -23,7 +23,7 @@ use super::lerp;
 #[cfg_attr(feature = "serde", processor_typetag)]
 pub struct Metro {
     #[input]
-    period: Float,
+    period: f32,
 
     #[input]
     reset: bool,
@@ -38,7 +38,7 @@ pub struct Metro {
 
 impl Metro {
     /// Creates a new `Metro` processor with the given period.
-    pub fn new(period: Float) -> Self {
+    pub fn new(period: f32) -> Self {
         Self {
             period,
             last_time: 0,
@@ -49,7 +49,7 @@ impl Metro {
         }
     }
 
-    fn next_sample(&mut self, sample_rate: Float) -> bool {
+    fn next_sample(&mut self, sample_rate: f32) -> bool {
         let out = if self.time >= self.next_time {
             self.last_time = self.time;
             self.next_time = self.time + (self.period * sample_rate) as u64;
@@ -89,24 +89,24 @@ impl Default for Metro {
 ///
 /// | Index | Name | Type | Description |
 /// | --- | --- | --- | --- |
-/// | `0` | `in` | `Float` | The input signal. |
+/// | `0` | `in` | `f32` | The input signal. |
 ///
 /// # Outputs
 ///
 /// | Index | Name | Type | Description |
 /// | --- | --- | --- | --- |
-/// | `0` | `out` | `Float` | The delayed signal. |
+/// | `0` | `out` | `f32` | The delayed signal. |
 #[derive(Debug, Clone, Default, Processor)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "serde", processor_typetag)]
 pub struct UnitDelay {
-    value: Option<Float>,
+    value: Option<f32>,
 
     #[input]
-    input: Float,
+    input: f32,
 
     #[output]
-    out: Float,
+    out: f32,
 }
 
 impl UnitDelay {
@@ -127,30 +127,30 @@ impl UnitDelay {
 ///
 /// | Index | Name | Type | Description |
 /// | --- | --- | --- | --- |
-/// | `0` | `in` | `Float` | The input signal. |
+/// | `0` | `in` | `f32` | The input signal. |
 /// | `1` | `delay` | `Int` | The delay in samples. |
 ///
 /// # Outputs
 ///
 /// | Index | Name | Type | Description |
 /// | --- | --- | --- | --- |
-/// | `0` | `out` | `Float` | The delayed signal. |
+/// | `0` | `out` | `f32` | The delayed signal. |
 #[derive(Debug, Clone, Processor)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "serde", processor_typetag)]
 pub struct SampleDelay {
     #[cfg_attr(feature = "serde", serde(skip))]
-    ring_buffer: Vec<Float>,
+    ring_buffer: Vec<f32>,
     head: usize,
 
     #[input]
-    input: Float,
+    input: f32,
 
     #[input]
     delay: i64,
 
     #[output]
-    out: Float,
+    out: f32,
 }
 
 impl SampleDelay {
@@ -187,19 +187,19 @@ impl SampleDelay {
 ///
 /// | Index | Name | Type | Description |
 /// | --- | --- | --- | --- |
-/// | `0` | `in` | `Float` | The input signal. |
-/// | `1` | `delay` | `Float` | The delay in samples. |
+/// | `0` | `in` | `f32` | The input signal. |
+/// | `1` | `delay` | `f32` | The delay in samples. |
 ///
 /// # Outputs
 ///
 /// | Index | Name | Type | Description |
 /// | --- | --- | --- | --- |
-/// | `0` | `out` | `Float` | The delayed signal. |
+/// | `0` | `out` | `f32` | The delayed signal. |
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct FractDelay {
     #[cfg_attr(feature = "serde", serde(skip))]
-    ring_buffer: Vec<Float>,
+    ring_buffer: Vec<f32>,
     head: usize,
 }
 
@@ -213,9 +213,9 @@ impl FractDelay {
     }
 
     #[inline]
-    fn index_modulo(&self, delay: Float) -> (usize, Float) {
+    fn index_modulo(&self, delay: f32) -> (usize, f32) {
         let delay_floor = delay.floor() as usize;
-        let delay_frac = delay - delay_floor as Float;
+        let delay_frac = delay - delay_floor as f32;
         let index = (self.head + self.ring_buffer.len() - delay_floor) % self.ring_buffer.len();
         (index, delay_frac)
     }
@@ -240,7 +240,7 @@ impl Processor for FractDelay {
         vec![SignalSpec::new("out", SignalType::Float)]
     }
 
-    fn allocate(&mut self, sample_rate: Float, _max_block_size: usize) {
+    fn allocate(&mut self, sample_rate: f32, _max_block_size: usize) {
         self.ring_buffer.resize(sample_rate as usize * 2, 0.0);
     }
 
@@ -250,8 +250,8 @@ impl Processor for FractDelay {
         outputs: ProcessorOutputs,
     ) -> Result<(), ProcessorError> {
         for (input, delay, out) in iter_proc_io_as!(
-            inputs as [Float, Float],
-            outputs as [Float]
+            inputs as [f32, f32],
+            outputs as [f32]
         ) {
             let delay = delay.unwrap_or_default();
 
@@ -288,35 +288,35 @@ impl Processor for FractDelay {
 /// | Index | Name | Type | Description |
 /// | --- | --- | --- | --- |
 /// | `0` | `trig` | `Bool` | The trigger signal. |
-/// | `1` | `tau` | `Float` | The decay time constant. |
+/// | `1` | `tau` | `f32` | The decay time constant. |
 ///
 /// # Outputs
 ///
 /// | Index | Name | Type | Description |
 /// | --- | --- | --- | --- |
-/// | `0` | `out` | `Float` | The envelope signal. |
+/// | `0` | `out` | `f32` | The envelope signal. |
 #[derive(Debug, Clone, Processor)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "serde", processor_typetag)]
 pub struct DecayEnv {
     last_trig: bool,
 
-    value: Float,
-    time: Float,
+    value: f32,
+    time: f32,
 
     #[input]
     trig: bool,
 
     #[input]
-    tau: Float,
+    tau: f32,
 
     #[output]
-    out: Float,
+    out: f32,
 }
 
 impl DecayEnv {
     /// Creates a new `DecayEnv` processor with the given decay time constant.
-    pub fn new(tau: Float) -> Self {
+    pub fn new(tau: f32) -> Self {
         Self {
             last_trig: false,
             tau,
@@ -368,34 +368,34 @@ impl Default for DecayEnv {
 /// | Index | Name | Type | Description |
 /// | --- | --- | --- | --- |
 /// | `0` | `trig` | `Bool` | The trigger signal. |
-/// | `1` | `decay` | `Float` | The decay time in seconds. |
+/// | `1` | `decay` | `f32` | The decay time in seconds. |
 ///
 /// # Outputs
 ///
 /// | Index | Name | Type | Description |
 /// | --- | --- | --- | --- |
-/// | `0` | `out` | `Float` | The envelope signal. |
+/// | `0` | `out` | `f32` | The envelope signal. |
 #[derive(Debug, Clone, Processor)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "serde", processor_typetag)]
 pub struct LinearDecayEnv {
     last_trig: bool,
 
-    value: Float,
-    time: Float,
+    value: f32,
+    time: f32,
 
     #[input]
     trig: bool,
     #[input]
-    decay: Float,
+    decay: f32,
 
     #[output]
-    out: Float,
+    out: f32,
 }
 
 impl LinearDecayEnv {
     /// Creates a new `LinearDecayEnv` processor with the given decay time.
-    pub fn new(decay: Float) -> Self {
+    pub fn new(decay: f32) -> Self {
         Self {
             last_trig: false,
             decay,
@@ -454,36 +454,36 @@ pub enum ADSRState {
 /// | Index | Name | Type | Description |
 /// | --- | --- | --- | --- |
 /// | `0` | `gate` | `Bool` | The gate signal. |
-/// | `1` | `attack` | `Float` | The attack time in seconds. |
-/// | `2` | `release` | `Float` | The release time in seconds. |
+/// | `1` | `attack` | `f32` | The attack time in seconds. |
+/// | `2` | `release` | `f32` | The release time in seconds. |
 ///
 /// # Outputs
 ///
 /// | Index | Name | Type | Description |
 /// | --- | --- | --- | --- |
-/// | `0` | `out` | `Float` | The envelope signal. |
+/// | `0` | `out` | `f32` | The envelope signal. |
 #[derive(Debug, Clone, Processor)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "serde", processor_typetag)]
 pub struct AREnv {
     last_trig: bool,
-    value: Float,
+    value: f32,
     state: ADSRState,
 
     #[input]
     trig: bool,
     #[input]
-    attack: Float,
+    attack: f32,
     #[input]
-    release: Float,
+    release: f32,
 
     #[output]
-    out: Float,
+    out: f32,
 }
 
 impl AREnv {
     /// Creates a new `AREnv` processor with the given attack and release times.
-    pub fn new(attack: Float, release: Float) -> Self {
+    pub fn new(attack: f32, release: f32) -> Self {
         Self {
             last_trig: false,
             attack,
@@ -542,43 +542,43 @@ impl Default for AREnv {
 /// | Index | Name | Type | Description |
 /// | --- | --- | --- | --- |
 /// | `0` | `gate` | `Bool` | The gate signal. |
-/// | `1` | `attack` | `Float` | The attack time in seconds. |
-/// | `2` | `decay` | `Float` | The decay time in seconds. |
-/// | `3` | `sustain` | `Float` | The sustain level. |
-/// | `4` | `release` | `Float` | The release time in seconds. |
+/// | `1` | `attack` | `f32` | The attack time in seconds. |
+/// | `2` | `decay` | `f32` | The decay time in seconds. |
+/// | `3` | `sustain` | `f32` | The sustain level. |
+/// | `4` | `release` | `f32` | The release time in seconds. |
 ///
 /// # Outputs
 ///
 /// | Index | Name | Type | Description |
 /// | --- | --- | --- | --- |
-/// | `0` | `out` | `Float` | The envelope signal. |
+/// | `0` | `out` | `f32` | The envelope signal. |
 #[derive(Debug, Clone, Processor)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "serde", processor_typetag)]
 pub struct ADSREnv {
     last_trig: bool,
-    value: Float,
+    value: f32,
     state: ADSRState,
 
     #[input]
     trig: bool,
 
     #[input]
-    attack: Float,
+    attack: f32,
     #[input]
-    decay: Float,
+    decay: f32,
     #[input]
-    sustain: Float,
+    sustain: f32,
     #[input]
-    release: Float,
+    release: f32,
 
     #[output]
-    out: Float,
+    out: f32,
 }
 
 impl ADSREnv {
     /// Creates a new `ADSREnv` processor with the given attack, decay, sustain, and release times.
-    pub fn new(attack: Float, decay: Float, sustain: Float, release: Float) -> Self {
+    pub fn new(attack: f32, decay: f32, sustain: f32, release: f32) -> Self {
         Self {
             last_trig: false,
             attack,

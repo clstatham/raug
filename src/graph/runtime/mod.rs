@@ -16,10 +16,7 @@ use cpal::{
 };
 use crossbeam_channel::{Receiver, RecvError, SendError, Sender, TryRecvError, TrySendError};
 
-use crate::{
-    prelude::Repr,
-    signal::{Float, SignalBuffer},
-};
+use crate::{prelude::Repr, signal::buffer::SignalBuffer};
 
 use super::{Graph, GraphRunError, GraphRunResult};
 
@@ -148,7 +145,7 @@ impl<T> Channels<T> {
 }
 
 pub trait AudioStream: Send + 'static {
-    fn sample_rate(&self) -> Float;
+    fn sample_rate(&self) -> f32;
     fn block_size(&self) -> usize;
     fn input_channels(&self) -> usize;
     fn output_channels(&self) -> usize;
@@ -161,7 +158,7 @@ pub trait AudioStream: Send + 'static {
 
 pub struct WavFileOutStream {
     file: hound::WavWriter<BufWriter<File>>,
-    sample_rate: Float,
+    sample_rate: f32,
     block_size: usize,
     input_channels: usize,
     output_channels: usize,
@@ -172,7 +169,7 @@ pub struct WavFileOutStream {
 impl WavFileOutStream {
     pub fn new(
         file_path: &str,
-        sample_rate: Float,
+        sample_rate: f32,
         block_size: usize,
         input_channels: usize,
         output_channels: usize,
@@ -187,7 +184,7 @@ impl WavFileOutStream {
         let file = hound::WavWriter::create(file_path, spec).unwrap();
 
         let max_samples = if let Some(max_duration) = max_duration {
-            let mut samples = (max_duration.as_secs_f64() as Float * sample_rate) as usize;
+            let mut samples = (max_duration.as_secs_f64() as f32 * sample_rate) as usize;
             if samples % block_size != 0 {
                 samples += block_size - (samples % block_size);
             }
@@ -213,7 +210,7 @@ impl WavFileOutStream {
 }
 
 impl AudioStream for WavFileOutStream {
-    fn sample_rate(&self) -> Float {
+    fn sample_rate(&self) -> f32 {
         self.sample_rate
     }
 
@@ -294,7 +291,6 @@ impl StreamThread {
         let ops_clone = ops.clone();
         std::thread::spawn(move || {
             let stream = build_stream();
-            stream.play().unwrap();
             while let Ok(op) = ops_clone.recv_blocking() {
                 match op {
                     StreamOps::Play => {
@@ -385,7 +381,7 @@ impl CpalStream {
     }
 }
 
-fn build_output_stream<T: cpal::SizedSample + cpal::FromSample<Float> + Send + 'static>(
+fn build_output_stream<T: cpal::SizedSample + cpal::FromSample<f32> + Send + 'static>(
     graph: Graph,
     output_device: &cpal::Device,
     config: &cpal::StreamConfig,
@@ -415,7 +411,7 @@ fn build_output_stream<T: cpal::SizedSample + cpal::FromSample<Float> + Send + '
                             continue;
                         };
                         for (j, &sample) in buffer[..new_block_size].iter().enumerate() {
-                            let sample = sample.unwrap_or_default().into_signal() as f64;
+                            let sample = sample.unwrap_or_default().into_signal() as f32;
                             data[j * channels + output_channel] = sample.to_sample();
                         }
                     }
@@ -430,8 +426,8 @@ fn build_output_stream<T: cpal::SizedSample + cpal::FromSample<Float> + Send + '
 }
 
 impl AudioStream for CpalStream {
-    fn sample_rate(&self) -> Float {
-        self.output_config.sample_rate().0 as Float
+    fn sample_rate(&self) -> f32 {
+        self.output_config.sample_rate().0 as f32
     }
 
     fn block_size(&self) -> usize {

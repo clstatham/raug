@@ -9,8 +9,8 @@ use thiserror::Error;
 use crate::{
     GraphSerde,
     signal::{
-        AnySignal, AnySignalOpt, AnySignalOptMut, Float, OptRepr, OptSignal, Signal, SignalBuffer,
-        SignalType,
+        AnySignal, AnySignalOpt, AnySignalOptMut, OptRepr, OptSignal, Signal, SignalType,
+        buffer::SignalBuffer,
     },
 };
 
@@ -139,7 +139,7 @@ pub enum ProcessMode {
 
 #[derive(Debug, Clone, Copy)]
 pub struct ProcEnv {
-    pub sample_rate: Float,
+    pub sample_rate: f32,
     pub block_size: usize,
     pub mode: ProcessMode,
 }
@@ -186,7 +186,7 @@ impl<'a> ProcessorInputs<'a> {
 
     /// Returns the current sample rate.
     #[inline]
-    pub fn sample_rate(&self) -> Float {
+    pub fn sample_rate(&self) -> f32 {
         self.env.sample_rate
     }
 
@@ -241,7 +241,7 @@ impl<'a> ProcessorInputs<'a> {
         };
 
         if let ProcessMode::Sample(sample_index) = self.env.mode {
-            if buffer.signal_type().is_same_as(&S::signal_type()) {
+            if buffer.signal_type() == S::signal_type() {
                 Ok(Ternary::B(std::iter::once(
                     buffer.as_type::<S>().unwrap()[sample_index].map(S::from_repr),
                 )))
@@ -252,7 +252,7 @@ impl<'a> ProcessorInputs<'a> {
                     actual: buffer.signal_type(),
                 })
             }
-        } else if buffer.signal_type().is_same_as(&S::signal_type()) {
+        } else if buffer.signal_type() == S::signal_type() {
             Ok(Ternary::A(
                 buffer
                     .as_type::<S>()
@@ -545,7 +545,7 @@ impl<'a> ProcessorOutputs<'a> {
     ) -> Result<impl Iterator<Item = &mut Option<S::Repr>> + '_, ProcessorError> {
         if let ProcessMode::Sample(sample_index) = self.mode {
             let output = &mut self.outputs[index];
-            if output.signal_type().is_same_as(&S::signal_type()) {
+            if output.signal_type() == S::signal_type() {
                 Ok(Either::Left(std::iter::once(
                     &mut output.as_type_mut::<S>().unwrap()[sample_index],
                 )))
@@ -612,13 +612,13 @@ where
     ///
     /// Do all of your preallocation here.
     #[allow(unused)]
-    fn allocate(&mut self, sample_rate: Float, max_block_size: usize) {}
+    fn allocate(&mut self, sample_rate: f32, max_block_size: usize) {}
 
     /// Called anytime the sample rate or block size changes.
     ///
     /// This function is NOT ALLOWED to allocate memory.
     #[allow(unused)]
-    fn resize_buffers(&mut self, sample_rate: Float, block_size: usize) {}
+    fn resize_buffers(&mut self, sample_rate: f32, block_size: usize) {}
 
     /// Processes the input signals and writes the output signals.
     ///

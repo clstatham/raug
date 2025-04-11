@@ -8,14 +8,14 @@ use crate::prelude::*;
 ///
 /// | Index | Name | Type | Description |
 /// | --- | --- | --- | --- |
-/// | `0` | `a` | `Float` | The first input signal. |
-/// | `1` | `b` | `Float` | The second input signal. |
+/// | `0` | `a` | `f32` | The first input signal. |
+/// | `1` | `b` | `f32` | The second input signal. |
 ///
 /// # Outputs
 ///
 /// | Index | Name | Type | Description |
 /// | --- | --- | --- | --- |
-/// | `0` | `out` | `Float` | The convolved output signal. |
+/// | `0` | `out` | `f32` | The convolved output signal. |
 #[derive(Clone, Default)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct SimpleFftConvolve {
@@ -43,20 +43,20 @@ impl SimpleFftConvolve {
 impl Processor for SimpleFftConvolve {
     fn input_spec(&self) -> Vec<SignalSpec> {
         vec![
-            SignalSpec::new("a", SignalType::Float),
-            SignalSpec::new("b", SignalType::Float),
+            SignalSpec::new("a", SignalType::f32),
+            SignalSpec::new("b", SignalType::f32),
         ]
     }
 
     fn output_spec(&self) -> Vec<SignalSpec> {
-        vec![SignalSpec::new("out", SignalType::Float)]
+        vec![SignalSpec::new("out", SignalType::f32)]
     }
 
-    fn allocate(&mut self, _sample_rate: Float, max_block_size: usize) {
+    fn allocate(&mut self, _sample_rate: f32, max_block_size: usize) {
         self.graph.allocate(max_block_size);
     }
 
-    fn resize_buffers(&mut self, sample_rate: Float, block_size: usize) {
+    fn resize_buffers(&mut self, sample_rate: f32, block_size: usize) {
         self.graph.resize_buffers(sample_rate, block_size);
     }
 
@@ -75,14 +75,14 @@ impl Processor for SimpleFftConvolve {
 ///
 /// | Index | Name | Type | Description |
 /// | --- | --- | --- | --- |
-/// | `0` | `a` | `Float` | The input signal. |
-/// | `1` | `b` | `Float` | The filter signal. |
+/// | `0` | `a` | `f32` | The input signal. |
+/// | `1` | `b` | `f32` | The filter signal. |
 ///
 /// # Outputs
 ///
 /// | Index | Name | Type | Description |
 /// | --- | --- | --- | --- |
-/// | `0` | `out` | `Float` | The deconvolved output signal. |
+/// | `0` | `out` | `f32` | The deconvolved output signal. |
 #[derive(Clone, Default)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct SimpleFftDeconvolve {
@@ -110,20 +110,20 @@ impl SimpleFftDeconvolve {
 impl Processor for SimpleFftDeconvolve {
     fn input_spec(&self) -> Vec<SignalSpec> {
         vec![
-            SignalSpec::new("a", SignalType::Float),
-            SignalSpec::new("b", SignalType::Float),
+            SignalSpec::new("a", SignalType::f32),
+            SignalSpec::new("b", SignalType::f32),
         ]
     }
 
     fn output_spec(&self) -> Vec<SignalSpec> {
-        vec![SignalSpec::new("out", SignalType::Float)]
+        vec![SignalSpec::new("out", SignalType::f32)]
     }
 
-    fn allocate(&mut self, _sample_rate: Float, max_block_size: usize) {
+    fn allocate(&mut self, _sample_rate: f32, max_block_size: usize) {
         self.graph.allocate(max_block_size);
     }
 
-    fn resize_buffers(&mut self, sample_rate: Float, block_size: usize) {
+    fn resize_buffers(&mut self, sample_rate: f32, block_size: usize) {
         self.graph.resize_buffers(sample_rate, block_size);
     }
 

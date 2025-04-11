@@ -1,4 +1,6 @@
-use raug::{prelude::*, signal::PI};
+use std::f32::consts::PI;
+
+use raug::prelude::*;
 
 pub fn random(graph: &Graph, trig: &Node) -> Node {
     let noise = graph.add(NoiseOscillator::new());
@@ -10,8 +12,8 @@ pub fn random(graph: &Graph, trig: &Node) -> Node {
 
 pub fn pick_randomly(graph: &Graph, trig: &Node, options: &[Node]) -> Node {
     let index = random(graph, trig);
-    let index = index * (options.len() + 1) as Float;
-    let index = index % options.len() as Float;
+    let index = index * (options.len() + 1) as f32;
+    let index = index % options.len() as f32;
     let index = index.cast(SignalType::Int);
 
     let select = graph.add(Select::new(SignalType::Bool, options.len()));
@@ -44,36 +46,36 @@ pub fn fm_sine_osc(graph: &Graph, freq: &Node, mod_freq: &Node) -> Node {
     (phase * 2.0 * PI + mod_freq * 2.0 * PI).sin()
 }
 
-pub fn midi_to_freq(midi: Float) -> Float {
-    440.0 * Float::powf(2.0, (midi - 69.0) / 12.0)
+pub fn midi_to_freq(midi: f32) -> f32 {
+    440.0 * f32::powf(2.0, (midi - 69.0) / 12.0)
 }
 
-pub fn scale_freqs(detune: Float) -> Vec<Float> {
+pub fn scale_freqs(detune: f32) -> Vec<f32> {
     // minor scale
     let scale = [0, 2, 3, 5, 7, 8, 10];
     let base = 60; // C4
     let mut freqs = vec![];
     for note in &scale {
-        freqs.push(midi_to_freq(base as Float + *note as Float + detune));
+        freqs.push(midi_to_freq(base as f32 + *note as f32 + detune));
     }
     let base = 72;
     for note in &scale {
-        freqs.push(midi_to_freq(base as Float + *note as Float + detune));
+        freqs.push(midi_to_freq(base as f32 + *note as f32 + detune));
     }
     let base = 48;
     for note in &scale {
-        freqs.push(midi_to_freq(base as Float + *note as Float + detune));
+        freqs.push(midi_to_freq(base as f32 + *note as f32 + detune));
     }
     freqs
 }
 
 pub fn random_tones(
     graph: &Graph,
-    rates: &[Float],
-    ratios: &[Float],
-    freqs: &[Float],
-    decays: &[Float],
-    amps: &[Float],
+    rates: &[f32],
+    ratios: &[f32],
+    freqs: &[f32],
+    decays: &[f32],
+    amps: &[f32],
 ) -> Node {
     let mast = graph.add(Metro::default());
     mast.input(0).connect(rates[0]);
@@ -134,7 +136,7 @@ pub fn generative1(num_tones: usize) -> Graph {
     let out1 = graph.add_audio_output();
     let out2 = graph.add_audio_output();
 
-    // let amp = graph.add_param(Param::new::<Float>("amp", Some(0.5)));
+    // let amp = graph.add_param(Param::new::<f32>("amp", Some(0.5)));
 
     let mut tones = vec![];
     for _ in 0..num_tones {

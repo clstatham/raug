@@ -1,6 +1,9 @@
 //! Oscillator processors.
 
-use std::collections::VecDeque;
+use std::{
+    collections::VecDeque,
+    f32::consts::{PI, TAU},
+};
 
 use crate::prelude::*;
 
@@ -12,41 +15,41 @@ use crate::prelude::*;
 ///
 /// | Index | Name | Type | Description |
 /// | --- | --- | --- | --- |
-/// | `0` | `increment` | `Float` | The phase increment per sample. |
+/// | `0` | `increment` | `f32` | The phase increment per sample. |
 /// | `1` | `reset` | `Bool` | Whether to reset the phase accumulator to 0. |
 ///
 /// # Outputs
 ///
 /// | Index | Name | Type | Description |
 /// | --- | --- | --- | --- |
-/// | `0` | `out` | `Float` | The phase accumulator value. |
+/// | `0` | `out` | `f32` | The phase accumulator value. |
 #[derive(Clone, Debug, Default, Processor)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "serde", processor_typetag)]
 pub struct PhaseAccumulator {
     // phase accumulator
-    t: Float,
+    t: u32,
     // phase increment per sample
     #[input]
-    increment: Float,
+    increment: f32,
     #[input]
     reset: bool,
 
     #[output]
-    out: Float,
+    out: f32,
 }
 
 impl PhaseAccumulator {
     pub fn update(&mut self, _env: &ProcEnv) {
         // increment the phase accumulator
-        self.t += self.increment;
+        self.t += 1;
 
         // check for phase reset
         if self.reset {
-            self.t = 0.0;
+            self.t = 0;
         }
 
-        self.out = self.t;
+        self.out = self.t as f32 * self.increment;
     }
 }
 
@@ -56,41 +59,41 @@ impl PhaseAccumulator {
 ///
 /// | Index | Name | Type | Description |
 /// | --- | --- | --- | --- |
-/// | `0` | `frequency` | `Float` | The frequency of the sine wave. |
-/// | `1` | `phase` | `Float` | The phase offset of the sine wave. |
+/// | `0` | `frequency` | `f32` | The frequency of the sine wave. |
+/// | `1` | `phase` | `f32` | The phase offset of the sine wave. |
 ///
 /// # Outputs
 ///
 /// | Index | Name | Type | Description |
 /// | --- | --- | --- | --- |
-/// | `0` | `out` | `Float` | The sine wave value. |
+/// | `0` | `out` | `f32` | The sine wave value. |
 #[derive(Clone, Debug, Processor)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "serde", processor_typetag)]
 pub struct SineOscillator {
     // phase accumulator
-    t: Float,
+    t: f32,
     // phase increment per sample
-    t_step: Float,
+    t_step: f32,
 
     /// The frequency of the sine wave.
     #[input]
-    pub frequency: Float,
+    pub frequency: f32,
 
     /// The phase offset of the sine wave.
     #[input]
-    pub phase: Float,
+    pub phase: f32,
 
     #[input]
     reset: bool,
 
     #[output]
-    out: Float,
+    out: f32,
 }
 
 impl SineOscillator {
     /// Creates a new [`SineOscillator`] processor with the given frequency.
-    pub fn new(frequency: Float) -> Self {
+    pub fn new(frequency: f32) -> Self {
         Self {
             frequency,
             ..Default::default()
@@ -129,36 +132,36 @@ impl Default for SineOscillator {
 ///
 /// | Index | Name | Type | Description |
 /// | --- | --- | --- | --- |
-/// | `0` | `frequency` | `Float` | The frequency of the sawtooth wave. |
-/// | `1` | `phase` | `Float` | The phase offset of the sawtooth wave. |
+/// | `0` | `frequency` | `f32` | The frequency of the sawtooth wave. |
+/// | `1` | `phase` | `f32` | The phase offset of the sawtooth wave. |
 ///
 /// # Outputs
 ///
 /// | Index | Name | Type | Description |
 /// | --- | --- | --- | --- |
-/// | `0` | `out` | `Float` | The sawtooth wave value. |
+/// | `0` | `out` | `f32` | The sawtooth wave value. |
 #[derive(Clone, Debug, Processor)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "serde", processor_typetag)]
 pub struct SawOscillator {
     // phase accumulator
-    t: Float,
+    t: f32,
     // phase increment per sample
-    t_step: Float,
+    t_step: f32,
 
     /// The frequency of the sawtooth wave.
     #[input]
-    pub frequency: Float,
+    pub frequency: f32,
 
     /// The phase offset of the sawtooth wave.
     #[input]
-    pub phase: Float,
+    pub phase: f32,
 
     #[input]
     reset: bool,
 
     #[output]
-    out: Float,
+    out: f32,
 }
 
 impl Default for SawOscillator {
@@ -176,7 +179,7 @@ impl Default for SawOscillator {
 
 impl SawOscillator {
     /// Creates a new [`SawOscillator`] processor with the given frequency.
-    pub fn new(frequency: Float) -> Self {
+    pub fn new(frequency: f32) -> Self {
         Self {
             frequency,
             ..Default::default()
@@ -208,13 +211,13 @@ impl SawOscillator {
 ///
 /// | Index | Name | Type | Description |
 /// | --- | --- | --- | --- |
-/// | `0` | `out` | `Float` | The white noise value. |
+/// | `0` | `out` | `f32` | The white noise value. |
 #[derive(Clone, Debug, Processor)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "serde", processor_typetag)]
 pub struct NoiseOscillator {
     #[output]
-    out: Float,
+    out: f32,
 }
 
 impl NoiseOscillator {
@@ -224,7 +227,7 @@ impl NoiseOscillator {
     }
 
     pub fn update(&mut self, _env: &ProcEnv) {
-        self.out = rand::random::<Float>();
+        self.out = rand::random::<f32>();
     }
 }
 
@@ -240,27 +243,27 @@ impl Default for NoiseOscillator {
 ///
 /// | Index | Name | Type | Description |
 /// | --- | --- | --- | --- |
-/// | `0` | `frequency` | `Float` | The frequency of the sawtooth wave. |
+/// | `0` | `frequency` | `f32` | The frequency of the sawtooth wave. |
 ///
 /// # Outputs
 ///
 /// | Index | Name | Type | Description |
 /// | --- | --- | --- | --- |
-/// | `0` | `out` | `Float` | The sawtooth wave value. |
+/// | `0` | `out` | `f32` | The sawtooth wave value. |
 #[derive(Clone, Debug, Processor)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "serde", processor_typetag)]
 pub struct BlSawOscillator {
-    p: Float,
-    dp: Float,
-    saw: Float,
+    p: f32,
+    dp: f32,
+    saw: f32,
 
     /// The frequency of the sawtooth wave.
     #[input]
-    pub frequency: Float,
+    pub frequency: f32,
 
     #[output]
-    out: Float,
+    out: f32,
 }
 
 impl Default for BlSawOscillator {
@@ -277,7 +280,7 @@ impl Default for BlSawOscillator {
 
 impl BlSawOscillator {
     /// Creates a new [`BlSawOscillator`] processor with the given frequency.
-    pub fn new(frequency: Float) -> Self {
+    pub fn new(frequency: f32) -> Self {
         Self {
             frequency,
             ..Default::default()
@@ -322,40 +325,40 @@ const BL_SQUARE_MAX_HARMONICS: usize = 512;
 ///
 /// | Index | Name | Type | Description |
 /// | --- | --- | --- | --- |
-/// | `0` | `frequency` | `Float` | The frequency of the square wave. |
-/// | `1` | `pulse_width` | `Float` | The pulse width of the square wave. |
+/// | `0` | `frequency` | `f32` | The frequency of the square wave. |
+/// | `1` | `pulse_width` | `f32` | The pulse width of the square wave. |
 /// | `2` | `reset` | `Bool` | Whether to reset the phase accumulator to 0. |
 ///
 /// # Outputs
 ///
 /// | Index | Name | Type | Description |
 /// | --- | --- | --- | --- |
-/// | `0` | `out` | `Float` | The square wave value. |
+/// | `0` | `out` | `f32` | The square wave value. |
 #[derive(Clone, Debug, Processor)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "serde", processor_typetag)]
 pub struct BlSquareOscillator {
     // phase accumulator
-    t: Float,
+    t: f32,
     // phase increment per sample
-    t_step: Float,
+    t_step: f32,
 
     // band-limited square wave coefficients
-    coeff: Box<[Float]>,
+    coeff: Box<[f32]>,
 
     /// The frequency of the square wave.
     #[input]
-    pub frequency: Float,
+    pub frequency: f32,
 
     /// The pulse width of the square wave (0.0 to 1.0).
     #[input]
-    pub pulse_width: Float,
+    pub pulse_width: f32,
 
     #[input]
     reset: bool,
 
     #[output]
-    out: Float,
+    out: f32,
 }
 
 impl Default for BlSquareOscillator {
@@ -366,7 +369,7 @@ impl Default for BlSquareOscillator {
 
 impl BlSquareOscillator {
     /// Creates a new [`BlSquareOscillator`] processor with the given frequency and pulse width.
-    pub fn new(frequency: Float, pulse_width: Float) -> Self {
+    pub fn new(frequency: f32, pulse_width: f32) -> Self {
         Self {
             frequency,
             pulse_width,
@@ -396,15 +399,14 @@ impl BlSquareOscillator {
         let n_harm = (env.sample_rate / (self.frequency * 4.0)) as usize;
         self.coeff[0] = self.pulse_width - 0.5;
         for i in 1..n_harm + 1 {
-            self.coeff[i] =
-                Float::sin(i as Float * PI * self.pulse_width) * 2.0 / (i as Float * PI);
+            self.coeff[i] = f32::sin(i as f32 * PI * self.pulse_width) * 2.0 / (i as f32 * PI);
         }
 
         let theta = self.t * TAU;
 
         let mut square = 0.0;
         for i in 0..n_harm + 1 {
-            square += self.coeff[i] * (theta * i as Float).cos();
+            square += self.coeff[i] * (theta * i as f32).cos();
         }
 
         self.t += self.t_step;
@@ -419,39 +421,39 @@ impl BlSquareOscillator {
 /// | Index | Name | Type | Description |
 /// | --- | --- | --- | --- |
 /// | `0` | `trig` | `bool` | Triggers the pluck. |
-/// | `1` | `frequency` | `Float` | The frequency of the string. |
-/// | `2` | `damping` | `Float` | The damping factor of the string. |
+/// | `1` | `frequency` | `f32` | The frequency of the string. |
+/// | `2` | `damping` | `f32` | The damping factor of the string. |
 ///
 /// # Outputs
 ///
 /// | Index | Name | Type | Description |
 /// | --- | --- | --- | --- |
-/// | `0` | `out` | `Float` | The string value. |
+/// | `0` | `out` | `f32` | The string value. |
 #[derive(Clone, Debug, Processor)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "serde", processor_typetag)]
 pub struct KarplusStrong {
     // delay line
-    ringbuf: VecDeque<Float>,
+    ringbuf: VecDeque<f32>,
 
     #[input]
     trig: bool,
 
     /// The frequency of the string.
     #[input]
-    pub frequency: Float,
+    pub frequency: f32,
 
     /// The damping factor of the string.
     #[input]
-    pub damping: Float,
+    pub damping: f32,
 
     #[output]
-    out: Float,
+    out: f32,
 }
 
 impl KarplusStrong {
     /// Creates a new [`KarplusStrong`] processor with the given frequency, damping factor, and pluck position.
-    pub fn new(frequency: Float, damping: Float) -> Self {
+    pub fn new(frequency: f32, damping: f32) -> Self {
         Self {
             ringbuf: VecDeque::new(),
             damping,
@@ -475,7 +477,7 @@ impl KarplusStrong {
             // initialize the delay line with noise
             self.ringbuf.clear();
             for _ in 0..delay_time {
-                self.ringbuf.push_back(rand::random::<Float>() * 2.0 - 1.0);
+                self.ringbuf.push_back(rand::random::<f32>() * 2.0 - 1.0);
             }
         }
 

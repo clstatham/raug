@@ -54,13 +54,13 @@ impl FftProcessor for RealBufPassthrough {
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct RealSplat {
-    value: Float,
+    value: f32,
     len: FftBufLength,
 }
 
 impl RealSplat {
     /// Creates a new [`RealBufSplat`] processor with the given FFT buffer length and value.
-    pub fn new(value: Float, len: FftBufLength) -> Self {
+    pub fn new(value: f32, len: FftBufLength) -> Self {
         Self { len, value }
     }
 }

@@ -7,11 +7,11 @@ use std::ops::{AddAssign, Deref, DerefMut, MulAssign};
 
 /// A buffer of real numbers.
 ///
-/// This differs from [`Buffer<Float>`](crate::signal::Buffer) in that it is does not internally store [`Option`]s - every element is guaranteed to have value.
+/// This differs from [`Buffer<f32>`](crate::signal::Buffer) in that it is does not internally store [`Option`]s - every element is guaranteed to have value.
 /// It also cannot be resized, pushed to, or popped from.
 #[derive(Debug, Clone, PartialEq, Default)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct RealBuf(pub(crate) Box<[Float]>);
+pub struct RealBuf(pub(crate) Box<[f32]>);
 
 impl RealBuf {
     /// Creates a new `RealBuf` with the given length.
@@ -21,7 +21,7 @@ impl RealBuf {
 }
 
 impl Deref for RealBuf {
-    type Target = [Float];
+    type Target = [f32];
 
     fn deref(&self) -> &Self::Target {
         &self.0
@@ -34,20 +34,20 @@ impl DerefMut for RealBuf {
     }
 }
 
-impl AsRef<[Float]> for RealBuf {
-    fn as_ref(&self) -> &[Float] {
+impl AsRef<[f32]> for RealBuf {
+    fn as_ref(&self) -> &[f32] {
         &self.0
     }
 }
 
-impl AsMut<[Float]> for RealBuf {
-    fn as_mut(&mut self) -> &mut [Float] {
+impl AsMut<[f32]> for RealBuf {
+    fn as_mut(&mut self) -> &mut [f32] {
         &mut self.0
     }
 }
 
-impl AddAssign<Float> for RealBuf {
-    fn add_assign(&mut self, rhs: Float) {
+impl AddAssign<f32> for RealBuf {
+    fn add_assign(&mut self, rhs: f32) {
         for x in self.iter_mut() {
             *x += rhs;
         }
@@ -62,8 +62,8 @@ impl AddAssign<&Self> for RealBuf {
     }
 }
 
-impl MulAssign<Float> for RealBuf {
-    fn mul_assign(&mut self, rhs: Float) {
+impl MulAssign<f32> for RealBuf {
+    fn mul_assign(&mut self, rhs: f32) {
         for x in self.iter_mut() {
             *x *= rhs;
         }
@@ -78,15 +78,15 @@ impl MulAssign<&Self> for RealBuf {
     }
 }
 
-impl FromIterator<Float> for RealBuf {
-    fn from_iter<I: IntoIterator<Item = Float>>(iter: I) -> Self {
+impl FromIterator<f32> for RealBuf {
+    fn from_iter<I: IntoIterator<Item = f32>>(iter: I) -> Self {
         Self(iter.into_iter().collect::<Vec<_>>().into_boxed_slice())
     }
 }
 
 impl<'a> IntoIterator for &'a RealBuf {
-    type Item = &'a Float;
-    type IntoIter = std::slice::Iter<'a, Float>;
+    type Item = &'a f32;
+    type IntoIter = std::slice::Iter<'a, f32>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.0.iter()
@@ -94,8 +94,8 @@ impl<'a> IntoIterator for &'a RealBuf {
 }
 
 impl<'a> IntoIterator for &'a mut RealBuf {
-    type Item = &'a mut Float;
-    type IntoIter = std::slice::IterMut<'a, Float>;
+    type Item = &'a mut f32;
+    type IntoIter = std::slice::IterMut<'a, f32>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.0.iter_mut()
@@ -105,7 +105,7 @@ impl<'a> IntoIterator for &'a mut RealBuf {
 /// A buffer of complex numbers.
 #[derive(Debug, Clone, PartialEq, Default)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct ComplexBuf(pub(crate) Box<[Complex<Float>]>);
+pub struct ComplexBuf(pub(crate) Box<[Complex<f32>]>);
 
 impl ComplexBuf {
     /// Creates a new `Fft` for the given FFT length.
@@ -118,7 +118,7 @@ impl ComplexBuf {
 }
 
 impl Deref for ComplexBuf {
-    type Target = [Complex<Float>];
+    type Target = [Complex<f32>];
 
     fn deref(&self) -> &Self::Target {
         &self.0
@@ -131,27 +131,27 @@ impl DerefMut for ComplexBuf {
     }
 }
 
-impl AsRef<[Complex<Float>]> for ComplexBuf {
-    fn as_ref(&self) -> &[Complex<Float>] {
+impl AsRef<[Complex<f32>]> for ComplexBuf {
+    fn as_ref(&self) -> &[Complex<f32>] {
         &self.0
     }
 }
 
-impl AsMut<[Complex<Float>]> for ComplexBuf {
-    fn as_mut(&mut self) -> &mut [Complex<Float>] {
+impl AsMut<[Complex<f32>]> for ComplexBuf {
+    fn as_mut(&mut self) -> &mut [Complex<f32>] {
         &mut self.0
     }
 }
 
-impl FromIterator<Complex<Float>> for ComplexBuf {
-    fn from_iter<I: IntoIterator<Item = Complex<Float>>>(iter: I) -> Self {
+impl FromIterator<Complex<f32>> for ComplexBuf {
+    fn from_iter<I: IntoIterator<Item = Complex<f32>>>(iter: I) -> Self {
         Self(iter.into_iter().collect::<Vec<_>>().into_boxed_slice())
     }
 }
 
 impl<'a> IntoIterator for &'a ComplexBuf {
-    type Item = &'a Complex<Float>;
-    type IntoIter = std::slice::Iter<'a, Complex<Float>>;
+    type Item = &'a Complex<f32>;
+    type IntoIter = std::slice::Iter<'a, Complex<f32>>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.0.iter()
@@ -159,8 +159,8 @@ impl<'a> IntoIterator for &'a ComplexBuf {
 }
 
 impl<'a> IntoIterator for &'a mut ComplexBuf {
-    type Item = &'a mut Complex<Float>;
-    type IntoIter = std::slice::IterMut<'a, Complex<Float>>;
+    type Item = &'a mut Complex<f32>;
+    type IntoIter = std::slice::IterMut<'a, Complex<f32>>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.0.iter_mut()
