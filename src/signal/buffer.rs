@@ -4,9 +4,7 @@ use std::{
     path::Path,
 };
 
-use super::{
-    AnySignalOpt, AnySignalOptMut, OptRepr, OptSignal, OptionRepr, Signal, SignalType, repr::Repr,
-};
+use super::{AnySignalOpt, AnySignalOptMut, OptRepr, OptSignal, OptionRepr, Signal, SignalType};
 
 /// A contiguous buffer of signals.
 #[derive(PartialEq, Clone)]
@@ -89,7 +87,8 @@ impl Buffer<f32> {
         let mut writer = hound::WavWriter::create(path, spec)?;
         for sample in self.buf.iter() {
             if let Some(sample) = sample.as_ref() {
-                writer.write_sample(sample.into_signal() as f32)?;
+                let sample = f32::from_repr(*sample);
+                writer.write_sample(sample)?;
             } else {
                 writer.write_sample(0.0)?;
             }

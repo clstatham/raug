@@ -4,7 +4,7 @@ use std::fmt::Debug;
 
 use crate::{
     prelude::*,
-    processor::ProcessMode,
+    processor::io::ProcessMode,
     signal::{Signal, SignalType, buffer::SignalBuffer},
 };
 

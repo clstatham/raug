@@ -43,6 +43,7 @@ raug-macros = { path = "../raug-macros" }
 num = { version = "0.4.3", features = [] }
 apodize = "1.0.0"
 allocation-counter = { version = "0.8", optional = true }
+any_vec = "0.14.0"
 
 [dev-dependencies]
 env_logger = "0.11"

@@ -2,34 +2,34 @@ use std::{fmt::Debug, num::NonZeroU32};
 
 use super::Signal;
 
-pub trait Repr<T: Signal> {
-    fn from_signal(value: T) -> Self;
-    fn into_signal(self) -> T;
+/// An internal trait for types that can be converted to and from a `Signal`.
+pub trait Repr<T: Signal>
+where
+    Self: From<T>,
+    T: From<Self>,
+{
 }
 
-impl<T: Signal> Repr<T> for T {
-    #[inline]
-    fn from_signal(value: T) -> Self {
-        value
-    }
-
-    #[inline]
-    fn into_signal(self) -> T {
-        self
-    }
+impl<T: Signal, U> Repr<T> for U
+where
+    U: From<T>,
+    T: From<U>,
+{
 }
 
+/// A niche-optimized representation of a 32-bit float.
 #[derive(Clone, Copy)]
 #[repr(transparent)]
-pub struct FloatRepr(NonZeroU32);
+pub struct NicheFloat(NonZeroU32);
 
-impl FloatRepr {
-    pub const NICHE: NonZeroU32 = NonZeroU32::MAX;
+impl NicheFloat {
+    // the bits of u32::MAX are in NaN space for 32 bit floats, so it's unlikely to show up in practice
+    const NICHE: NonZeroU32 = NonZeroU32::MAX;
 
     #[inline]
     pub fn new(value: f32) -> Self {
         let bits = value.to_bits() ^ Self::NICHE.get();
-        Self(NonZeroU32::new(bits).map_or(Self::NICHE, |n| n))
+        Self(NonZeroU32::new(bits).unwrap_or(Self::NICHE))
     }
 
     #[inline]
@@ -39,42 +39,37 @@ impl FloatRepr {
     }
 }
 
-impl Debug for FloatRepr {
+impl Debug for NicheFloat {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.get())
     }
 }
 
-impl PartialEq for FloatRepr {
+impl PartialEq for NicheFloat {
     #[inline]
     fn eq(&self, other: &Self) -> bool {
         self.get() == other.get()
     }
 }
 
-impl Default for FloatRepr {
+impl Default for NicheFloat {
     #[inline]
     fn default() -> Self {
-        FloatRepr::new(0.0)
+        NicheFloat::new(0.0)
     }
 }
 
-impl From<f32> for FloatRepr {
+impl From<f32> for NicheFloat {
     #[inline]
     fn from(value: f32) -> Self {
-        FloatRepr::new(value)
+        NicheFloat::new(value)
     }
 }
 
-impl Repr<f32> for FloatRepr {
+impl From<NicheFloat> for f32 {
     #[inline]
-    fn from_signal(value: f32) -> Self {
-        FloatRepr::new(value)
-    }
-
-    #[inline]
-    fn into_signal(self) -> f32 {
-        self.get()
+    fn from(value: NicheFloat) -> Self {
+        value.get()
     }
 }
 
@@ -84,9 +79,9 @@ mod tests {
 
     #[test]
     fn test_float_repr() {
-        assert_eq!(size_of::<Option<FloatRepr>>(), size_of::<FloatRepr>());
+        assert_eq!(size_of::<Option<NicheFloat>>(), size_of::<NicheFloat>());
         let value = 1.0;
-        let repr = FloatRepr::new(value);
+        let repr = NicheFloat::new(value);
         assert_eq!(repr.get(), value);
     }
 }

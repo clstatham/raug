@@ -13,7 +13,7 @@ use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::{
     prelude::{Constant, Null, Param, Passthrough, ProcEnv},
-    processor::{ProcessMode, Processor, ProcessorError},
+    processor::{Processor, ProcessorError, io::ProcessMode},
     signal::{Signal, SignalType, buffer::SignalBuffer},
 };
 

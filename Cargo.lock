@@ -101,6 +101,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "any_vec"
+version = "0.14.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "34cd60c5e3152cef0a592f1b296f1cc93715d89d2551d85315828c3a09575ff4"
+
+[[package]]
 name = "apodize"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1097,6 +1103,7 @@ name = "raug"
 version = "0.0.4"
 dependencies = [
  "allocation-counter",
+ "any_vec",
  "apodize",
  "cpal",
  "criterion",

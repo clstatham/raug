@@ -22,7 +22,8 @@ pub mod prelude {
         runtime::{AudioBackend, AudioDevice, AudioStream, CpalStream, MidiPort, WavFileOutStream},
     };
     pub use crate::processor::{
-        ProcEnv, Processor, ProcessorError, ProcessorInputs, ProcessorOutputs, SignalSpec,
+        Processor, ProcessorError,
+        io::{ProcEnv, ProcessorInputs, ProcessorOutputs, SignalSpec},
     };
     pub use crate::signal::{
         AnySignal, AnySignalOpt, OptRepr, OptSignal, Signal, SignalType, buffer::Buffer,

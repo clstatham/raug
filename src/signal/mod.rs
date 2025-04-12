@@ -3,25 +3,24 @@
 use std::fmt::Debug;
 
 use buffer::{Buffer, SignalBuffer};
-use repr::{FloatRepr, Repr};
+use repr::{NicheFloat, Repr};
 
 pub mod buffer;
 pub mod repr;
-
-mod sealed {
-    pub trait Sealed {}
-    impl Sealed for f32 {}
-    impl Sealed for f64 {}
-    impl Sealed for i64 {}
-    impl Sealed for bool {}
-}
+pub mod type_erased;
 
 /// A type that can be stored in a [`Buffer`] and processed by a [`Processor`](crate::processor::Processor).
-pub trait Signal: sealed::Sealed + Copy + Debug + Send + Sync + PartialEq + 'static {
+pub trait Signal: Copy + Debug + Send + Sync + PartialEq + From<Self::Repr> + 'static {
     type Repr: Repr<Self> + Copy + Debug + Send + Sync + PartialEq + 'static;
 
-    fn from_repr(repr: Self::Repr) -> Self;
-    fn into_repr(self) -> Self::Repr;
+    #[inline]
+    fn from_repr(repr: Self::Repr) -> Self {
+        repr.into()
+    }
+    #[inline]
+    fn into_repr(self) -> Self::Repr {
+        self.into()
+    }
 
     /// The type of the signal.
     fn signal_type() -> SignalType;
@@ -66,7 +65,7 @@ impl<T: Signal> OptSignal<T> for Option<T> {
 
 pub trait OptRepr<T: Signal> {
     fn into_signal(self) -> Option<T>;
-    fn set(&mut self, value: T);
+    fn set(&mut self, value: T) -> Option<T>;
 }
 
 impl<T: Signal> OptRepr<T> for Option<T::Repr> {
@@ -76,24 +75,15 @@ impl<T: Signal> OptRepr<T> for Option<T::Repr> {
     }
 
     #[inline]
-    fn set(&mut self, value: T) {
+    fn set(&mut self, value: T) -> Option<T> {
+        let old = self.into_signal();
         *self = Some(value.into_repr());
+        old
     }
 }
 
 impl Signal for f32 {
-    type Repr = FloatRepr;
-
-    #[inline]
-    fn from_repr(repr: Self::Repr) -> Self {
-        repr.into_signal()
-    }
-
-    #[inline]
-    fn into_repr(self) -> Self::Repr {
-        // FloatRepr::new(self)
-        Self::Repr::from_signal(self)
-    }
+    type Repr = NicheFloat;
 
     #[inline]
     fn signal_type() -> SignalType {
