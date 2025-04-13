@@ -14,7 +14,15 @@ pub trait Signal: Copy + Default + Debug + Send + Sync + PartialEq + 'static {
     }
 }
 
-impl<T: Copy + Default + Debug + Send + Sync + PartialEq + 'static> Signal for T {}
+impl<T: Signal> Signal for Option<T> {}
+impl Signal for f32 {}
+impl Signal for f64 {}
+impl Signal for i32 {}
+impl Signal for i64 {}
+impl Signal for bool {}
+impl Signal for u32 {}
+impl Signal for u64 {}
+impl Signal for usize {}
 
 /// Type information for a signal.
 #[derive(Clone, Copy)]

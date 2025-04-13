@@ -3,6 +3,7 @@
 use std::fmt::Debug;
 
 use crate::{
+    graph::GraphConstructionError,
     prelude::*,
     processor::io::ProcessMode,
     signal::{SignalType, type_erased::ErasedBuffer},
@@ -182,12 +183,10 @@ impl Node {
         if self.num_outputs() == 1 {
             Ok(())
         } else {
-            Err(
-                crate::graph::GraphConstructionError::NodeHasMultipleOutputs {
-                    op: op.into(),
-                    signal_type: self.name(),
-                },
-            )
+            Err(GraphConstructionError::NodeHasMultipleOutputs {
+                op: op.into(),
+                signal_type: self.name(),
+            })
         }
     }
 
@@ -203,6 +202,50 @@ impl Node {
     pub fn num_outputs(&self) -> usize {
         self.graph
             .with_inner(|graph| graph.digraph[self.id()].num_outputs())
+    }
+
+    /// Returns the name of the input at the given index.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the index is out of bounds.
+    #[inline]
+    #[track_caller]
+    pub fn input_name(&self, index: impl IntoInputIdx) -> String {
+        let index = index.into_input_idx(self);
+        assert!(
+            index < self.num_inputs() as u32,
+            "input index {} out of bounds for node {}",
+            index,
+            self.name()
+        );
+        self.graph.with_inner(|graph| {
+            graph.digraph[self.id()].input_spec()[index as usize]
+                .name
+                .clone()
+        })
+    }
+
+    /// Returns the name of the output at the given index.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the index is out of bounds.
+    #[inline]
+    #[track_caller]
+    pub fn output_name(&self, index: impl IntoOutputIdx) -> String {
+        let index = index.into_output_idx(self);
+        assert!(
+            index < self.num_outputs() as u32,
+            "output index {} out of bounds for node {}",
+            index,
+            self.name()
+        );
+        self.graph.with_inner(|graph| {
+            graph.digraph[self.id()].output_spec()[index as usize]
+                .name
+                .clone()
+        })
     }
 
     /// Returns the input of the node at the given index.
@@ -395,6 +438,12 @@ impl Input {
         self.input_index
     }
 
+    /// Returns the name of the input.
+    #[inline]
+    pub fn name(&self) -> String {
+        self.node.input_name(self.input_index)
+    }
+
     /// Connects the input to the output of another node.
     ///
     /// # Panics
@@ -463,6 +512,12 @@ impl Output {
     #[inline]
     pub fn signal_type(&self) -> SignalType {
         self.node.output_type(self.output_index)
+    }
+
+    /// Returns the name of the output.
+    #[inline]
+    pub fn name(&self) -> String {
+        self.node.output_name(self.output_index)
     }
 
     /// Connects the output to the input of another node.
@@ -711,7 +766,7 @@ impl std::ops::Neg for &Node {
 }
 
 mod sealed {
-    use crate::signal::Signal;
+    use crate::{graph::NodeIndex, signal::Signal};
 
     pub trait Sealed {}
     impl Sealed for super::Node {}
@@ -719,6 +774,8 @@ mod sealed {
     impl Sealed for super::Output {}
     impl Sealed for &super::Output {}
     impl<T: Signal> Sealed for T {}
+    impl Sealed for NodeIndex {}
+    impl Sealed for &str {}
 }
 
 /// A trait for coercing a value into an [`Output`].
@@ -827,7 +884,7 @@ impl IntoInputIdx for u32 {
     }
 }
 
-impl IntoInputIdx for &'static str {
+impl IntoInputIdx for &str {
     #[track_caller]
     #[inline]
     fn into_input_idx(self, node: &Node) -> u32 {
@@ -843,7 +900,7 @@ impl IntoInputIdx for &'static str {
     }
 }
 
-impl IntoOutputIdx for &'static str {
+impl IntoOutputIdx for &str {
     #[track_caller]
     #[inline]
     fn into_output_idx(self, node: &Node) -> u32 {
