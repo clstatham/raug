@@ -26,7 +26,7 @@ pub mod prelude {
         io::{ProcEnv, ProcessorInputs, ProcessorOutputs, SignalSpec},
     };
     pub use crate::signal::{
-        OptRepr, OptSignal, Signal, SignalType,
+        Signal, SignalType,
         buffer::Buffer,
         repr::Repr,
         type_erased::{ErasedBuffer, ErasedSignalMut, ErasedSignalRef},

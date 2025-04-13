@@ -7,9 +7,7 @@ use any_vec::{
     traits::Cloneable,
 };
 
-use crate::signal::OptRepr;
-
-use super::{OptionRepr, Signal, SignalType, buffer::Buffer};
+use super::{Signal, SignalType, buffer::Buffer};
 
 #[derive(Clone)]
 pub struct ErasedBuffer {
@@ -21,15 +19,15 @@ impl ErasedBuffer {
     pub fn empty<T: Signal>() -> Self {
         Self {
             signal_type: SignalType::of::<T>(),
-            buf: AnyVec::new::<OptionRepr<T>>(),
+            buf: AnyVec::new::<T>(),
         }
     }
 
     pub fn zeros<T: Signal>(len: usize) -> Self {
-        let mut buf = AnyVec::new::<OptionRepr<T>>();
+        let mut buf = AnyVec::new::<T>();
         buf.reserve(len);
         for _ in 0..len {
-            buf.push(AnyValueWrapper::<OptionRepr<T>>::new(None));
+            buf.push(AnyValueWrapper::<T>::new(T::default()));
         }
 
         Self {
@@ -39,7 +37,7 @@ impl ErasedBuffer {
     }
 
     pub fn from_buffer<T: Signal>(mut buffer: Buffer<T>) -> Self {
-        let mut buf = AnyVec::new::<OptionRepr<T>>();
+        let mut buf = AnyVec::new::<T>();
         buf.reserve(buffer.len());
         for item in buffer.drain(..) {
             buf.push(AnyValueWrapper::new(item));
@@ -55,7 +53,7 @@ impl ErasedBuffer {
         assert_eq!(self.signal_type, SignalType::of::<T>());
         assert!(self.buf.len() <= buffer.len());
         for (i, item) in self.buf.drain(..).enumerate() {
-            buffer[i] = item.downcast::<OptionRepr<T>>().unwrap();
+            buffer[i] = item.downcast::<T>().unwrap();
         }
     }
 
@@ -68,22 +66,15 @@ impl ErasedBuffer {
     }
 
     #[inline]
-    pub fn as_slice<T: Signal>(&self) -> &[OptionRepr<T>] {
+    pub fn as_slice<T: Signal>(&self) -> &[T] {
         assert_eq!(self.signal_type, SignalType::of::<T>());
-        unsafe {
-            self.buf
-                .downcast_ref_unchecked::<OptionRepr<T>>()
-                .as_slice()
-        }
+        unsafe { self.buf.downcast_ref_unchecked::<T>().as_slice() }
     }
 
     #[inline]
-    pub fn as_mut_slice<T: Signal>(&mut self) -> &mut [OptionRepr<T>] {
+    pub fn as_mut_slice<T: Signal>(&mut self) -> &mut [T] {
         assert_eq!(self.signal_type, SignalType::of::<T>());
-        self.buf
-            .downcast_mut::<OptionRepr<T>>()
-            .unwrap()
-            .as_mut_slice()
+        self.buf.downcast_mut::<T>().unwrap().as_mut_slice()
     }
 
     pub fn resize<T: Signal>(&mut self, len: usize) {
@@ -92,7 +83,7 @@ impl ErasedBuffer {
         if diff > 0 {
             self.buf.reserve(diff as usize);
             for _ in 0..diff {
-                self.buf.push(AnyValueWrapper::<OptionRepr<T>>::new(None));
+                self.buf.push(AnyValueWrapper::<T>::new(T::default()));
             }
         } else {
             for _ in 0..-diff {
@@ -101,7 +92,7 @@ impl ErasedBuffer {
         }
     }
 
-    pub fn fill<T: Signal>(&mut self, value: impl Into<OptionRepr<T>>) {
+    pub fn fill<T: Signal>(&mut self, value: impl Into<T>) {
         self.as_mut_slice::<T>().fill(value.into());
     }
 
@@ -128,20 +119,20 @@ impl ErasedBuffer {
     #[inline]
     pub fn get_as<T: Signal>(&self, index: usize) -> Option<T> {
         assert_eq!(self.signal_type, SignalType::of::<T>());
-        self.get(index)?.as_ref::<T>().into_signal()
+        Some(*self.get(index)?.as_ref::<T>())
     }
 
     #[inline]
-    pub fn get_mut_as<T: Signal>(&mut self, index: usize) -> Option<&mut OptionRepr<T>> {
+    pub fn get_mut_as<T: Signal>(&mut self, index: usize) -> Option<&mut T> {
         assert_eq!(self.signal_type, SignalType::of::<T>());
         Some(self.get_mut(index)?.as_mut::<T>())
     }
 
     #[inline]
-    pub fn set_as<T: Signal>(&mut self, index: usize, value: OptionRepr<T>) -> Option<T> {
+    pub fn set_as<T: Signal>(&mut self, index: usize, value: T) -> T {
         assert_eq!(self.signal_type, SignalType::of::<T>());
         let item = self.get_mut_as::<T>(index).expect("Index out of bounds");
-        let old = item.into_signal();
+        let old = *item;
         *item = value;
         old
     }
@@ -176,9 +167,9 @@ pub struct ErasedSignalRef<'a> {
 impl<'a> ErasedSignalRef<'a> {
     #[allow(clippy::should_implement_trait)]
     #[inline]
-    pub fn as_ref<T: Signal>(&self) -> &'a OptionRepr<T> {
-        assert!(self.signal.value_typeid() == TypeId::of::<OptionRepr<T>>());
-        unsafe { self.signal.downcast_ref_unchecked::<OptionRepr<T>>() }
+    pub fn as_ref<T: Signal>(&self) -> &'a T {
+        assert!(self.signal.value_typeid() == TypeId::of::<T>());
+        unsafe { self.signal.downcast_ref_unchecked::<T>() }
     }
 
     #[inline]
@@ -195,16 +186,16 @@ pub struct ErasedSignalMut<'a> {
 impl<'a> ErasedSignalMut<'a> {
     #[allow(clippy::should_implement_trait)]
     #[inline]
-    pub fn as_ref<T: Signal>(&self) -> &'a OptionRepr<T> {
-        assert!(self.signal.value_typeid() == TypeId::of::<OptionRepr<T>>());
-        unsafe { self.signal.downcast_ref_unchecked::<OptionRepr<T>>() }
+    pub fn as_ref<T: Signal>(&self) -> &'a T {
+        assert!(self.signal.value_typeid() == TypeId::of::<T>());
+        unsafe { self.signal.downcast_ref_unchecked::<T>() }
     }
 
     #[allow(clippy::should_implement_trait)]
     #[inline]
-    pub fn as_mut<T: Signal>(&mut self) -> &'a mut OptionRepr<T> {
-        assert!(self.signal.value_typeid() == TypeId::of::<OptionRepr<T>>());
-        unsafe { self.signal.downcast_mut_unchecked::<OptionRepr<T>>() }
+    pub fn as_mut<T: Signal>(&mut self) -> &'a mut T {
+        assert!(self.signal.value_typeid() == TypeId::of::<T>());
+        unsafe { self.signal.downcast_mut_unchecked::<T>() }
     }
 
     #[inline]

@@ -708,16 +708,11 @@ mod sealed {
     use crate::signal::Signal;
 
     pub trait Sealed {}
-    impl Sealed for crate::graph::NodeIndex {}
     impl Sealed for super::Node {}
     impl Sealed for &super::Node {}
     impl Sealed for super::Output {}
     impl Sealed for &super::Output {}
     impl<T: Signal> Sealed for T {}
-    impl Sealed for i32 {}
-    impl Sealed for u32 {}
-    impl Sealed for usize {}
-    impl Sealed for &str {}
 }
 
 /// A trait for coercing a value into an [`Output`].
@@ -839,7 +834,7 @@ impl IntoInputIdx for u32 {
     }
 }
 
-impl IntoInputIdx for &str {
+impl IntoInputIdx for &'static str {
     #[track_caller]
     #[inline]
     fn into_input_idx(self, node: &Node) -> u32 {
@@ -855,7 +850,7 @@ impl IntoInputIdx for &str {
     }
 }
 
-impl IntoOutputIdx for &str {
+impl IntoOutputIdx for &'static str {
     #[track_caller]
     #[inline]
     fn into_output_idx(self, node: &Node) -> u32 {

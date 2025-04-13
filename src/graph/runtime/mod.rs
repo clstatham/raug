@@ -16,8 +16,6 @@ use cpal::{
 };
 use crossbeam_channel::{Receiver, RecvError, SendError, Sender, TryRecvError, TrySendError};
 
-use crate::signal::Signal;
-
 use super::{Graph, GraphRunError, GraphRunResult};
 
 /// The audio backend to use for audio I/O.
@@ -241,7 +239,6 @@ impl AudioStream for WavFileOutStream {
                     };
                     let buffer = buffer.as_slice::<f32>();
                     for (j, &sample) in buffer[..self.block_size].iter().enumerate() {
-                        let sample = f32::from_repr(sample.unwrap_or_default());
                         samples[j * self.output_channels + i] = sample;
                     }
                 }
@@ -413,7 +410,6 @@ fn build_output_stream<T: cpal::SizedSample + cpal::FromSample<f32> + Send + 'st
                         };
                         let buffer = buffer.as_slice::<f32>();
                         for (j, &sample) in buffer[..new_block_size].iter().enumerate() {
-                            let sample = f32::from_repr(sample.unwrap_or_default());
                             data[j * channels + output_channel] = sample.to_sample();
                         }
                     }
