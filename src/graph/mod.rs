@@ -9,7 +9,7 @@ use petgraph::{
     visit::DfsPostOrder,
 };
 use runtime::AudioDevice;
-use rustc_hash::{FxHashMap, FxHashSet};
+use rustc_hash::FxHashSet;
 
 use crate::{
     prelude::{Constant, Null, Passthrough, ProcEnv},
@@ -138,9 +138,6 @@ pub type GraphConstructionResult<T> = Result<T, GraphConstructionError>;
 #[derive(Default, Clone)]
 pub(crate) struct GraphInner {
     pub(crate) digraph: DiGraph,
-
-    // parameters for the graph
-    params: FxHashMap<String, NodeIndex>,
 
     // cached input/output nodes
     input_nodes: Vec<NodeIndex>,
@@ -318,12 +315,6 @@ impl GraphInner {
     #[inline]
     pub fn num_audio_outputs(&self) -> usize {
         self.output_nodes.len()
-    }
-
-    /// Returns the number of parameters in the graph.
-    #[inline]
-    pub fn num_params(&self) -> usize {
-        self.params.len()
     }
 
     /// Returns the indices of the audio outputs in the graph.
