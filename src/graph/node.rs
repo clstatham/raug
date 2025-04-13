@@ -411,6 +411,34 @@ impl Input {
     }
 }
 
+macro_rules! choose_node_generics {
+    ($graph:expr, $signal_type:expr => $node_type:ident => $($options:ty)*) => {
+        match $signal_type {
+            $(
+                t if t == <$options>::signal_type() => $graph.add($node_type::<$options>::default()),
+            )*
+            _ => panic!("Unsupported signal type: {:?}", $signal_type),
+        }
+    };
+}
+
+macro_rules! generic_binary_op_impl {
+    ($self:ident, $b:ident, $op:ident => $($options:ty)*) => {{
+        let this_node = $self.node();
+        let graph = this_node.graph();
+        let b = $b.into_output(graph);
+        assert_eq!(
+            $self.signal_type(),
+            b.signal_type(),
+            "Signal types must match for this operation",
+        );
+        let node = choose_node_generics!(graph, $self.signal_type() => $op => $($options)*);
+        node.input(0).connect($self);
+        node.input(1).connect(b);
+        node
+    }};
+}
+
 /// Represents an output of a [`Node`].
 #[derive(Clone)]
 pub struct Output {
@@ -450,6 +478,230 @@ impl Output {
             .connect_output(self.output_index, &input.node, input.input_index);
         self.node.clone()
     }
+
+    #[inline]
+    pub fn add(&self, b: impl IntoOutput) -> Node {
+        generic_binary_op_impl!(self, b, Add => f32 i64)
+    }
+
+    #[inline]
+    pub fn sub(&self, b: impl IntoOutput) -> Node {
+        generic_binary_op_impl!(self, b, Sub => f32 i64)
+    }
+
+    #[inline]
+    pub fn mul(&self, b: impl IntoOutput) -> Node {
+        generic_binary_op_impl!(self, b, Mul => f32 i64)
+    }
+
+    #[inline]
+    pub fn div(&self, b: impl IntoOutput) -> Node {
+        generic_binary_op_impl!(self, b, Div => f32 i64)
+    }
+
+    #[inline]
+    pub fn rem(&self, b: impl IntoOutput) -> Node {
+        generic_binary_op_impl!(self, b, Rem => f32 i64)
+    }
+
+    #[inline]
+    pub fn neg(&self) -> Node {
+        let this_node = self.node();
+        let graph = this_node.graph();
+        let node = choose_node_generics!(graph, self.signal_type() => Neg => f32 i64);
+        node.input(0).connect(self);
+        node
+    }
+}
+
+impl<T: IntoOutput> std::ops::Add<T> for Output {
+    type Output = Node;
+
+    #[inline]
+    #[track_caller]
+    fn add(self, rhs: T) -> Self::Output {
+        generic_binary_op_impl!(self, rhs, Add => f32 i64)
+    }
+}
+
+impl<T: IntoOutput> std::ops::Sub<T> for Output {
+    type Output = Node;
+
+    #[inline]
+    #[track_caller]
+    fn sub(self, rhs: T) -> Self::Output {
+        generic_binary_op_impl!(self, rhs, Sub => f32 i64)
+    }
+}
+
+impl<T: IntoOutput> std::ops::Mul<T> for Output {
+    type Output = Node;
+
+    #[inline]
+    #[track_caller]
+    fn mul(self, rhs: T) -> Self::Output {
+        generic_binary_op_impl!(self, rhs, Mul => f32 i64)
+    }
+}
+
+impl<T: IntoOutput> std::ops::Div<T> for Output {
+    type Output = Node;
+
+    #[inline]
+    #[track_caller]
+    fn div(self, rhs: T) -> Self::Output {
+        generic_binary_op_impl!(self, rhs, Div => f32 i64)
+    }
+}
+
+impl<T: IntoOutput> std::ops::Rem<T> for Output {
+    type Output = Node;
+
+    #[inline]
+    #[track_caller]
+    fn rem(self, rhs: T) -> Self::Output {
+        generic_binary_op_impl!(self, rhs, Rem => f32 i64)
+    }
+}
+
+impl std::ops::Neg for Output {
+    type Output = Node;
+
+    #[inline]
+    #[track_caller]
+    fn neg(self) -> Self::Output {
+        let this_node = self.node();
+        let graph = this_node.graph();
+        let node = choose_node_generics!(graph, self.signal_type() => Neg => f32 i64);
+        node.input(0).connect(self);
+        node
+    }
+}
+
+impl<T: IntoOutput> std::ops::Add<T> for Node {
+    type Output = Node;
+
+    #[inline]
+    #[track_caller]
+    fn add(self, rhs: T) -> Self::Output {
+        self.assert_single_output("add");
+        self.output(0) + rhs
+    }
+}
+
+impl<T: IntoOutput> std::ops::Sub<T> for Node {
+    type Output = Node;
+
+    #[inline]
+    #[track_caller]
+    fn sub(self, rhs: T) -> Self::Output {
+        self.assert_single_output("sub");
+        self.output(0) - rhs
+    }
+}
+
+impl<T: IntoOutput> std::ops::Mul<T> for Node {
+    type Output = Node;
+
+    #[inline]
+    #[track_caller]
+    fn mul(self, rhs: T) -> Self::Output {
+        self.assert_single_output("mul");
+        self.output(0) * rhs
+    }
+}
+
+impl<T: IntoOutput> std::ops::Div<T> for Node {
+    type Output = Node;
+
+    #[inline]
+    #[track_caller]
+    fn div(self, rhs: T) -> Self::Output {
+        self.assert_single_output("div");
+        self.output(0) / rhs
+    }
+}
+
+impl<T: IntoOutput> std::ops::Rem<T> for Node {
+    type Output = Node;
+
+    #[inline]
+    #[track_caller]
+    fn rem(self, rhs: T) -> Self::Output {
+        self.assert_single_output("rem");
+        self.output(0) % rhs
+    }
+}
+
+impl std::ops::Neg for Node {
+    type Output = Node;
+
+    #[inline]
+    #[track_caller]
+    fn neg(self) -> Self::Output {
+        self.assert_single_output("neg");
+        self.output(0).neg()
+    }
+}
+
+impl<T: IntoOutput> std::ops::Add<T> for &Node {
+    type Output = Node;
+
+    #[inline]
+    #[track_caller]
+    fn add(self, rhs: T) -> Self::Output {
+        self.clone() + rhs
+    }
+}
+
+impl<T: IntoOutput> std::ops::Sub<T> for &Node {
+    type Output = Node;
+
+    #[inline]
+    #[track_caller]
+    fn sub(self, rhs: T) -> Self::Output {
+        self.clone() - rhs
+    }
+}
+
+impl<T: IntoOutput> std::ops::Mul<T> for &Node {
+    type Output = Node;
+
+    #[inline]
+    #[track_caller]
+    fn mul(self, rhs: T) -> Self::Output {
+        self.clone() * rhs
+    }
+}
+
+impl<T: IntoOutput> std::ops::Div<T> for &Node {
+    type Output = Node;
+
+    #[inline]
+    #[track_caller]
+    fn div(self, rhs: T) -> Self::Output {
+        self.clone() / rhs
+    }
+}
+
+impl<T: IntoOutput> std::ops::Rem<T> for &Node {
+    type Output = Node;
+
+    #[inline]
+    #[track_caller]
+    fn rem(self, rhs: T) -> Self::Output {
+        self.clone() % rhs
+    }
+}
+
+impl std::ops::Neg for &Node {
+    type Output = Node;
+
+    #[inline]
+    #[track_caller]
+    fn neg(self) -> Self::Output {
+        self.clone().neg()
+    }
 }
 
 mod sealed {
@@ -464,6 +716,7 @@ mod sealed {
     impl<T: Signal> Sealed for T {}
     impl Sealed for i32 {}
     impl Sealed for u32 {}
+    impl Sealed for usize {}
     impl Sealed for &str {}
 }
 
@@ -490,6 +743,34 @@ impl<T: IntoNode> IntoOutput for T {
     fn into_output(self, graph: &Graph) -> Output {
         let node = self.into_node(graph);
         node.assert_single_output("into_output");
+        node.output(0)
+    }
+}
+
+impl IntoOutput for f32 {
+    fn into_output(self, graph: &Graph) -> Output {
+        let node = graph.constant(self);
+        node.output(0)
+    }
+}
+
+impl IntoOutput for i32 {
+    fn into_output(self, graph: &Graph) -> Output {
+        let node = graph.constant(self as i64);
+        node.output(0)
+    }
+}
+
+impl IntoOutput for i64 {
+    fn into_output(self, graph: &Graph) -> Output {
+        let node = graph.constant(self);
+        node.output(0)
+    }
+}
+
+impl IntoOutput for usize {
+    fn into_output(self, graph: &Graph) -> Output {
+        let node = graph.constant(self as i64);
         node.output(0)
     }
 }

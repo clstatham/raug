@@ -18,7 +18,7 @@ pub mod prelude {
     pub use crate::builtins::*;
     pub use crate::graph::{
         Graph,
-        node::{Input, IntoNode, Node, Output},
+        node::{Input, IntoNode, IntoOutput, Node, Output},
         runtime::{AudioBackend, AudioDevice, AudioStream, CpalStream, MidiPort, WavFileOutStream},
     };
     pub use crate::processor::{

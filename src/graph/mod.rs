@@ -12,9 +12,9 @@ use runtime::{AudioDevice, MidiPort};
 use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::{
-    prelude::{Null, Passthrough, ProcEnv},
+    prelude::{Constant, Null, Passthrough, ProcEnv},
     processor::{Processor, ProcessorError, io::ProcessMode},
-    signal::type_erased::ErasedBuffer,
+    signal::{Signal, type_erased::ErasedBuffer},
 };
 
 pub mod edge;
@@ -644,5 +644,9 @@ impl Graph {
     /// Writes a DOT representation of the graph to the provided writer, suitable for rendering with Graphviz.
     pub fn write_dot<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
         self.with_inner(|graph| graph.write_dot(writer))
+    }
+
+    pub fn constant<T: Signal>(&self, value: T) -> Node {
+        self.add(Constant::new(value))
     }
 }
