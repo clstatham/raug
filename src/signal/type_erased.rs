@@ -7,12 +7,12 @@ use any_vec::{
     traits::Cloneable,
 };
 
-use super::{Signal, SignalType, buffer::Buffer};
+use super::{Signal, SignalType};
 
 #[derive(Clone)]
 pub struct ErasedBuffer {
     signal_type: SignalType,
-    pub(crate) buf: AnyVec<dyn Send + Sync + Cloneable>,
+    buf: AnyVec<dyn Send + Sync + Cloneable>,
 }
 
 impl ErasedBuffer {
@@ -36,35 +36,6 @@ impl ErasedBuffer {
         }
     }
 
-    pub fn from_buffer<T: Signal>(mut buffer: Buffer<T>) -> Self {
-        let mut buf = AnyVec::new::<T>();
-        buf.reserve(buffer.len());
-        for item in buffer.drain(..) {
-            buf.push(AnyValueWrapper::new(item));
-        }
-
-        Self {
-            signal_type: SignalType::of::<T>(),
-            buf,
-        }
-    }
-
-    pub fn drain_into_buffer<T: Signal>(&mut self, buffer: &mut Buffer<T>) {
-        assert_eq!(self.signal_type, SignalType::of::<T>());
-        assert!(self.buf.len() <= buffer.len());
-        for (i, item) in self.buf.drain(..).enumerate() {
-            buffer[i] = item.downcast::<T>().unwrap();
-        }
-    }
-
-    pub fn into_buffer<T: Signal>(mut self) -> Buffer<T> {
-        assert_eq!(self.signal_type, SignalType::of::<T>());
-        let mut buffer = Buffer::zeros(self.buf.len());
-        self.drain_into_buffer(&mut buffer);
-
-        buffer
-    }
-
     #[inline]
     pub fn as_slice<T: Signal>(&self) -> &[T] {
         assert_eq!(self.signal_type, SignalType::of::<T>());
@@ -74,26 +45,7 @@ impl ErasedBuffer {
     #[inline]
     pub fn as_mut_slice<T: Signal>(&mut self) -> &mut [T] {
         assert_eq!(self.signal_type, SignalType::of::<T>());
-        self.buf.downcast_mut::<T>().unwrap().as_mut_slice()
-    }
-
-    pub fn resize<T: Signal>(&mut self, len: usize) {
-        assert_eq!(self.signal_type, SignalType::of::<T>());
-        let diff = len as isize - self.buf.len() as isize;
-        if diff > 0 {
-            self.buf.reserve(diff as usize);
-            for _ in 0..diff {
-                self.buf.push(AnyValueWrapper::<T>::new(T::default()));
-            }
-        } else {
-            for _ in 0..-diff {
-                self.buf.pop();
-            }
-        }
-    }
-
-    pub fn fill<T: Signal>(&mut self, value: impl Into<T>) {
-        self.as_mut_slice::<T>().fill(value.into());
+        unsafe { self.buf.downcast_mut_unchecked::<T>().as_mut_slice() }
     }
 
     pub fn len(&self) -> usize {
@@ -135,21 +87,6 @@ impl ErasedBuffer {
         let old = *item;
         *item = value;
         old
-    }
-
-    #[inline]
-    pub fn iter(&self) -> ErasedBufferIter {
-        ErasedBufferIter {
-            buf: self,
-            index: 0,
-        }
-    }
-
-    #[inline]
-    pub fn iter_mut(&mut self) -> ErasedBufferIterMut {
-        ErasedBufferIterMut {
-            iter: self.buf.iter_mut(),
-        }
     }
 
     #[inline]
@@ -201,59 +138,5 @@ impl<'a> ErasedSignalMut<'a> {
     #[inline]
     pub fn value_type_id(&self) -> TypeId {
         self.signal.value_typeid()
-    }
-}
-
-pub struct ErasedBufferIter<'a> {
-    pub(crate) buf: &'a ErasedBuffer,
-    pub(crate) index: usize,
-}
-
-impl<'a> Iterator for ErasedBufferIter<'a> {
-    type Item = ErasedSignalRef<'a>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.index < self.buf.len() {
-            let item = self.buf.get(self.index);
-            self.index += 1;
-            item
-        } else {
-            None
-        }
-    }
-}
-
-impl<'a> IntoIterator for &'a ErasedBuffer {
-    type Item = ErasedSignalRef<'a>;
-    type IntoIter = ErasedBufferIter<'a>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        ErasedBufferIter {
-            buf: self,
-            index: 0,
-        }
-    }
-}
-
-pub struct ErasedBufferIterMut<'a> {
-    pub(crate) iter: any_vec::IterMut<'a, dyn Send + Sync + Cloneable, any_vec::mem::Heap>,
-}
-
-impl<'a> Iterator for ErasedBufferIterMut<'a> {
-    type Item = ErasedSignalMut<'a>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.iter.next().map(|signal| ErasedSignalMut { signal })
-    }
-}
-
-impl<'a> IntoIterator for &'a mut ErasedBuffer {
-    type Item = ErasedSignalMut<'a>;
-    type IntoIter = ErasedBufferIterMut<'a>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        ErasedBufferIterMut {
-            iter: self.buf.iter_mut(),
-        }
     }
 }

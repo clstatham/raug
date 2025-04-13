@@ -48,15 +48,15 @@ where
     }
 }
 
-/// The mode in which a processor should process signals.
+/// The mode in which a processor is processsing signals.
 ///
 /// - `Block` means the processor processes the entire block of samples at once.
 /// - `Sample` means the processor processes each sample individually.
 #[derive(Debug, Clone, Copy)]
 pub enum ProcessMode {
-    /// The processor should process the entire block of samples at once.
+    /// The processor is processing an entire block of samples.
     Block,
-    /// The processor should process the sample at the given index.
+    /// The processor is processing a single sample within a block.
     Sample(
         /// The index of the current sample within the block.
         usize,
@@ -130,7 +130,7 @@ impl<'a> ProcessorInputs<'a> {
             .get(index)
             .and_then(|input| input.as_ref().copied())?;
         // SAFETY: The pointer is valid because ProcessorInputs is only created
-        // during `Runtime::process_node` which limits the lifetime of the inputs to the
+        // during `Graph::process_node` which limits the lifetime of the inputs to the
         // lifetime of that call.
         let buffer = unsafe { &*ptr };
         Some(buffer)
@@ -176,7 +176,7 @@ impl<'a> ProcessorInputs<'a> {
     }
 }
 
-/// The output of a [`Processor`].
+/// The output of a [`Processor`](super::Processor).
 pub enum ProcessorOutput<'a> {
     /// A block of signals.
     Block(&'a mut ErasedBuffer),

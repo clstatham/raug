@@ -3,7 +3,6 @@
 use std::{any::TypeId, fmt::Debug};
 
 pub mod buffer;
-pub mod repr;
 pub mod type_erased;
 
 /// A type that can be stored in a [`Buffer`](buffer::Buffer) and processed by a [`Processor`](crate::processor::Processor).
