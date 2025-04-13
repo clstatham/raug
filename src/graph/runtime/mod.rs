@@ -47,6 +47,7 @@ pub enum AudioDevice {
     Name(String),
 }
 
+/// Utility struct for creating channels for communication between threads.
 #[derive(Debug)]
 pub struct Channels<T> {
     tx: Sender<T>,
@@ -69,40 +70,49 @@ impl<T> Clone for Channels<T> {
 }
 
 impl<T> Channels<T> {
+    /// Creates a new `Channels` instance with unbounded channels.
     pub fn unbounded() -> Self {
         let (tx, rx) = crossbeam_channel::unbounded();
         Self { tx, rx }
     }
 
+    /// Creates a new `Channels` instance with bounded channels of the given capacity.
     pub fn bounded(cap: usize) -> Self {
         let (tx, rx) = crossbeam_channel::bounded(cap);
         Self { tx, rx }
     }
 
+    /// Returns the sender end of the channel.
     pub fn tx(&self) -> &Sender<T> {
         &self.tx
     }
 
+    /// Returns the receiver end of the channel.
     pub fn rx(&self) -> &Receiver<T> {
         &self.rx
     }
 
+    /// Tries to send data through the channel without blocking.
     pub fn try_send(&self, data: T) -> Result<(), TrySendError<T>> {
         self.tx.try_send(data)
     }
 
+    /// Returns `true` if the channel is full, `false` otherwise.
     pub fn is_full(&self) -> bool {
         self.tx.is_full()
     }
 
+    /// Returns `true` if the channel is empty, `false` otherwise.
     pub fn is_empty(&self) -> bool {
         self.rx.is_empty()
     }
 
+    /// Sends data through the channel, blocking until it can be sent.
     pub fn send_blocking(&self, data: T) -> Result<(), SendError<T>> {
         self.tx.send(data)
     }
 
+    /// Tries to send all data from the iterator through the channel without blocking.
     pub fn send_all(&self, data: impl Iterator<Item = T>) -> Result<(), TrySendError<T>> {
         for item in data {
             self.try_send(item)?;
@@ -110,6 +120,7 @@ impl<T> Channels<T> {
         Ok(())
     }
 
+    /// Sends all data from the iterator through the channel, blocking until it can be sent.
     pub fn send_all_blocking(&self, data: impl Iterator<Item = T>) -> Result<(), SendError<T>> {
         for item in data {
             self.send_blocking(item)?;
@@ -117,6 +128,10 @@ impl<T> Channels<T> {
         Ok(())
     }
 
+    /// Tries to receive data from the channel without blocking.
+    ///
+    /// Returns `Ok(Some(data))` if data is received, `Ok(None)` if the channel is empty,
+    /// or `Err(TryRecvError::Disconnected)` if the channel is disconnected.
     pub fn try_recv(&self) -> Result<Option<T>, TryRecvError> {
         match self.rx.try_recv() {
             Ok(data) => Ok(Some(data)),
@@ -125,23 +140,34 @@ impl<T> Channels<T> {
         }
     }
 
+    /// Receives data from the channel, blocking until data is available.
     pub fn recv_blocking(&self) -> Result<T, RecvError> {
         self.rx.recv()
     }
 }
 
+/// An audio stream interface for processing audio data.
 pub trait AudioStream: Send + 'static {
+    /// Returns the sample rate of the audio stream.
     fn sample_rate(&self) -> f32;
+    /// Returns the block size of the audio stream.
     fn block_size(&self) -> usize;
+    /// Returns the number of input channels of the audio stream.
     fn input_channels(&self) -> usize;
+    /// Returns the number of output channels of the audio stream.
     fn output_channels(&self) -> usize;
 
+    /// Spawns the audio stream, allocating buffers and preparing for processing.
     fn spawn(&mut self, graph: &Graph) -> GraphRunResult<()>;
+    /// Plays the audio stream.
     fn play(&mut self) -> GraphRunResult<()>;
+    /// Pauses the audio stream.
     fn pause(&mut self) -> GraphRunResult<()>;
+    /// Stops the audio stream.
     fn stop(&mut self) -> GraphRunResult<()>;
 }
 
+/// An [`AudioStream`] implementation that writes audio data to a WAV file.
 pub struct WavFileOutStream {
     file: hound::WavWriter<BufWriter<File>>,
     sample_rate: f32,
@@ -153,6 +179,7 @@ pub struct WavFileOutStream {
 }
 
 impl WavFileOutStream {
+    /// Creates a new `WavFileOutStream` with the given parameters.
     pub fn new(
         file_path: &str,
         sample_rate: f32,
@@ -190,6 +217,7 @@ impl WavFileOutStream {
         }
     }
 
+    /// Finalizes the WAV file, writing any remaining data and closing the file.
     pub fn finalize(self) -> hound::Result<()> {
         self.file.finalize()
     }
@@ -225,7 +253,7 @@ impl AudioStream for WavFileOutStream {
                     let Some(buffer) = buffer else {
                         continue;
                     };
-                    let buffer = buffer.as_slice::<f32>();
+                    let buffer = buffer.as_slice::<f32>().unwrap();
                     for (j, &sample) in buffer[..self.block_size].iter().enumerate() {
                         samples[j * self.output_channels + i] = sample;
                     }
@@ -317,6 +345,7 @@ impl StreamThread {
     }
 }
 
+/// An [`AudioStream`] implementation using the `cpal` crate for audio I/O with the system's sound card.
 pub struct CpalStream {
     output_device: Arc<cpal::Device>,
     output_stream: Option<StreamThread>,
@@ -332,6 +361,7 @@ impl Default for CpalStream {
 }
 
 impl CpalStream {
+    /// Creates a new `CpalStream` with the given audio backend and output device.
     pub fn new(backend: AudioBackend, output_device: AudioDevice) -> Self {
         let host = match backend {
             AudioBackend::Default => cpal::default_host(),
@@ -396,7 +426,7 @@ fn build_output_stream<T: cpal::SizedSample + cpal::FromSample<f32> + Send + 'st
                         let Some(buffer) = buffer else {
                             continue;
                         };
-                        let buffer = buffer.as_slice::<f32>();
+                        let buffer = buffer.as_slice::<f32>().unwrap();
                         for (j, &sample) in buffer[..new_block_size].iter().enumerate() {
                             data[j * channels + output_channel] = sample.to_sample();
                         }

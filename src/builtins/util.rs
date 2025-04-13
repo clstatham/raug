@@ -11,18 +11,6 @@ pub(crate) fn null(#[output] _out: &mut f32) -> ProcResult<()> {
 }
 
 /// A processor that passes its input to its output unchanged.
-///
-/// # Inputs
-///
-/// | Index | Name | Type | Description |
-/// | --- | --- | --- | --- |
-/// | `0` | `input` | `T` | The input signal.
-///
-/// # Outputs
-///
-/// | Index | Name | Type | Description |
-/// | --- | --- | --- | --- |
-/// | `0` | `out` | `T` | The output signal.
 #[processor(derive(Default))]
 pub fn passthrough<T>(#[input] input: &T, #[output] out: &mut T) -> ProcResult<()>
 where

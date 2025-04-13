@@ -494,40 +494,44 @@ impl Graph {
         Self::default()
     }
 
+    /// Allocates internal buffers for the graph with the given sample rate and block size.
     pub fn allocate(&self, sample_rate: f32, block_size: usize) {
         self.with_inner(|graph| graph.allocate(sample_rate, block_size));
     }
 
+    /// Resizes the buffers of the graph for the given sample rate and block size.
     pub fn resize_buffers(&self, sample_rate: f32, block_size: usize) {
         self.with_inner(|graph| graph.resize_buffers(sample_rate, block_size));
     }
 
+    /// Returns the sample rate of the graph.
     pub fn sample_rate(&self) -> f32 {
         self.with_inner(|graph| graph.sample_rate)
     }
 
+    /// Returns the block size of the graph.
     pub fn block_size(&self) -> usize {
         self.with_inner(|graph| graph.block_size)
     }
 
+    /// Returns the maximum block size of the graph.
     pub fn max_block_size(&self) -> usize {
         self.with_inner(|graph| graph.max_block_size)
     }
 
+    /// Processes the graph for one block of samples.
     pub fn process(&self) -> GraphRunResult<()> {
         self.with_inner(|graph| graph.process())
     }
 
+    /// Returns the number of audio inputs in the graph.
     pub fn num_audio_inputs(&self) -> usize {
         self.with_inner(|graph| graph.num_audio_inputs())
     }
 
+    /// Returns the number of audio outputs in the graph.
     pub fn num_audio_outputs(&self) -> usize {
         self.with_inner(|graph| graph.num_audio_outputs())
-    }
-
-    pub fn num_params(&self) -> usize {
-        self.with_inner(|graph| graph.num_params())
     }
 
     /// Adds an audio input node to the graph.
@@ -636,6 +640,7 @@ impl Graph {
         self.with_inner(|graph| graph.write_dot(writer))
     }
 
+    /// Creates a new [`Node`] that outputs a constant value.
     pub fn constant<T: Signal>(&self, value: T) -> Node {
         self.add(Constant::new(value))
     }

@@ -1,3 +1,5 @@
+//! A contiguous buffer of signals.
+
 use std::{
     fmt::Debug,
     ops::{Deref, DerefMut},

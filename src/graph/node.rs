@@ -479,31 +479,37 @@ impl Output {
         self.node.clone()
     }
 
+    /// Attaches an addition processor to the nodes.
     #[inline]
     pub fn add(&self, b: impl IntoOutput) -> Node {
         generic_binary_op_impl!(self, b, Add => f32 f64 i32 i64 u32 u64 usize)
     }
 
+    /// Attaches a subtraction processor to the nodes.
     #[inline]
     pub fn sub(&self, b: impl IntoOutput) -> Node {
         generic_binary_op_impl!(self, b, Sub => f32 f64 i64 i32 u32 u64 usize)
     }
 
+    /// Attaches a multiplication processor to the nodes.
     #[inline]
     pub fn mul(&self, b: impl IntoOutput) -> Node {
         generic_binary_op_impl!(self, b, Mul => f32 f64 i64 i32 u32 u64 usize)
     }
 
+    /// Attaches a division processor to the nodes.
     #[inline]
     pub fn div(&self, b: impl IntoOutput) -> Node {
         generic_binary_op_impl!(self, b, Div => f32 f64 i64 i32 u32 u64 usize)
     }
 
+    /// Attaches a remainder processor to the nodes.
     #[inline]
     pub fn rem(&self, b: impl IntoOutput) -> Node {
         generic_binary_op_impl!(self, b, Rem => f32 f64 i64 i32 u32 u64 usize)
     }
 
+    /// Attaches a negation processor to the node.
     #[inline]
     pub fn neg(&self) -> Node {
         let this_node = self.node();
