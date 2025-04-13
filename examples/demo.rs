@@ -1,5 +1,12 @@
 use raug::prelude::*;
 
+#[processor]
+pub fn sine_oscillator(#[state] phase: &mut f32, #[input] freq: &f32, #[output] out: &mut f32) {
+    let sample_rate = 48000.0;
+    *phase += 2.0 * std::f32::consts::PI * freq / sample_rate;
+    *out = phase.sin() * 0.2;
+}
+
 fn main() {
     // initialize logging
     env_logger::init();
@@ -12,10 +19,11 @@ fn main() {
     let out2 = graph.add_audio_output();
 
     // add a sine oscillator
-    let sine = graph.add(SineOscillator::new(440.0));
-
-    // set the amplitude of the sine oscillator
-    let sine = sine * 0.2;
+    let sine = graph.add(SineOscillator {
+        phase: 0.0,
+        freq: 440.0,
+        out: 0.0,
+    });
 
     // connect the sine oscillator to the outputs
     sine.output(0).connect(&out1.input(0));

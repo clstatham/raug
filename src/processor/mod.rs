@@ -6,9 +6,8 @@ use downcast_rs::{Downcast, impl_downcast};
 use io::{ProcessorInputs, ProcessorOutputs, SignalSpec};
 use thiserror::Error;
 
-use crate::{GraphSerde, signal::SignalType};
+use crate::{prelude::ErasedBuffer, signal::SignalType};
 
-pub mod function;
 pub mod io;
 
 /// Error type for [`Processor`] operations.
@@ -66,10 +65,9 @@ pub enum ProcessorError {
 }
 
 /// A processor that can process audio signals.
-#[cfg_attr(feature = "serde", typetag::serde(tag = "type"))]
 pub trait Processor
 where
-    Self: Downcast + ProcessorClone + GraphSerde + Send,
+    Self: Downcast + ProcessorClone + Send,
 {
     /// Returns the name of the processor.
     fn name(&self) -> &str {
@@ -89,6 +87,9 @@ where
 
     /// Returns the specifications of the output signals of the processor.
     fn output_spec(&self) -> Vec<SignalSpec>;
+
+    /// Creates a new set of output buffers for the processor.
+    fn create_output_buffers(&self, size: usize) -> Vec<ErasedBuffer>;
 
     /// Returns the number of input signals required by the processor.
     fn num_inputs(&self) -> usize {

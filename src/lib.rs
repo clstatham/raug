@@ -26,28 +26,15 @@ pub mod prelude {
         io::{ProcEnv, ProcessorInputs, ProcessorOutputs, SignalSpec},
     };
     pub use crate::signal::{
-        AnySignal, AnySignalOpt, OptRepr, OptSignal, Signal, SignalType, buffer::Buffer,
-        buffer::SignalBuffer, repr::Repr,
+        OptRepr, OptSignal, Signal, SignalType,
+        buffer::Buffer,
+        repr::Repr,
+        type_erased::{ErasedBuffer, ErasedSignalMut, ErasedSignalRef},
     };
     pub use crate::util::*;
-    pub use raug_macros::{Processor, iter_proc_io_as, note, note_array};
+    pub use raug_macros::{note, note_array, processor};
     pub use std::time::Duration;
 }
-
-#[doc(hidden)]
-mod graph_serde {
-    #[cfg(feature = "serde")]
-    pub trait GraphSerde: erased_serde::Serialize {}
-    #[cfg(feature = "serde")]
-    impl<T: ?Sized> GraphSerde for T where T: erased_serde::Serialize {}
-
-    #[cfg(not(feature = "serde"))]
-    pub trait GraphSerde {}
-    #[cfg(not(feature = "serde"))]
-    impl<T: ?Sized> GraphSerde for T {}
-}
-
-pub(crate) use graph_serde::GraphSerde;
 
 #[doc(hidden)]
 #[allow(unused)]
@@ -149,11 +136,4 @@ mod logging {
 #[allow(unused)]
 pub mod __itertools {
     pub use itertools::*;
-}
-
-#[doc(hidden)]
-#[allow(unused)]
-#[cfg(feature = "serde")]
-pub mod __typetag {
-    pub use typetag::*;
 }

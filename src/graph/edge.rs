@@ -2,7 +2,6 @@
 
 /// Represents a connection between an output and an input of two nodes.
 #[derive(Clone, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Edge {
     /// The output index of the source node.
     pub source_output: u32,

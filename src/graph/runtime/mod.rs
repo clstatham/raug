@@ -16,7 +16,7 @@ use cpal::{
 };
 use crossbeam_channel::{Receiver, RecvError, SendError, Sender, TryRecvError, TrySendError};
 
-use crate::signal::{Signal, buffer::SignalBuffer};
+use crate::signal::Signal;
 
 use super::{Graph, GraphRunError, GraphRunResult};
 
@@ -236,9 +236,10 @@ impl AudioStream for WavFileOutStream {
                 graph.process().unwrap();
                 for i in 0..self.output_channels {
                     let buffer = graph.get_output(i);
-                    let Some(SignalBuffer::Float(buffer)) = buffer else {
+                    let Some(buffer) = buffer else {
                         continue;
                     };
+                    let buffer = buffer.as_slice::<f32>();
                     for (j, &sample) in buffer[..self.block_size].iter().enumerate() {
                         let sample = f32::from_repr(sample.unwrap_or_default());
                         samples[j * self.output_channels + i] = sample;
@@ -407,9 +408,10 @@ fn build_output_stream<T: cpal::SizedSample + cpal::FromSample<f32> + Send + 'st
                     graph.process().unwrap();
                     for output_channel in 0..channels {
                         let buffer = graph.get_output(output_channel);
-                        let Some(SignalBuffer::Float(buffer)) = buffer else {
+                        let Some(buffer) = buffer else {
                             continue;
                         };
+                        let buffer = buffer.as_slice::<f32>();
                         for (j, &sample) in buffer[..new_block_size].iter().enumerate() {
                             let sample = f32::from_repr(sample.unwrap_or_default());
                             data[j * channels + output_channel] = sample.to_sample();

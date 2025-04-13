@@ -13,13 +13,6 @@ name = "raug"
 [features]
 default = []
 jack = ["cpal/jack"]
-serde = [
-    "dep:serde",
-    "dep:typetag",
-    "dep:erased-serde",
-    "petgraph/serde-1",
-    "num/serde",
-]
 profiling = ["dep:allocation-counter"]
 
 [dependencies]
@@ -36,9 +29,6 @@ crossbeam-channel = "0.5"
 rand = "0.8"
 midir = "0.10.0"
 smallvec = "1.13.2"
-serde = { version = "1.0", optional = true }
-typetag = { version = "0.2", optional = true }
-erased-serde = { version = "0.4", optional = true }
 raug-macros = { path = "../raug-macros" }
 num = { version = "0.4.3", features = [] }
 apodize = "1.0.0"
@@ -48,7 +38,6 @@ any_vec = "0.14.0"
 [dev-dependencies]
 env_logger = "0.11"
 criterion = { version = "0.5", features = ["html_reports"] }
-serde_json = "1.0"
 
 [[bench]]
 name = "bench"

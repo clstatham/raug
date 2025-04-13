@@ -10,14 +10,23 @@ fn name(name: &str) -> String {
     format!("{}_f32", name)
 }
 
+#[processor]
+pub fn sine_oscillator(#[state] phase: &mut f32, #[input] freq: &f32, #[output] out: &mut f32) {
+    let sample_rate = 48000.0;
+    *phase += 2.0 * std::f32::consts::PI * freq / sample_rate;
+    *out = phase.sin() * 0.2;
+}
+
 pub fn bench_demo(c: &mut Criterion) {
     let graph = Graph::new();
 
     let out1 = graph.add_audio_output();
 
-    let sine = graph.add(SineOscillator::default());
-    sine.input("frequency").connect(440.0);
-    let sine = sine * 0.2;
+    let sine = graph.add(SineOscillator {
+        phase: 0.0,
+        freq: 440.0,
+        out: 0.0,
+    });
     sine.output(0).connect(&out1.input(0));
 
     let mut group = c.benchmark_group(name("demo"));
@@ -36,65 +45,5 @@ pub fn bench_demo(c: &mut Criterion) {
     group.finish();
 }
 
-fn make_sine(graph: &Graph, freq: f32, amp: f32) -> Node {
-    let sine = graph.add(SineOscillator::default());
-    sine.input("frequency").connect(freq);
-    sine * amp
-}
-
-pub fn bench_big_graph(c: &mut Criterion) {
-    let graph = Graph::new();
-
-    let out1 = graph.add_audio_output();
-
-    let mut sine = make_sine(&graph, 440.0, 0.01);
-
-    for _ in 0..1000 {
-        sine = make_sine(&graph, 440.0, 0.2) + sine;
-    }
-
-    sine.output(0).connect(&out1.input(0));
-
-    let mut group = c.benchmark_group(name("big_graph"));
-
-    for &block_size in BLOCK_SIZES {
-        graph.allocate(SAMPLE_RATE, block_size);
-
-        group.throughput(criterion::Throughput::Elements(block_size as u64));
-        group.bench_function(format!("block_size_{}", block_size), |b| {
-            b.iter(|| {
-                graph.process().unwrap();
-            });
-        });
-    }
-
-    group.finish();
-}
-
-pub fn bench_generative1(c: &mut Criterion) {
-    let num_tones = 20;
-    let graph = generative1::generative1(num_tones);
-
-    let mut group = c.benchmark_group(name(&format!("generative1_{}", num_tones)));
-
-    for &block_size in BLOCK_SIZES {
-        graph.allocate(SAMPLE_RATE, block_size);
-
-        group.throughput(criterion::Throughput::Elements(block_size as u64));
-        group.bench_function(format!("block_size_{}", block_size), |b| {
-            b.iter(|| {
-                graph.process().unwrap();
-            });
-        });
-    }
-
-    group.finish();
-}
-
-criterion_group!(
-    benches,
-    // bench_big_graph,
-    // bench_demo,
-    bench_generative1
-);
+criterion_group!(benches, bench_demo,);
 criterion_main!(benches);

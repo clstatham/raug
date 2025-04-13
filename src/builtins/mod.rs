@@ -1,4 +1,5 @@
 //! Built-in processors and utilities for the audio graph.
+#![allow(unused_imports)]
 
 pub mod control;
 pub mod dynamics;

@@ -12,9 +12,9 @@ use runtime::{AudioDevice, MidiPort};
 use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::{
-    prelude::{Constant, Null, Param, Passthrough, ProcEnv},
+    prelude::{Null, Passthrough, ProcEnv},
     processor::{Processor, ProcessorError, io::ProcessMode},
-    signal::{Signal, SignalType, buffer::SignalBuffer},
+    signal::type_erased::ErasedBuffer,
 };
 
 pub mod edge;
@@ -146,7 +146,6 @@ pub type GraphRunResult<T> = Result<T, GraphRunError>;
 pub type GraphConstructionResult<T> = Result<T, GraphConstructionError>;
 
 #[derive(Default, Clone)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub(crate) struct GraphInner {
     pub(crate) digraph: DiGraph,
 
@@ -158,7 +157,6 @@ pub(crate) struct GraphInner {
     output_nodes: Vec<NodeIndex>,
 
     // cached visitor state for graph traversal
-    #[cfg_attr(feature = "serde", serde(skip))]
     visitor: DfsPostOrder<NodeIndex, FxHashSet<NodeIndex>>,
     visit_path: Vec<NodeIndex>,
 
@@ -185,7 +183,7 @@ impl GraphInner {
 
     /// Adds an audio input node to the graph.
     pub fn add_audio_input(&mut self) -> NodeIndex {
-        let idx = self.digraph.add_node(ProcessorNode::new(Null));
+        let idx = self.digraph.add_node(ProcessorNode::new(Null::default()));
         self.input_nodes.push(idx);
         idx
     }
@@ -194,7 +192,7 @@ impl GraphInner {
     pub fn add_audio_output(&mut self) -> NodeIndex {
         let idx = self
             .digraph
-            .add_node(ProcessorNode::new(Passthrough::new(SignalType::Float)));
+            .add_node(ProcessorNode::new(Passthrough::<f32>::default()));
         self.output_nodes.push(idx);
         idx
     }
@@ -209,14 +207,6 @@ impl GraphInner {
         node.resize_buffers(self.sample_rate, self.max_block_size);
 
         self.digraph.add_node(node)
-    }
-
-    /// Adds a parameter node to the graph.
-    pub fn add_param(&mut self, param: Param) -> NodeIndex {
-        let name = param.name().to_string();
-        let index = self.add_processor(param);
-        self.params.insert(name, index);
-        index
     }
 
     /// Connects two nodes in the graph.
@@ -346,19 +336,6 @@ impl GraphInner {
         self.params.len()
     }
 
-    /// Returns the index of the parameter with the specified name.
-    #[inline]
-    pub fn param_index(&self, name: &str) -> Option<NodeIndex> {
-        self.params.get(name).copied()
-    }
-
-    /// Returns the parameter with the specified name.
-    #[inline]
-    pub fn param_named(&self, name: &str) -> Option<&Param> {
-        self.param_index(name)
-            .map(|idx| (*self.digraph[idx].processor()).downcast_ref().unwrap())
-    }
-
     /// Returns the indices of the audio outputs in the graph.
     #[inline]
     pub fn output_indices(&self) -> &[NodeIndex] {
@@ -367,7 +344,7 @@ impl GraphInner {
 
     /// Returns a reference to the runtime's output buffer for the given output index.
     #[inline]
-    pub fn get_output(&self, output_index: usize) -> Option<&SignalBuffer> {
+    pub fn get_output(&self, output_index: usize) -> Option<&ErasedBuffer> {
         let output_index = *self.output_indices().get(output_index)?;
         self.digraph()
             .node_weight(output_index)
@@ -483,16 +460,12 @@ impl GraphInner {
             .map(|edge| (edge.source(), edge.weight()))
         {
             let source_buffers = self.digraph[source_id].outputs.as_ref().unwrap();
-            let buffer = &source_buffers[edge.source_output as usize] as *const SignalBuffer;
+            let buffer = &source_buffers[edge.source_output as usize] as *const ErasedBuffer;
 
             inputs[edge.target_input as usize] = Some(buffer);
         }
 
         let node = &mut self.digraph[node_id];
-
-        for buffer in &mut buffers {
-            buffer.fill_none();
-        }
 
         let result = node.process(
             &inputs[..],
@@ -567,14 +540,6 @@ impl Graph {
         self.with_inner(|graph| graph.num_params())
     }
 
-    pub fn param_named(&self, name: &str) -> Option<Param> {
-        self.with_inner(|graph| graph.param_named(name).cloned())
-    }
-
-    pub fn param_index(&self, name: &str) -> Option<NodeIndex> {
-        self.with_inner(|graph| graph.param_index(name))
-    }
-
     /// Adds an audio input node to the graph.
     pub fn add_audio_input(&self) -> Node {
         self.with_inner(|graph| Node {
@@ -597,19 +562,6 @@ impl Graph {
             graph: self.clone(),
             node_id: graph.add_processor(processor),
         })
-    }
-
-    /// Adds a parameter node to the graph.
-    pub fn add_param(&self, value: Param) -> Node {
-        self.with_inner(|graph| Node {
-            graph: self.clone(),
-            node_id: graph.add_param(value),
-        })
-    }
-
-    /// Adds a node that outputs a constant value every sample.
-    pub fn constant(&self, value: impl Signal) -> Node {
-        self.add(Constant::new(value))
     }
 
     /// Returns the number of nodes in the graph.

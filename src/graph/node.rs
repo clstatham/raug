@@ -5,19 +5,18 @@ use std::fmt::Debug;
 use crate::{
     prelude::*,
     processor::io::ProcessMode,
-    signal::{Signal, SignalType, buffer::SignalBuffer},
+    signal::{SignalType, type_erased::ErasedBuffer},
 };
 
 use super::{Graph, GraphConstructionResult, NodeIndex};
 
 /// A node in the audio graph that processes signals.
 #[derive(Clone)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ProcessorNode {
     processor: Box<dyn Processor>,
     input_spec: Vec<SignalSpec>,
     output_spec: Vec<SignalSpec>,
-    pub(crate) outputs: Option<Vec<SignalBuffer>>,
+    pub(crate) outputs: Option<Vec<ErasedBuffer>>,
 }
 
 impl Debug for ProcessorNode {
@@ -36,10 +35,7 @@ impl ProcessorNode {
     pub fn new_from_boxed(processor: Box<dyn Processor>) -> Self {
         let input_spec = processor.input_spec();
         let output_spec = processor.output_spec();
-        let mut outputs = Vec::with_capacity(output_spec.len());
-        for spec in output_spec.iter() {
-            outputs.push(SignalBuffer::new_of_type(spec.signal_type, 0));
-        }
+        let outputs = processor.create_output_buffers(0);
         Self {
             processor,
             input_spec,
@@ -94,13 +90,7 @@ impl ProcessorNode {
     #[inline]
     pub fn allocate(&mut self, sample_rate: f32, max_block_size: usize) {
         self.processor.allocate(sample_rate, max_block_size);
-        for (spec, output) in self
-            .output_spec
-            .iter()
-            .zip(self.outputs.as_mut().unwrap().iter_mut())
-        {
-            output.resize_with_hint(max_block_size, spec.signal_type);
-        }
+        self.outputs = Some(self.processor.create_output_buffers(max_block_size));
     }
 
     /// Resizes the internal buffers of the processor and updates the sample rate and block size.
@@ -115,9 +105,9 @@ impl ProcessorNode {
     #[inline]
     pub(crate) fn process(
         &mut self,
-        inputs: &[Option<*const SignalBuffer>],
+        inputs: &[Option<*const ErasedBuffer>],
         env: ProcEnv,
-        outputs: &mut [SignalBuffer],
+        outputs: &mut [ErasedBuffer],
         mode: ProcessMode,
     ) -> Result<(), ProcessorError> {
         let inputs = ProcessorInputs {
@@ -377,179 +367,6 @@ impl Node {
             .connect(self.id(), output_index, target.id(), target_input);
         self.clone()
     }
-
-    /// Connects a [`Smooth`] processor to the output of this node.
-    ///
-    /// The `factor` parameter controls the smoothing factor, where a value of 0.0 means maximum smoothing and 1.0 means no smoothing.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the node has multiple outputs.
-    #[inline]
-    #[track_caller]
-    pub fn smooth(&self, factor: f32) -> Node {
-        self.assert_single_output("smooth");
-        self.output(0).smooth(factor)
-    }
-
-    /// Connects a [`MidiToFreq`] processor to the output of this node.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the node has multiple outputs.
-    #[inline]
-    #[track_caller]
-    pub fn midi2freq(&self) -> Node {
-        self.assert_single_output("midi2freq");
-        self.output(0).midi2freq()
-    }
-
-    /// Connects a [`FreqToMidi`] processor to the output of this node.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the node has multiple outputs.
-    #[inline]
-    #[track_caller]
-    pub fn freq2midi(&self) -> Node {
-        self.assert_single_output("freq2midi");
-        self.output(0).freq2midi()
-    }
-
-    /// Connects a [`Register`] processor to the output of this node.
-    ///
-    /// The register processor stores the last value of the input signal and continuously outputs it.
-    /// Useful for "remembering" a value across multiple frames.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the node has multiple outputs.
-    #[inline]
-    #[track_caller]
-    pub fn make_register(&self) -> Node {
-        self.assert_single_output("make_register");
-        self.output(0).make_register()
-    }
-
-    /// Connects a [`Cond`] processor to the output of this node.
-    ///
-    /// The `then` and `else_` parameters are the signals to output when the condition is true or false, respectively.
-    ///
-    /// # Panics
-    ///
-    /// - Panics if the node has multiple outputs.
-    /// - Panics if the output signals do not have the same type.
-    /// - Panics if the node's output is not a boolean signal.
-    #[inline]
-    #[track_caller]
-    pub fn cond(&self, then: impl IntoNode, else_: impl IntoNode) -> Node {
-        self.assert_single_output("cond");
-        self.output(0).cond(then, else_)
-    }
-
-    /// Connects a [`Cast`] processor to the output of this node.
-    ///
-    /// The `signal_type` parameter specifies the type to cast the signal to.
-    ///
-    /// # Panics
-    ///
-    /// - Panics if the node has multiple outputs.
-    /// - Panics if the output signal cannot be cast to the specified type.
-    #[inline]
-    #[track_caller]
-    pub fn cast(&self, signal_type: SignalType) -> Node {
-        self.assert_single_output("cast");
-        self.output(0).cast(signal_type)
-    }
-
-    /// Connects a [`Dedup`] processor to the output of this node.
-    ///
-    /// # Panics
-    ///
-    /// - Panics if the node has multiple outputs.
-    #[inline]
-    #[track_caller]
-    pub fn dedup(&self) -> Node {
-        self.assert_single_output("dedup");
-        self.output(0).dedup()
-    }
-
-    /// Connects a [`Print`] processor to the output of this node.
-    ///
-    /// # Panics
-    ///
-    /// - Panics if the node has multiple outputs.
-    /// - Panics if the output signal is not a float.
-    #[inline]
-    #[track_caller]
-    pub fn print(&self) -> Node {
-        self.assert_single_output("print");
-        self.output(0).print()
-    }
-
-    /// Connects a [`CheckFinite`] processor to the output of this node.
-    ///
-    /// # Panics
-    ///
-    /// - Panics if the node has multiple outputs.
-    /// - Panics if the output signal is not a float.
-    ///
-    /// Also note that, during the execution of the graph, this processor will panic if the output signal is `inf` or `NaN`.
-    #[inline]
-    #[track_caller]
-    pub fn check_finite(&self) -> Node {
-        self.assert_single_output("check_finite");
-        self.output(0).check_finite()
-    }
-
-    /// Connects a [`FiniteOrZero`] processor to the output of this node.
-    ///
-    /// # Panics
-    ///
-    /// - Panics if the node has multiple outputs.
-    /// - Panics if the output signal is not a float.
-    #[inline]
-    #[track_caller]
-    pub fn finite_or_zero(&self) -> Node {
-        self.assert_single_output("finite_or_zero");
-        self.output(0).finite_or_zero()
-    }
-
-    /// Connects a [`IsSome`] processor to the output of this node.
-    ///
-    /// # Panics
-    ///
-    /// - Panics if the node has multiple outputs.
-    #[inline]
-    #[track_caller]
-    pub fn is_some(&self) -> Node {
-        self.assert_single_output("is_some");
-        self.output(0).is_some()
-    }
-
-    /// Connects a [`IsNone`] processor to the output of this node.
-    ///
-    /// # Panics
-    ///
-    /// - Panics if the node has multiple outputs.
-    #[inline]
-    #[track_caller]
-    pub fn is_none(&self) -> Node {
-        self.assert_single_output("is_none");
-        self.output(0).is_none()
-    }
-
-    /// Connects a [`OrElse`] processor to the output of this node.
-    ///
-    /// # Panics
-    ///
-    /// - Panics if the node has multiple outputs.
-    #[inline]
-    #[track_caller]
-    pub fn or_else(&self, default: impl Signal) -> Node {
-        self.assert_single_output("or_else");
-        self.output(0).or_else(default)
-    }
 }
 
 /// Represents an input of a [`Node`].
@@ -572,6 +389,12 @@ impl Input {
         self.node.clone()
     }
 
+    /// Returns the index of the input.
+    #[inline]
+    pub fn index(&self) -> u32 {
+        self.input_index
+    }
+
     /// Connects the input to the output of another node.
     ///
     /// # Panics
@@ -585,26 +408,6 @@ impl Input {
         self.node
             .connect_input(&output.node, output.output_index, self.input_index);
         self.node.clone()
-    }
-
-    /// Creates a [`Param`] processor and connects it to the input.
-    ///
-    /// This can be used to create a parameter that can be controlled externally.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the input signal type does not match the initial value signal type (type parameter `S`).
-    #[inline]
-    pub fn param<S: Signal + Clone>(
-        &self,
-        name: impl Into<String>,
-        initial_value: impl Into<Option<S>>,
-    ) -> Param {
-        let name = name.into();
-        let param = Param::new::<S>(&name, initial_value);
-        let proc = self.node.graph().add_param(param.clone());
-        proc.output(0).connect(self);
-        param
     }
 }
 
@@ -620,6 +423,12 @@ impl Output {
     #[inline]
     pub fn node(&self) -> Node {
         self.node.clone()
+    }
+
+    /// Returns the index of the output.
+    #[inline]
+    pub fn index(&self) -> u32 {
+        self.output_index
     }
 
     /// Returns the signal type of the output.
@@ -641,206 +450,19 @@ impl Output {
             .connect_output(self.output_index, &input.node, input.input_index);
         self.node.clone()
     }
-
-    /// Creates a [`Cast`] processor and connects it to the output.
-    ///
-    /// The `signal_type` parameter specifies the type to cast the signal to.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the output signal cannot be cast to the specified type.
-    #[inline]
-    pub fn cast(&self, signal_type: SignalType) -> Node {
-        let current_type = self.signal_type();
-        if current_type == signal_type {
-            return self.node.clone();
-        }
-        let cast = self.node.graph().add(Cast::new(current_type, signal_type));
-
-        cast.input(0).connect(self);
-        cast
-    }
-
-    /// Creates a [`Passthrough`] processor and connects it to the output.
-    ///
-    /// This can be useful in situations where a [`Node`] is required instead of an [`Output`].
-    #[inline]
-    pub fn make_node(&self) -> Node {
-        let signal_type = self.signal_type();
-        let node = self.node.graph().add(Passthrough::new(signal_type));
-        node.input(0).connect(self);
-        node
-    }
-
-    /// Creates a [`Register`] processor and connects it to the output.
-    ///
-    /// The register processor stores the last value of the input signal and continuously outputs it.
-    /// Useful for "remembering" a value across multiple frames.
-    #[inline]
-    pub fn make_register(&self) -> Node {
-        let signal_type = self.signal_type();
-        let node = self.node.graph().add(Register::new(signal_type));
-        node.input(0).connect(self);
-        node
-    }
-
-    /// Creates a [`Smooth`] processor and connects it to the output.
-    ///
-    /// The `factor` parameter controls the smoothing factor, where a value of 0.0 means maximum smoothing and 1.0 means no smoothing.
-    #[inline]
-    pub fn smooth(&self, factor: impl IntoOutput) -> Node {
-        let factor = factor.into_output(self.node.graph());
-        let proc = self.node.graph().add(Smooth::default());
-        proc.input("factor").connect(factor);
-        proc.input(0).connect(self);
-        proc
-    }
-
-    /// Creates a [`MidiToFreq`] processor and connects it to the output.
-    #[inline]
-    pub fn midi2freq(&self) -> Node {
-        let proc = self.node.graph().add(MidiToFreq);
-        proc.input(0).connect(self);
-        proc
-    }
-
-    /// Creates a [`FreqToMidi`] processor and connects it to the output.
-    #[inline]
-    pub fn freq2midi(&self) -> Node {
-        let proc = self.node.graph().add(FreqToMidi);
-        proc.input(0).connect(self);
-        proc
-    }
-
-    /// Creates a [`Cond`] processor and connects it to the output.
-    ///
-    /// The `then` and `else_` parameters are the signals to output when the condition is true or false, respectively.
-    ///
-    /// # Panics
-    ///
-    /// - Panics if the output signals do not have the same type.
-    /// - Panics if the node's output is not a boolean signal.
-    #[inline]
-    #[track_caller]
-    pub fn cond(&self, then: impl IntoOutput, else_: impl IntoOutput) -> Node {
-        let then = then.into_output(self.node.graph());
-        let else_ = else_.into_output(self.node.graph());
-        let signal_type = then.signal_type();
-        assert_signals_compatible(&signal_type, &else_.signal_type(), "cond");
-        assert!(
-            self.signal_type() == SignalType::Bool,
-            "condition signal must be a boolean"
-        );
-        let cond = self.node.graph().add(Cond::new(signal_type));
-        cond.input("cond").connect(self);
-        cond.input("then").connect(&then);
-        cond.input("else").connect(&else_);
-        cond
-    }
-
-    /// Creates a [`Dedup`] processor and connects it to the output.
-    #[inline]
-    pub fn dedup(&self) -> Node {
-        let signal_type = self.signal_type();
-        let proc = self.node.graph().add(Dedup::new(signal_type));
-        proc.input(0).connect(self);
-        proc
-    }
-
-    /// Creates a [`Print`] processor and connects it to the output.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the output signal is not a float.
-    #[inline]
-    #[track_caller]
-    pub fn print(&self) -> Node {
-        assert!(
-            matches!(self.signal_type(), SignalType::Float),
-            "output signal must be a float"
-        );
-        let proc = self.node.graph().add(Print::new(SignalType::Float));
-        let changed = self.node().graph().add(Changed::new(0.0, true));
-        changed.input(0).connect(self);
-        proc.input("trig").connect(changed);
-        proc.input("message").connect(self);
-        proc
-    }
-
-    /// Creates a [`CheckFinite`] processor and connects it to the output.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the output signal is not a float.
-    ///
-    /// Also note that, during the execution of the graph, this processor will panic if the output signal is `inf` or `NaN`.
-    #[inline]
-    #[track_caller]
-    pub fn check_finite(&self) -> Node {
-        assert!(
-            matches!(self.signal_type(), SignalType::Float),
-            "output signal must be a float"
-        );
-        let proc = self.node.graph().add(CheckFinite::default());
-        proc.input(0).connect(self);
-        proc
-    }
-
-    /// Creates a [`FiniteOrZero`] processor and connects it to the output.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the output signal is not a float.
-    #[inline]
-    #[track_caller]
-    pub fn finite_or_zero(&self) -> Node {
-        assert!(
-            matches!(self.signal_type(), SignalType::Float),
-            "output signal must be a float"
-        );
-        let proc = self.node.graph().add(FiniteOrZero::default());
-        proc.input(0).connect(self);
-        proc
-    }
-
-    /// Creates a [`IsSome`] processor and connects it to the output.
-    #[inline]
-    pub fn is_some(&self) -> Node {
-        let proc = self.node.graph().add(IsSome::new(self.signal_type()));
-        proc.input(0).connect(self);
-        proc
-    }
-
-    /// Creates a [`IsNone`] processor and connects it to the output.
-    #[inline]
-    pub fn is_none(&self) -> Node {
-        let proc = self.node.graph().add(IsNone::new(self.signal_type()));
-        proc.input(0).connect(self);
-        proc
-    }
-
-    /// Creates a [`OrElse`] processor and connects it to the output.
-    #[inline]
-    pub fn or_else(&self, default: impl Signal) -> Node {
-        let proc = self.node.graph().add(OrElse::new(default));
-        proc.input(0).connect(self);
-        proc
-    }
 }
 
 mod sealed {
+    use crate::signal::Signal;
+
     pub trait Sealed {}
     impl Sealed for crate::graph::NodeIndex {}
     impl Sealed for super::Node {}
     impl Sealed for &super::Node {}
     impl Sealed for super::Output {}
     impl Sealed for &super::Output {}
-    impl Sealed for super::AnySignal {}
-    impl Sealed for crate::builtins::util::Param {}
-    impl Sealed for f32 {}
-    impl Sealed for bool {}
+    impl<T: Signal> Sealed for T {}
     impl Sealed for i32 {}
-    impl Sealed for i64 {}
     impl Sealed for u32 {}
     impl Sealed for &str {}
 }
@@ -878,18 +500,6 @@ pub trait IntoNode: sealed::Sealed {
     fn into_node(self, graph: &Graph) -> Node;
 }
 
-impl IntoNode for AnySignal {
-    fn into_node(self, graph: &Graph) -> Node {
-        graph.add(Constant::new_any(self))
-    }
-}
-
-impl IntoNode for bool {
-    fn into_node(self, graph: &Graph) -> Node {
-        graph.constant(self)
-    }
-}
-
 impl IntoNode for Node {
     fn into_node(self, graph: &Graph) -> Node {
         Node {
@@ -908,42 +518,12 @@ impl IntoNode for &Node {
     }
 }
 
-impl IntoNode for Param {
-    fn into_node(self, graph: &Graph) -> Node {
-        graph.add(self)
-    }
-}
-
 impl IntoNode for NodeIndex {
     fn into_node(self, graph: &Graph) -> Node {
         Node {
             graph: graph.clone(),
             node_id: self,
         }
-    }
-}
-
-impl IntoNode for f32 {
-    fn into_node(self, graph: &Graph) -> Node {
-        graph.constant(self)
-    }
-}
-
-impl IntoNode for i64 {
-    fn into_node(self, graph: &Graph) -> Node {
-        graph.constant(self)
-    }
-}
-
-impl IntoNode for i32 {
-    fn into_node(self, graph: &Graph) -> Node {
-        graph.constant(self as i64)
-    }
-}
-
-impl IntoNode for u32 {
-    fn into_node(self, graph: &Graph) -> Node {
-        graph.constant(self as i64)
     }
 }
 
@@ -1009,323 +589,3 @@ impl IntoOutputIdx for &str {
         idx as u32
     }
 }
-
-macro_rules! impl_binary_node_ops {
-    ($name:ident, $proc:ident, ($($signal_type:ident => $data:ty),*), $doc:literal) => {
-        impl Output {
-            #[allow(clippy::should_implement_trait)]
-            #[doc = $doc]
-            pub fn $name(&self, other: impl IntoOutput) -> Node {
-                let other = other.into_output(self.node().graph());
-
-                assert_signals_compatible(
-                    &self.signal_type(),
-                    &other.signal_type(),
-                    stringify!($name),
-                );
-
-                let signal_type = self.signal_type();
-                let node = self.node().graph().add(<math::$proc>::new(signal_type));
-
-                node.input(0).connect(self);
-                node.input(1).connect(&other);
-
-                node
-            }
-        }
-
-        impl Node {
-            #[allow(clippy::should_implement_trait)]
-            #[doc = $doc]
-            pub fn $name(&self, other: impl IntoOutput) -> Node {
-                self.assert_single_output(stringify!($name));
-                self.output(0).$name(other)
-            }
-        }
-    };
-    ($name:ident, $std_op:ident, $proc:ident, ($($signal_type:ident => $data:ty),*), $doc:literal) => {
-        impl Output {
-            #[allow(clippy::should_implement_trait)]
-            #[doc = $doc]
-            pub fn $name(&self, other: impl IntoOutput) -> Node {
-                let other = other.into_output(self.node().graph());
-
-                assert_signals_compatible(
-                    &self.signal_type(),
-                    &other.signal_type(),
-                    stringify!($name),
-                );
-
-                let signal_type = self.signal_type();
-                let node = self.node().graph().add(<math::$proc>::new(signal_type));
-
-                node.input(0).connect(self);
-                node.input(1).connect(&other);
-
-                node
-            }
-        }
-
-        impl Node {
-            #[allow(clippy::should_implement_trait)]
-            #[doc = $doc]
-            pub fn $name(&self, other: impl IntoOutput) -> Node {
-                self.assert_single_output(stringify!($name));
-                self.output(0).$name(other)
-            }
-        }
-
-        impl<T> std::ops::$std_op<T> for Output
-        where
-            T: IntoOutput,
-        {
-            type Output = Node;
-
-            fn $name(self, other: T) -> Node {
-                Output::$name(&self, other)
-            }
-        }
-
-        impl<T> std::ops::$std_op<T> for &Output
-        where
-            T: IntoOutput,
-        {
-            type Output = Node;
-
-            fn $name(self, other: T) -> Node {
-                Output::$name(self, other)
-            }
-        }
-
-        impl<T> std::ops::$std_op<T> for Node
-        where
-            T: IntoNode,
-        {
-            type Output = Node;
-
-            fn $name(self, other: T) -> Node {
-                Node::$name(&self, other)
-            }
-        }
-
-        impl<T> std::ops::$std_op<T> for &Node
-        where
-            T: IntoNode,
-        {
-            type Output = Node;
-
-            fn $name(self, other: T) -> Node {
-                Node::$name(self, other)
-            }
-        }
-    };
-}
-
-impl_binary_node_ops!(add, Add, Add, (f32 => f32, Int => i64), "Adds two signals together.");
-impl_binary_node_ops!(sub, Sub, Sub, (f32 => f32, Int => i64), "Subtracts one signal from another.");
-impl_binary_node_ops!(mul, Mul, Mul, (f32 => f32, Int => i64), "Multiplies two signals together.");
-impl_binary_node_ops!(div, Div, Div, (f32 => f32, Int => i64), "Divides one signal by another.");
-impl_binary_node_ops!(
-    rem,
-    Rem,
-    Rem,
-    (f32 => f32, Int => i64),
-    "Calculates the remainder of one signal divided by another."
-);
-impl_binary_node_ops!(powf, Powf, (f32 => f32), "Raises one signal to the power of another.");
-impl_binary_node_ops!(
-    atan2,
-    Atan2,
-    (f32 => f32),
-    "Calculates the arctangent of the ratio of two signals."
-);
-impl_binary_node_ops!(hypot, Hypot, (f32 => f32), "Calculates the hypotenuse of two signals.");
-impl_binary_node_ops!(max, Max, (f32 => f32, Int => i64), "Outputs the maximum of two signals.");
-impl_binary_node_ops!(min, Min, (f32 => f32, Int => i64), "Outputs the minimum of two signals.");
-
-macro_rules! impl_comparison_node_ops {
-    ($name:ident, $proc:ident, $doc:expr) => {
-        impl Output {
-            #[allow(clippy::should_implement_trait)]
-            #[doc = $doc]
-            pub fn $name(&self, other: impl IntoOutput) -> Node {
-                let other = other.into_output(self.node().graph());
-
-                assert_signals_compatible(
-                    &self.signal_type(),
-                    &other.signal_type(),
-                    stringify!($name),
-                );
-
-                let signal_type = self.signal_type();
-                let node = self.node().graph().add(<control::$proc>::new(signal_type));
-
-                node.input(0).connect(self);
-                node.input(1).connect(&other);
-
-                node
-            }
-        }
-
-        impl Node {
-            #[allow(clippy::should_implement_trait)]
-            #[doc = $doc]
-            pub fn $name(&self, other: impl IntoOutput) -> Node {
-                self.assert_single_output(stringify!($name));
-                self.output(0).$name(other)
-            }
-        }
-    };
-}
-
-impl_comparison_node_ops!(eq, Equal, "Outputs true if the two signals are equal.");
-impl_comparison_node_ops!(
-    ne,
-    NotEqual,
-    "Outputs true if the two signals are not equal."
-);
-impl_comparison_node_ops!(
-    lt,
-    Less,
-    "Outputs true if the first signal is less than the second signal."
-);
-impl_comparison_node_ops!(
-    le,
-    LessOrEqual,
-    "Outputs true if the first signal is less than or equal to the second signal."
-);
-impl_comparison_node_ops!(
-    gt,
-    Greater,
-    "Outputs true if the first signal is greater than the second signal."
-);
-impl_comparison_node_ops!(
-    ge,
-    GreaterOrEqual,
-    "Outputs true if the first signal is greater than or equal to the second signal."
-);
-
-macro_rules! impl_unary_node_ops {
-    ($name:ident, $proc:ident, ($($signal_type:ident => $data:ty),*), $doc:literal) => {
-        impl Output {
-            #[allow(clippy::should_implement_trait)]
-            #[doc = $doc]
-            pub fn $name(&self) -> Node {
-                let signal_type = self.signal_type();
-                let node = self.node().graph().add(<math::$proc>::new(signal_type));
-
-                node.input(0).connect(self);
-
-                node
-            }
-        }
-
-        impl Node {
-            #[allow(clippy::should_implement_trait)]
-            #[doc = $doc]
-            pub fn $name(&self) -> Node {
-                self.assert_single_output(stringify!($name));
-                self.output(0).$name()
-            }
-        }
-    };
-}
-
-impl_unary_node_ops!(neg, Neg, (f32 => f32, Int => i64), "Negates the input signal.");
-
-impl std::ops::Neg for &Node {
-    type Output = Node;
-
-    fn neg(self) -> Node {
-        Node::neg(self)
-    }
-}
-
-impl_unary_node_ops!(
-    abs,
-    Abs,
-    (f32 => f32, Int => i64),
-    "Outputs the absolute value of the input signal."
-);
-impl_unary_node_ops!(
-    sqrt,
-    Sqrt,
-    (f32 => f32),
-    "Outputs the square root of the input signal."
-);
-impl_unary_node_ops!(
-    cbrt,
-    Cbrt,
-    (f32 => f32),
-    "Outputs the cube root of the input signal."
-);
-impl_unary_node_ops!(
-    ceil,
-    Ceil,
-    (f32 => f32),
-    "Rounds the input signal up to the nearest integer."
-);
-impl_unary_node_ops!(
-    floor,
-    Floor,
-    (f32 => f32),
-    "Rounds the input signal down to the nearest integer."
-);
-impl_unary_node_ops!(
-    round,
-    Round,
-    (f32 => f32),
-    "Rounds the input signal to the nearest integer."
-);
-impl_unary_node_ops!(sin, Sin, (f32 => f32), "Outputs the sine of the input signal.");
-impl_unary_node_ops!(cos, Cos, (f32 => f32), "Outputs the cosine of the input signal.");
-impl_unary_node_ops!(tan, Tan, (f32 => f32), "Outputs the tangent of the input signal.");
-impl_unary_node_ops!(
-    tanh,
-    Tanh,
-    (f32 => f32),
-    "Outputs the hyperbolic tangent of the input signal."
-);
-
-impl_unary_node_ops!(
-    recip,
-    Recip,
-    (f32 => f32),
-    "Outputs the reciprocal of the input signal."
-);
-impl_unary_node_ops!(
-    signum,
-    Signum,
-    (f32 => f32, Int => i64),
-    "Outputs the sign of the input signal."
-);
-impl_unary_node_ops!(
-    fract,
-    Fract,
-    (f32 => f32),
-    "Outputs the fractional part of the input signal."
-);
-impl_unary_node_ops!(
-    ln,
-    Ln,
-    (f32 => f32),
-    "Outputs the natural logarithm of the input signal."
-);
-impl_unary_node_ops!(
-    log2,
-    Log2,
-    (f32 => f32),
-    "Outputs the base-2 logarithm of the input signal."
-);
-impl_unary_node_ops!(
-    log10,
-    Log10,
-    (f32 => f32),
-    "Outputs the base-10 logarithm of the input signal."
-);
-impl_unary_node_ops!(
-    exp,
-    Exp,
-    (f32 => f32),
-    "Outputs the natural exponential of the input signal."
-);
