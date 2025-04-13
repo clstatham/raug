@@ -13,17 +13,9 @@ pub mod io;
 /// Error type for [`Processor`] operations.
 #[derive(Debug, Error)]
 pub enum ProcessorError {
-    /// The number of inputs must match the number returned by [`Processor::num_inputs()`].
-    #[error("The number of inputs must match the number returned by Processor::num_inputs()")]
-    NumInputsMismatch,
-
-    /// The number of outputs must match the number returned by [`Processor::num_outputs()`].
-    #[error("The number of outputs must match the number returned by Processor::num_outputs()")]
-    NumOutputsMismatch,
-
     /// Input signal type mismatch.
     #[error("Input {index} signal type mismatch (expected {expected:?}, got {actual:?})")]
-    InputSpecMismatch {
+    InputTypeMismatch {
         /// The index of the input signal.
         index: usize,
         /// The expected signal type.
@@ -34,7 +26,7 @@ pub enum ProcessorError {
 
     /// Output signal type mismatch.
     #[error("Output {index} signal type mismatch (expected {expected:?}, got {actual:?})")]
-    OutputSpecMismatch {
+    OutputTypeMismatch {
         /// The index of the output signal.
         index: usize,
         /// The expected signal type.
@@ -42,26 +34,6 @@ pub enum ProcessorError {
         /// The actual signal type.
         actual: SignalType,
     },
-
-    /// Invalid value.
-    #[error("Invalid value: {0}")]
-    InvalidValue(&'static str),
-
-    /// Invalid cast.
-    #[error("Invalid cast: {0:?} to {1:?}")]
-    InvalidCast(SignalType, SignalType),
-
-    #[error("Sub-graph error: {0}")]
-    SubGraph(#[from] Box<crate::graph::GraphRunError>),
-
-    #[error("Asset `{0}` type invalid: {0}")]
-    InvalidAsset(String, String),
-
-    #[error("Asset `{0}` not found")]
-    AssetNotFound(String),
-
-    #[error("Other error")]
-    Other,
 }
 
 /// A result type for processor operations.

@@ -158,7 +158,7 @@ impl<'a> ProcessorInputs<'a> {
                     buffer.as_slice::<S>()[sample_index],
                 ))))
             } else {
-                Err(ProcessorError::InputSpecMismatch {
+                Err(ProcessorError::InputTypeMismatch {
                     index,
                     expected: S::signal_type(),
                     actual: buffer.signal_type(),
@@ -167,7 +167,7 @@ impl<'a> ProcessorInputs<'a> {
         } else if buffer.signal_type() == S::signal_type() {
             Ok(Ternary::A(buffer.as_slice::<S>().iter().copied().map(Some)))
         } else {
-            Err(ProcessorError::InputSpecMismatch {
+            Err(ProcessorError::InputTypeMismatch {
                 index,
                 expected: S::signal_type(),
                 actual: buffer.signal_type(),
@@ -340,7 +340,7 @@ impl<'a> ProcessorOutputs<'a> {
         signal: S,
     ) -> Result<(), ProcessorError> {
         if S::signal_type() != self.output_spec[output_index].signal_type {
-            return Err(ProcessorError::OutputSpecMismatch {
+            return Err(ProcessorError::OutputTypeMismatch {
                 index: output_index,
                 expected: self.output_spec[output_index].signal_type,
                 actual: S::signal_type(),
@@ -365,7 +365,7 @@ impl<'a> ProcessorOutputs<'a> {
                     &mut output.as_mut_slice::<S>()[sample_index],
                 )))
             } else {
-                Err(ProcessorError::OutputSpecMismatch {
+                Err(ProcessorError::OutputTypeMismatch {
                     index,
                     expected: S::signal_type(),
                     actual: output.signal_type(),

@@ -20,7 +20,6 @@ impl<T: Copy + Default + Debug + Send + Sync + PartialEq + 'static> Signal for T
 #[derive(Clone, Copy)]
 pub struct SignalType {
     /// The name of the signal type.
-    #[cfg(debug_assertions)]
     name: &'static str,
 
     /// The type ID of the signal.
@@ -32,14 +31,12 @@ impl SignalType {
     #[inline]
     pub fn of<T: Signal>() -> Self {
         Self {
-            #[cfg(debug_assertions)]
             name: std::any::type_name::<T>(),
             id: TypeId::of::<T>(),
         }
     }
 
     /// Returns the signal type name.
-    #[cfg(debug_assertions)]
     #[inline]
     pub const fn name(&self) -> &'static str {
         self.name
@@ -70,10 +67,7 @@ impl Eq for SignalType {}
 impl std::fmt::Debug for SignalType {
     #[inline]
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        #[cfg(debug_assertions)]
         write!(f, "SignalType({})", self.name)?;
-        #[cfg(not(debug_assertions))]
-        write!(f, "SignalType({:?})", self.id)?;
         Ok(())
     }
 }
