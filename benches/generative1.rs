@@ -34,7 +34,7 @@ pub fn pick_randomly(graph: &Graph, trig: &Node, options: &[Node]) -> Node {
 
     for (i, (option, msg)) in options.iter().zip(msgs.iter()).enumerate() {
         msg.input(0).connect(select.output(i as u32));
-        msg.input(1).connect(option.output(0).some());
+        msg.input(1).connect(option.output(0));
         merge.input(i as u32 + 1).connect(msg.output(0));
     }
 
@@ -46,7 +46,7 @@ pub fn fm_sine_osc(graph: &Graph, freq: &Node, mod_freq: &Node) -> Node {
     let phase = graph.add(PhaseAccumulator::default());
     let increment = freq / sr;
     phase.input(0).connect(increment.output(0));
-    (phase * 2.0 * PI + mod_freq * 2.0 * PI).sin()
+    (phase * 2.0f32 * PI + mod_freq * 2.0f32 * PI).sin()
 }
 
 pub fn midi_to_freq(midi: f32) -> f32 {
@@ -84,37 +84,45 @@ pub fn random_tones(
     mast.input(0).connect(rates[0]);
 
     // select a random rate
-    let rates = rates.iter().map(|&r| graph.constant(r)).collect::<Vec<_>>();
+    let rates = rates
+        .iter()
+        .map(|&r| graph.constant(Some(r)))
+        .collect::<Vec<_>>();
     let rate = pick_randomly(graph, &mast, &rates).unwrap_or(0.0f32);
 
     let trig = graph.add(Metro::default());
     trig.input(0).connect(rate.output(0));
 
     // select a random frequency
-    let freqs = freqs.iter().map(|&f| graph.constant(f)).collect::<Vec<_>>();
+    let freqs = freqs
+        .iter()
+        .map(|&f| graph.constant(Some(f)))
+        .collect::<Vec<_>>();
     let freq = pick_randomly(graph, &trig, &freqs).unwrap_or(440.0f32);
 
     // select a random decay
     let amp_decays = decays
         .iter()
-        .map(|&d| graph.constant(d))
+        .map(|&d| graph.constant(Some(d)))
         .collect::<Vec<_>>();
     let amp_decay = pick_randomly(graph, &trig, &amp_decays).unwrap_or(0.0f32);
 
     // select a random mod ratio
     let ratios = ratios
         .iter()
-        .map(|&r| graph.constant(r))
+        .map(|&r| graph.constant(Some(r)))
         .collect::<Vec<_>>();
     let ratio = pick_randomly(graph, &trig, &ratios).unwrap_or(0.0f32);
 
     // select a random amplitude
-    let amps = amps.iter().map(|&a| graph.constant(a)).collect::<Vec<_>>();
+    let amps = amps
+        .iter()
+        .map(|&a| graph.constant(Some(a)))
+        .collect::<Vec<_>>();
     let amp = pick_randomly(graph, &trig, &amps).unwrap_or(0.0f32);
 
     // create the amplitude envelope
-    // let amp_env = decay_env(graph, &trig, &amp_decay);
-    let amp_env = graph.add(DecayEnv::new(1.0));
+    let amp_env = graph.add(DecayEnv::new(1.0f32));
     amp_env.input("tau").connect(amp_decay.output(0));
     amp_env.input("trig").connect(trig.output(0));
 
@@ -123,7 +131,7 @@ pub fn random_tones(
     modulator.input(0).connect((&freq * ratio).output(0));
 
     // create the carrier
-    let carrier = fm_sine_osc(graph, &freq, &(modulator * 0.1));
+    let carrier = fm_sine_osc(graph, &freq, &(modulator * 0.5f32));
 
     carrier * amp_env * amp
 }
@@ -151,7 +159,7 @@ pub fn generative1(num_tones: usize) -> Graph {
         mix = mix.clone() + tone.clone();
     }
 
-    let mix = mix * 0.5;
+    let mix = mix * 0.5f32;
 
     // let master = mix;
 
