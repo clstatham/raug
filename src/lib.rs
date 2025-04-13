@@ -1,8 +1,5 @@
 #![doc = include_str!("../README.md")]
 #![cfg_attr(doc, warn(missing_docs))]
-#![allow(clippy::useless_conversion)]
-#![allow(clippy::unnecessary_cast)]
-#![allow(clippy::excessive_precision)]
 
 pub mod builtins;
 pub mod graph;
@@ -18,7 +15,7 @@ pub mod prelude {
     pub use crate::graph::{
         Graph,
         node::{Input, IntoNode, IntoOutput, Node, Output},
-        runtime::{AudioBackend, AudioDevice, AudioStream, CpalStream, MidiPort, WavFileOutStream},
+        runtime::{AudioBackend, AudioDevice, AudioStream, CpalStream, WavFileOutStream},
     };
     pub use crate::processor::{
         ProcResult, Processor, ProcessorError,

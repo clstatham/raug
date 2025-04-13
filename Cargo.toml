@@ -17,21 +17,17 @@ profiling = ["dep:allocation-counter"]
 
 [dependencies]
 cpal = { version = "0.15.3", features = [] }
-itertools = "0.13.0"
+itertools = "0.14"
 log = "0.4.22"
-petgraph = { version = "0.6.5", features = [] }
+petgraph = { version = "0.8", features = [] }
 hound = "3.5"
 thiserror = "2.0"
-downcast-rs = "1.2.1"
+downcast-rs = "2.0"
 rustc-hash = "2"
 hashbrown = "0.15"
 crossbeam-channel = "0.5"
-rand = "0.8"
-midir = "0.10.0"
 smallvec = "1.13.2"
 raug-macros = { path = "../raug-macros" }
-num = { version = "0.4.3", features = [] }
-apodize = "1.0.0"
 allocation-counter = { version = "0.8", optional = true }
 any_vec = "0.14.0"
 

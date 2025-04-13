@@ -47,18 +47,6 @@ pub enum AudioDevice {
     Name(String),
 }
 
-/// A MIDI port to use for MIDI I/O.
-#[derive(Default, Debug, Clone)]
-pub enum MidiPort {
-    /// Use the default MIDI port.
-    #[default]
-    Default,
-    /// Use the MIDI port at the given index.
-    Index(usize),
-    /// Use the MIDI port with the given substring in its name.
-    Name(String),
-}
-
 #[derive(Debug)]
 pub struct Channels<T> {
     tx: Sender<T>,
@@ -372,7 +360,7 @@ impl CpalStream {
         Self {
             output_device: Arc::new(output_device),
             output_stream: None,
-            output_config: output_config.into(),
+            output_config,
             block_size: block_size.clone(),
             playing: false,
         }

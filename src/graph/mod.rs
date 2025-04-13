@@ -8,7 +8,7 @@ use petgraph::{
     prelude::{Direction, EdgeRef, StableDiGraph},
     visit::DfsPostOrder,
 };
-use runtime::{AudioDevice, MidiPort};
+use runtime::AudioDevice;
 use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::{
@@ -68,16 +68,6 @@ pub enum GraphRunError {
     /// Output stream sample format is not supported.
     #[error("Unsupported sample format: {0}")]
     UnsupportedSampleFormat(cpal::SampleFormat),
-
-    /// An error occurred while initializing MIDI input.
-    MidirInitError(#[from] midir::InitError),
-
-    /// The requested MIDI port is unavailable.
-    #[error("Requested MIDI port is unavailable: {0:?}")]
-    MidiPortUnavailable(MidiPort),
-
-    /// An error occurred while connecting to a MIDI port.
-    MidiConnectError(#[from] midir::ConnectError<midir::MidiInput>),
 
     /// The runtime needs to reallocate buffers.
     NeedsAlloc,

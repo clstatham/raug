@@ -53,18 +53,3 @@ pub fn list_audio_devices(backend: AudioBackend) {
         println!("  {}: {:?}", i, device.name());
     }
 }
-
-/// Prints a list of available MIDI ports to the console.
-pub fn list_midi_ports() {
-    let input = midir::MidiInput::new("raug").unwrap();
-    println!("Listing available MIDI ports:");
-    for (i, port) in input.ports().iter().enumerate() {
-        println!(
-            "  {}: {:?}",
-            i,
-            input
-                .port_name(port)
-                .unwrap_or_else(|_| "Unknown".to_string())
-        );
-    }
-}

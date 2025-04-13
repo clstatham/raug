@@ -12,14 +12,10 @@
 
 ## Examples
 
-See [examples/processor.rs](https://github.com/clstatham/raug/blob/master/examples/processor.rs) for a simple example of writing a raw audio processor.
-
 See [examples/demo.rs](https://github.com/clstatham/raug/blob/master/examples/demo.rs) for a simple example of building a signal flow graph.
 
 ## Optional Cargo Feature Flags
 
-- `f32_samples`: Use `f32` audio samples instead of the default `f64`.
-- `serde`: Enable [serde](https://crates.io/crates/serde) v1 support for most relevant structures.
 - `jack`: Enable JACK support for realtime audio processing on Linux.
 
 ## Contributing

@@ -54,10 +54,7 @@ impl Buffer<f32> {
     pub fn load_wav(path: impl AsRef<Path>) -> Result<Self, hound::Error> {
         let reader = hound::WavReader::open(path)?;
         if reader.spec().channels == 1 {
-            let samples: Result<Vec<_>, hound::Error> = reader
-                .into_samples::<f32>()
-                .map(|sample| Ok(sample?.into()))
-                .collect();
+            let samples: Result<Vec<_>, hound::Error> = reader.into_samples::<f32>().collect();
             let samples = samples?;
 
             Ok(Buffer::from_slice(&samples))
@@ -67,7 +64,6 @@ impl Buffer<f32> {
             let samples: Result<Vec<_>, hound::Error> = reader
                 .into_samples::<f32>()
                 .step_by(channels as usize)
-                .map(|sample| Ok(sample?.into()))
                 .collect();
             let samples = samples?;
 
