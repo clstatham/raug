@@ -14,13 +14,13 @@ pub(crate) fn null(#[output] _out: &mut f32) {}
 ///
 /// | Index | Name | Type | Description |
 /// | --- | --- | --- | --- |
-/// | `0` | `input` | `Any` | The input signal.
+/// | `0` | `input` | `T` | The input signal.
 ///
 /// # Outputs
 ///
 /// | Index | Name | Type | Description |
 /// | --- | --- | --- | --- |
-/// | `0` | `out` | `Any` | The output signal.
+/// | `0` | `out` | `T` | The output signal.
 #[processor(derive(Default))]
 pub fn passthrough<T: Signal>(#[input] input: &T, #[output] out: &mut T) {
     *out = *input;
