@@ -18,7 +18,7 @@ pub trait Signal: Copy + Default + Debug + Send + Sync + PartialEq + 'static {
 impl<T: Copy + Default + Debug + Send + Sync + PartialEq + 'static> Signal for T {}
 
 /// Type information for a signal.
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Copy)]
 pub struct SignalType {
     /// The name of the signal type.
     #[cfg(debug_assertions)]
@@ -67,3 +67,14 @@ impl PartialEq for SignalType {
 }
 
 impl Eq for SignalType {}
+
+impl std::fmt::Debug for SignalType {
+    #[inline]
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        #[cfg(debug_assertions)]
+        write!(f, "SignalType({})", self.name)?;
+        #[cfg(not(debug_assertions))]
+        write!(f, "SignalType({:?})", self.id)?;
+        Ok(())
+    }
+}

@@ -50,5 +50,24 @@ pub fn bench_demo(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, bench_demo,);
+fn bench_generative1(c: &mut Criterion) {
+    let num_tones = 20;
+    let graph = generative1::generative1(num_tones);
+    let mut group = c.benchmark_group(name(&format!("generative1_{}", num_tones)));
+
+    for &block_size in BLOCK_SIZES {
+        graph.allocate(SAMPLE_RATE, block_size);
+
+        group.throughput(criterion::Throughput::Elements(block_size as u64));
+        group.bench_function(format!("block_size_{}", block_size), |b| {
+            b.iter(|| {
+                graph.process().unwrap();
+            });
+        });
+    }
+
+    group.finish();
+}
+
+criterion_group!(benches, bench_generative1);
 criterion_main!(benches);
