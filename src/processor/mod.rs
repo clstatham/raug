@@ -64,6 +64,9 @@ pub enum ProcessorError {
     Other,
 }
 
+/// A result type for processor operations.
+pub type ProcResult<T> = Result<T, ProcessorError>;
+
 /// A processor that can process audio signals.
 pub trait Processor
 where
@@ -90,16 +93,6 @@ where
 
     /// Creates a new set of output buffers for the processor.
     fn create_output_buffers(&self, size: usize) -> Vec<ErasedBuffer>;
-
-    /// Returns the number of input signals required by the processor.
-    fn num_inputs(&self) -> usize {
-        self.input_spec().len()
-    }
-
-    /// Returns the number of output signals produced by the processor.
-    fn num_outputs(&self) -> usize {
-        self.output_spec().len()
-    }
 
     /// Called once, before processing starts.
     ///

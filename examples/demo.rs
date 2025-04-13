@@ -1,10 +1,15 @@
 use raug::prelude::*;
 
 #[processor]
-pub fn sine_oscillator(#[state] phase: &mut f32, #[input] freq: &f32, #[output] out: &mut f32) {
-    let sample_rate = 48000.0;
-    *phase += 2.0 * std::f32::consts::PI * freq / sample_rate;
+pub fn sine_oscillator(
+    env: ProcEnv,
+    #[state] phase: &mut f32,
+    #[input] freq: &f32,
+    #[output] out: &mut f32,
+) -> ProcResult<()> {
+    *phase += 2.0 * std::f32::consts::PI * freq / env.sample_rate;
     *out = phase.sin() * 0.2;
+    Ok(())
 }
 
 fn main() {
