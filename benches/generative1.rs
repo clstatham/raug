@@ -4,7 +4,7 @@ use raug::prelude::*;
 use raug_ext::prelude::*;
 
 pub fn pick_randomly(graph: &Graph, trig: &Node, options: &'static [f32]) -> Node {
-    let node = graph.add(RandomChoice::<_, List<f32>>::default());
+    let node = graph.add(RandomChoice::<f32>::default());
     node.input("trig").connect(trig.output(0));
     node.input("options")
         .connect(graph.constant(List::from_slice(options)));
