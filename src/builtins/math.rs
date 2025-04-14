@@ -1,5 +1,7 @@
 //! Math built-in processors.
 
+use std::marker::PhantomData;
+
 use crate::prelude::*;
 
 /// A processor that outputs a constant value.
@@ -16,8 +18,8 @@ impl<T: Signal> Constant<T> {
     /// Creates a new constant processor with the given value.
     pub fn new(value: T) -> Self {
         Self {
-            value: value.clone(),
-            out: value,
+            value,
+            _marker0: PhantomData,
         }
     }
 }

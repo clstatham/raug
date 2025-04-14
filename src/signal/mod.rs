@@ -42,7 +42,7 @@ impl<T: Signal> Clone for List<T> {
     #[inline]
     fn clone(&self) -> Self {
         Self {
-            vec: SliceExt::to_vec_in(self.vec.as_slice(), SignalAlloc),
+            vec: SliceExt::to_vec_in(self.vec.as_slice(), SignalAlloc::default()),
         }
     }
 
@@ -56,7 +56,7 @@ impl<T: Signal> Clone for List<T> {
 impl<T: Signal> Default for List<T> {
     fn default() -> Self {
         Self {
-            vec: allocator_api2::vec::Vec::new_in(SignalAlloc),
+            vec: allocator_api2::vec::Vec::new_in(SignalAlloc::default()),
         }
     }
 }
@@ -65,13 +65,13 @@ impl<T: Signal> List<T> {
     /// Creates a new list with the given capacity.
     pub fn with_capacity(capacity: usize) -> Self {
         Self {
-            vec: allocator_api2::vec::Vec::with_capacity_in(capacity, SignalAlloc),
+            vec: allocator_api2::vec::Vec::with_capacity_in(capacity, SignalAlloc::default()),
         }
     }
 
     pub fn from_slice(slice: &[T]) -> Self {
         Self {
-            vec: SliceExt::to_vec_in(slice, SignalAlloc),
+            vec: SliceExt::to_vec_in(slice, SignalAlloc::default()),
         }
     }
 
@@ -104,7 +104,7 @@ impl<T: Signal> DerefMut for List<T> {
 impl<T: Signal> From<Vec<T>> for List<T> {
     fn from(vec: Vec<T>) -> Self {
         Self {
-            vec: SliceExt::to_vec_in(vec.as_slice(), SignalAlloc),
+            vec: SliceExt::to_vec_in(vec.as_slice(), SignalAlloc::default()),
         }
     }
 }
@@ -126,7 +126,7 @@ impl Clone for StringSignal {
     #[inline]
     fn clone(&self) -> Self {
         Self {
-            vec: SliceExt::to_vec_in(self.vec.as_slice(), SignalAlloc),
+            vec: SliceExt::to_vec_in(self.vec.as_slice(), SignalAlloc::default()),
         }
     }
 
@@ -140,7 +140,7 @@ impl Clone for StringSignal {
 impl Default for StringSignal {
     fn default() -> Self {
         Self {
-            vec: allocator_api2::vec::Vec::new_in(SignalAlloc),
+            vec: allocator_api2::vec::Vec::new_in(SignalAlloc::default()),
         }
     }
 }
@@ -153,7 +153,7 @@ impl StringSignal {
     #[allow(clippy::should_implement_trait)]
     pub fn from_str(s: &str) -> Self {
         Self {
-            vec: SliceExt::to_vec_in(s.as_bytes(), SignalAlloc),
+            vec: SliceExt::to_vec_in(s.as_bytes(), SignalAlloc::default()),
         }
     }
 }

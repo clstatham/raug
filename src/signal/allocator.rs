@@ -1,27 +1,32 @@
 use std::{
+    alloc::Layout,
     ptr::NonNull,
-    sync::{Mutex, OnceLock},
+    sync::{LazyLock, Mutex},
 };
 
 use allocator_api2::alloc::{AllocError, Allocator};
 use bumpalo::Bump;
 
-static BUMP: OnceLock<Mutex<Bump>> = OnceLock::new();
+const INITIAL_CAPACITY: usize = 64 * 1024 * 1024; // 64 MiB
 
-fn get_bump() -> &'static Mutex<Bump> {
-    BUMP.get_or_init(|| Mutex::new(Bump::with_capacity(32 * 1024 * 1024))) // 32 MiB capacity
-}
+static BUMP: LazyLock<Mutex<Bump>> =
+    LazyLock::new(|| Mutex::new(Bump::with_capacity(INITIAL_CAPACITY)));
 
-pub struct SignalAlloc;
+// pub type SignalAlloc = std::alloc::System;
+
+#[derive(Default, Clone, Copy)]
+pub struct SignalAlloc {}
 
 unsafe impl Allocator for SignalAlloc {
-    fn allocate(&self, layout: std::alloc::Layout) -> Result<NonNull<[u8]>, AllocError> {
-        let bump = &*get_bump().lock().map_err(|_| AllocError)?;
+    #[inline]
+    fn allocate(&self, layout: Layout) -> Result<NonNull<[u8]>, AllocError> {
+        let bump = &*BUMP.lock().map_err(|_| AllocError)?;
         bump.allocate(layout)
     }
 
-    unsafe fn deallocate(&self, ptr: NonNull<u8>, layout: std::alloc::Layout) {
-        let Ok(bump) = get_bump().lock() else {
+    #[inline]
+    unsafe fn deallocate(&self, ptr: NonNull<u8>, layout: Layout) {
+        let Ok(bump) = BUMP.lock() else {
             // This will leak memory, but we can't do anything about it.
             return;
         };

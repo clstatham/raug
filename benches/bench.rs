@@ -30,7 +30,6 @@ pub fn bench_demo(c: &mut Criterion) {
     let sine = graph.add(SineOscillator {
         phase: 0.0,
         freq: 440.0,
-        out: 0.0,
     });
     sine.output(0).connect(&out1.input(0));
 

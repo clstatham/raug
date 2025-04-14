@@ -22,7 +22,6 @@ impl SineOscillator {
         SineOscillator {
             phase: 0.0,
             freq: 440.0,
-            out: 0.0,
         }
     }
 }
