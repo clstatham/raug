@@ -983,6 +983,7 @@ version = "0.0.4"
 dependencies = [
  "allocation-counter",
  "any_vec",
+ "bumpalo",
  "cpal",
  "criterion",
  "crossbeam-channel",

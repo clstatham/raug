@@ -88,7 +88,7 @@ impl ErasedBuffer {
     /// Returns a copy of the signal at the given index, if the type matches.
     #[inline]
     pub fn get_as<T: Signal>(&self, index: usize) -> Option<T> {
-        self.get(index)?.as_ref::<T>().copied()
+        self.get(index)?.as_ref::<T>().cloned()
     }
 
     /// Returns a mutable reference to the signal at the given index, if the type matches.

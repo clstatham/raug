@@ -164,7 +164,7 @@ impl<'a> ProcessorInputs<'a> {
         if let ProcessMode::Sample(sample_index) = self.env.mode {
             if buffer.signal_type() == S::signal_type() {
                 Ok(Ternary::B(std::iter::once(Some(
-                    buffer.as_slice::<S>().unwrap()[sample_index],
+                    buffer.as_slice::<S>().unwrap()[sample_index].clone(),
                 ))))
             } else {
                 Err(ProcessorError::InputTypeMismatch {
@@ -175,7 +175,7 @@ impl<'a> ProcessorInputs<'a> {
             }
         } else if buffer.signal_type() == S::signal_type() {
             Ok(Ternary::A(
-                buffer.as_slice::<S>().unwrap().iter().copied().map(Some),
+                buffer.as_slice::<S>().unwrap().iter().cloned().map(Some),
             ))
         } else {
             Err(ProcessorError::InputTypeMismatch {
@@ -227,9 +227,9 @@ impl ProcessorOutput<'_> {
     #[inline]
     pub fn get_as<S: Signal>(&self, index: usize) -> Option<S> {
         match self {
-            ProcessorOutput::Block(buffer) => buffer.as_slice::<S>()?.get(index).copied(),
+            ProcessorOutput::Block(buffer) => buffer.as_slice::<S>()?.get(index).cloned(),
             ProcessorOutput::Sample(buffer, sample_index) => {
-                buffer.as_slice::<S>()?.get(*sample_index).copied()
+                buffer.as_slice::<S>()?.get(*sample_index).cloned()
             }
         }
     }

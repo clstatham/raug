@@ -8,14 +8,17 @@ pub fn constant<T>(#[state] value: &mut T, #[output] out: &mut T) -> ProcResult<
 where
     T: Signal,
 {
-    *out = *value;
+    *out = value.clone();
     Ok(())
 }
 
 impl<T: Signal> Constant<T> {
     /// Creates a new constant processor with the given value.
     pub fn new(value: T) -> Self {
-        Self { value, out: value }
+        Self {
+            value: value.clone(),
+            out: value,
+        }
     }
 }
 
@@ -24,8 +27,9 @@ impl<T: Signal> Constant<T> {
 pub fn add<T>(#[input] a: &T, #[input] b: &T, #[output] out: &mut T) -> ProcResult<()>
 where
     T: std::ops::Add<Output = T> + Signal,
+    for<'a> &'a T: std::ops::Add<Output = T>,
 {
-    *out = *a + *b;
+    *out = a + b;
     Ok(())
 }
 
@@ -34,8 +38,9 @@ where
 pub fn sub<T>(#[input] a: &T, #[input] b: &T, #[output] out: &mut T) -> ProcResult<()>
 where
     T: std::ops::Sub<Output = T> + Signal,
+    for<'a> &'a T: std::ops::Sub<Output = T>,
 {
-    *out = *a - *b;
+    *out = a - b;
     Ok(())
 }
 
@@ -43,9 +48,10 @@ where
 #[processor(derive(Default))]
 pub fn mul<T>(#[input] a: &T, #[input] b: &T, #[output] out: &mut T) -> ProcResult<()>
 where
-    T: std::ops::Mul<Output = T> + Signal,
+    T: Signal,
+    for<'a> &'a T: std::ops::Mul<Output = T>,
 {
-    *out = *a * *b;
+    *out = a * b;
     Ok(())
 }
 
@@ -53,9 +59,10 @@ where
 #[processor(derive(Default))]
 pub fn div<T>(#[input] a: &T, #[input] b: &T, #[output] out: &mut T) -> ProcResult<()>
 where
-    T: std::ops::Div<Output = T> + Signal,
+    T: Signal,
+    for<'a> &'a T: std::ops::Div<Output = T>,
 {
-    *out = *a / *b;
+    *out = a / b;
     Ok(())
 }
 
@@ -63,9 +70,10 @@ where
 #[processor(derive(Default))]
 pub fn rem<T>(#[input] a: &T, #[input] b: &T, #[output] out: &mut T) -> ProcResult<()>
 where
-    T: std::ops::Rem<Output = T> + Signal,
+    T: Signal,
+    for<'a> &'a T: std::ops::Rem<Output = T>,
 {
-    *out = *a % *b;
+    *out = a % b;
     Ok(())
 }
 
@@ -73,8 +81,9 @@ where
 #[processor(derive(Default))]
 pub fn neg<T>(#[input] a: &T, #[output] out: &mut T) -> ProcResult<()>
 where
-    T: std::ops::Neg<Output = T> + Signal,
+    T: Signal,
+    for<'a> &'a T: std::ops::Neg<Output = T>,
 {
-    *out = -*a;
+    *out = -a;
     Ok(())
 }
