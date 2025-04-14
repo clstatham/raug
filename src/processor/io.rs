@@ -156,7 +156,7 @@ impl<'a> ProcessorInputs<'a> {
     pub fn iter_input_as<S: Signal>(
         &self,
         index: usize,
-    ) -> Result<impl Iterator<Item = Option<S>> + '_, ProcessorError> {
+    ) -> Result<impl Iterator<Item = Option<&S>> + '_, ProcessorError> {
         let Some(buffer) = self.input(index) else {
             return Ok(Ternary::C(std::iter::repeat(None)));
         };
@@ -164,7 +164,7 @@ impl<'a> ProcessorInputs<'a> {
         if let ProcessMode::Sample(sample_index) = self.env.mode {
             if buffer.signal_type() == S::signal_type() {
                 Ok(Ternary::B(std::iter::once(Some(
-                    buffer.as_slice::<S>().unwrap()[sample_index].clone(),
+                    &buffer.as_slice::<S>().unwrap()[sample_index],
                 ))))
             } else {
                 Err(ProcessorError::InputTypeMismatch {
@@ -174,9 +174,7 @@ impl<'a> ProcessorInputs<'a> {
                 })
             }
         } else if buffer.signal_type() == S::signal_type() {
-            Ok(Ternary::A(
-                buffer.as_slice::<S>().unwrap().iter().cloned().map(Some),
-            ))
+            Ok(Ternary::A(buffer.as_slice::<S>().unwrap().iter().map(Some)))
         } else {
             Err(ProcessorError::InputTypeMismatch {
                 index,
@@ -295,7 +293,7 @@ impl<'a> ProcessorOutputs<'a> {
         &mut self,
         output_index: usize,
         sample_index: usize,
-        signal: S,
+        signal: &S,
     ) -> Result<(), ProcessorError> {
         if S::signal_type() != self.output_spec[output_index].signal_type {
             return Err(ProcessorError::OutputTypeMismatch {
@@ -305,9 +303,10 @@ impl<'a> ProcessorOutputs<'a> {
             });
         }
 
-        *self.outputs[output_index]
+        self.outputs[output_index]
             .get_mut_as::<S>(sample_index)
-            .unwrap() = signal;
+            .unwrap()
+            .clone_from(signal);
 
         Ok(())
     }

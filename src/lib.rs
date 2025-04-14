@@ -22,7 +22,7 @@ pub mod prelude {
         io::{ProcEnv, ProcessorInputs, ProcessorOutputs, SignalSpec},
     };
     pub use crate::signal::{
-        Signal, SignalType,
+        List, Signal, SignalType, StringSignal,
         buffer::Buffer,
         type_erased::{ErasedBuffer, ErasedSignalMut, ErasedSignalRef},
     };

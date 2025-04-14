@@ -8,7 +8,7 @@ pub fn constant<T>(#[state] value: &mut T, #[output] out: &mut T) -> ProcResult<
 where
     T: Signal,
 {
-    *out = value.clone();
+    out.clone_from(value);
     Ok(())
 }
 

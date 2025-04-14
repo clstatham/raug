@@ -16,6 +16,6 @@ pub fn passthrough<T>(#[input] input: &T, #[output] out: &mut T) -> ProcResult<(
 where
     T: Signal,
 {
-    *out = input.clone();
+    out.clone_from(input);
     Ok(())
 }
