@@ -30,8 +30,8 @@ smallvec = "1.13.2"
 raug-macros = { path = "../raug-macros" }
 allocation-counter = { version = "0.8", optional = true }
 any_vec = "0.14.0"
-bumpalo = { version = "3.17", features = ["allocator-api2", "std"] }
 allocator-api2 = "0.2"
+blink-alloc = { version = "0.3.1", features = ["sync"] }
 
 [dev-dependencies]
 env_logger = "0.11"

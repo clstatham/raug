@@ -14,7 +14,7 @@ use rustc_hash::FxHashSet;
 use crate::{
     prelude::{Constant, Null, Passthrough, ProcEnv},
     processor::{Processor, ProcessorError, io::ProcessMode},
-    signal::{Signal, type_erased::ErasedBuffer},
+    signal::{Signal, type_erased::AnyBuffer},
 };
 
 pub mod edge;
@@ -135,7 +135,7 @@ pub type GraphRunResult<T> = Result<T, GraphRunError>;
 /// A result type for graph construction operations.
 pub type GraphConstructionResult<T> = Result<T, GraphConstructionError>;
 
-#[derive(Default, Clone)]
+#[derive(Default)]
 pub(crate) struct GraphInner {
     pub(crate) digraph: DiGraph,
 
@@ -325,7 +325,7 @@ impl GraphInner {
 
     /// Returns a reference to the runtime's output buffer for the given output index.
     #[inline]
-    pub fn get_output(&self, output_index: usize) -> Option<&ErasedBuffer> {
+    pub fn get_output(&self, output_index: usize) -> Option<&AnyBuffer> {
         let output_index = *self.output_indices().get(output_index)?;
         self.digraph()
             .node_weight(output_index)
@@ -441,7 +441,7 @@ impl GraphInner {
             .map(|edge| (edge.source(), edge.weight()))
         {
             let source_buffers = self.digraph[source_id].outputs.as_ref().unwrap();
-            let buffer = &source_buffers[edge.source_output as usize] as *const ErasedBuffer;
+            let buffer = &source_buffers[edge.source_output as usize] as *const AnyBuffer;
 
             inputs[edge.target_input as usize] = Some(buffer);
         }
@@ -632,7 +632,7 @@ impl Graph {
     }
 
     /// Creates a new [`Node`] that outputs a constant value.
-    pub fn constant<T: Signal>(&self, value: T) -> Node {
+    pub fn constant<T: Signal + Default + Clone>(&self, value: T) -> Node {
         self.add(Constant::new(value))
     }
 }

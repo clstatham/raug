@@ -24,7 +24,7 @@ pub mod prelude {
     pub use crate::signal::{
         List, Signal, SignalType, StringSignal,
         buffer::Buffer,
-        type_erased::{ErasedBuffer, ErasedSignalMut, ErasedSignalRef},
+        type_erased::{AnyBuffer, AnySignalMut, AnySignalRef},
     };
     pub use crate::util::*;
     pub use raug_macros::{note, note_array, processor};

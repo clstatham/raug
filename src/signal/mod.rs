@@ -6,18 +6,22 @@ use std::{
     ops::{Deref, DerefMut},
 };
 
-use allocator::SignalAlloc;
+use allocator::SIGNAL_ALLOC;
 use allocator_api2::SliceExt;
+use blink_alloc::SyncBlinkAlloc;
 
 pub mod allocator;
 pub mod buffer;
 pub mod type_erased;
 
 /// A type that can be stored in a [`Buffer`](buffer::Buffer) and processed by a [`Processor`](crate::processor::Processor).
-pub trait Signal: Clone + Default + Debug + Send + Sync + PartialEq + 'static {
+pub trait Signal: Clone + Send + Sync + 'static {
     /// The type of the signal.
     #[inline]
-    fn signal_type() -> SignalType {
+    fn signal_type() -> SignalType
+    where
+        Self: Sized,
+    {
         SignalType::of::<Self>()
     }
 }
@@ -35,29 +39,27 @@ impl Signal for usize {}
 
 #[derive(Debug, PartialEq)]
 pub struct List<T: Signal> {
-    vec: allocator_api2::vec::Vec<T, SignalAlloc>,
-}
-
-impl<T: Signal> Clone for List<T> {
-    #[inline]
-    fn clone(&self) -> Self {
-        Self {
-            vec: SliceExt::to_vec_in(self.vec.as_slice(), SignalAlloc::default()),
-        }
-    }
-
-    #[inline]
-    fn clone_from(&mut self, source: &Self) {
-        self.vec.clear();
-        self.vec.extend_from_slice(source.vec.as_slice());
-    }
+    vec: allocator_api2::vec::Vec<T, &'static SyncBlinkAlloc>,
 }
 
 impl<T: Signal> Default for List<T> {
     fn default() -> Self {
         Self {
-            vec: allocator_api2::vec::Vec::new_in(SignalAlloc::default()),
+            vec: allocator_api2::vec::Vec::new_in(&SIGNAL_ALLOC),
         }
+    }
+}
+
+impl<T: Signal> Clone for List<T> {
+    fn clone(&self) -> Self {
+        Self {
+            vec: SliceExt::to_vec_in(self.vec.as_slice(), &SIGNAL_ALLOC),
+        }
+    }
+
+    fn clone_from(&mut self, source: &Self) {
+        self.vec.clear();
+        self.vec.extend_from_slice(source.vec.as_slice());
     }
 }
 
@@ -65,13 +67,13 @@ impl<T: Signal> List<T> {
     /// Creates a new list with the given capacity.
     pub fn with_capacity(capacity: usize) -> Self {
         Self {
-            vec: allocator_api2::vec::Vec::with_capacity_in(capacity, SignalAlloc::default()),
+            vec: allocator_api2::vec::Vec::with_capacity_in(capacity, &SIGNAL_ALLOC),
         }
     }
 
     pub fn from_slice(slice: &[T]) -> Self {
         Self {
-            vec: SliceExt::to_vec_in(slice, SignalAlloc::default()),
+            vec: SliceExt::to_vec_in(slice, &SIGNAL_ALLOC),
         }
     }
 
@@ -88,7 +90,7 @@ impl<T: Signal> AsRef<[T]> for List<T> {
 }
 
 impl<T: Signal> Deref for List<T> {
-    type Target = allocator_api2::vec::Vec<T, SignalAlloc>;
+    type Target = allocator_api2::vec::Vec<T, &'static SyncBlinkAlloc>;
 
     fn deref(&self) -> &Self::Target {
         &self.vec
@@ -104,7 +106,7 @@ impl<T: Signal> DerefMut for List<T> {
 impl<T: Signal> From<Vec<T>> for List<T> {
     fn from(vec: Vec<T>) -> Self {
         Self {
-            vec: SliceExt::to_vec_in(vec.as_slice(), SignalAlloc::default()),
+            vec: SliceExt::to_vec_in(vec.as_slice(), &SIGNAL_ALLOC),
         }
     }
 }
@@ -119,14 +121,14 @@ impl<T: Signal> Signal for List<T> {}
 
 #[derive(Debug, PartialEq)]
 pub struct StringSignal {
-    vec: allocator_api2::vec::Vec<u8, SignalAlloc>,
+    vec: allocator_api2::vec::Vec<u8, &'static SyncBlinkAlloc>,
 }
 
 impl Clone for StringSignal {
     #[inline]
     fn clone(&self) -> Self {
         Self {
-            vec: SliceExt::to_vec_in(self.vec.as_slice(), SignalAlloc::default()),
+            vec: SliceExt::to_vec_in(self.vec.as_slice(), &SIGNAL_ALLOC),
         }
     }
 
@@ -140,7 +142,7 @@ impl Clone for StringSignal {
 impl Default for StringSignal {
     fn default() -> Self {
         Self {
-            vec: allocator_api2::vec::Vec::new_in(SignalAlloc::default()),
+            vec: allocator_api2::vec::Vec::new_in(&SIGNAL_ALLOC),
         }
     }
 }
@@ -153,7 +155,7 @@ impl StringSignal {
     #[allow(clippy::should_implement_trait)]
     pub fn from_str(s: &str) -> Self {
         Self {
-            vec: SliceExt::to_vec_in(s.as_bytes(), SignalAlloc::default()),
+            vec: SliceExt::to_vec_in(s.as_bytes(), &SIGNAL_ALLOC),
         }
     }
 }

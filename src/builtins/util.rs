@@ -14,7 +14,7 @@ pub(crate) fn null(#[output] _out: &mut f32) -> ProcResult<()> {
 #[processor(derive(Default))]
 pub fn passthrough<T>(#[input] input: &T, #[output] out: &mut T) -> ProcResult<()>
 where
-    T: Signal,
+    T: Signal + Default + Clone,
 {
     out.clone_from(input);
     Ok(())

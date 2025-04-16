@@ -6,18 +6,17 @@ use crate::{
     graph::GraphConstructionError,
     prelude::*,
     processor::io::ProcessMode,
-    signal::{SignalType, type_erased::ErasedBuffer},
+    signal::{SignalType, type_erased::AnyBuffer},
 };
 
 use super::{Graph, GraphConstructionResult, NodeIndex};
 
 /// A node in the audio graph that processes signals.
-#[derive(Clone)]
 pub struct ProcessorNode {
     processor: Box<dyn Processor>,
     input_spec: Vec<SignalSpec>,
     output_spec: Vec<SignalSpec>,
-    pub(crate) outputs: Option<Vec<ErasedBuffer>>,
+    pub(crate) outputs: Option<Vec<AnyBuffer>>,
 }
 
 impl Debug for ProcessorNode {
@@ -106,9 +105,9 @@ impl ProcessorNode {
     #[inline]
     pub(crate) fn process(
         &mut self,
-        inputs: &[Option<*const ErasedBuffer>],
+        inputs: &[Option<*const AnyBuffer>],
         env: ProcEnv,
-        outputs: &mut [ErasedBuffer],
+        outputs: &mut [AnyBuffer],
         mode: ProcessMode,
     ) -> Result<(), ProcessorError> {
         let inputs = ProcessorInputs {
@@ -639,6 +638,98 @@ impl std::ops::Neg for Output {
     }
 }
 
+impl<T: IntoOutput> std::ops::BitAnd<T> for Output {
+    type Output = Node;
+
+    #[inline]
+    #[track_caller]
+    fn bitand(self, rhs: T) -> Self::Output {
+        let this_node = self.node();
+        let graph = this_node.graph();
+        let rhs = rhs.into_output(graph);
+        assert_eq!(
+            self.signal_type(),
+            bool::signal_type(),
+            "AND operation requires a boolean signal type"
+        );
+        assert_eq!(
+            self.signal_type(),
+            rhs.signal_type(),
+            "AND operation requires a boolean signal type"
+        );
+        let node = graph.add(And::default());
+        node.input(0).connect(this_node);
+        node.input(1).connect(rhs);
+        node
+    }
+}
+
+impl<T: IntoOutput> std::ops::BitOr<T> for Output {
+    type Output = Node;
+
+    #[inline]
+    #[track_caller]
+    fn bitor(self, rhs: T) -> Self::Output {
+        let this_node = self.node();
+        let graph = this_node.graph();
+        let rhs = rhs.into_output(graph);
+        assert_eq!(
+            self.signal_type(),
+            bool::signal_type(),
+            "OR operation requires a boolean signal type"
+        );
+        assert_eq!(
+            self.signal_type(),
+            rhs.signal_type(),
+            "OR operation requires a boolean signal type"
+        );
+        let node = graph.add(Or::default());
+        node.input(0).connect(this_node);
+        node.input(1).connect(rhs);
+        node
+    }
+}
+
+impl std::ops::Not for Output {
+    type Output = Node;
+
+    #[inline]
+    #[track_caller]
+    fn not(self) -> Self::Output {
+        let this_node = self.node();
+        let graph = this_node.graph();
+        let node = graph.add(Not::default());
+        node.input(0).connect(this_node);
+        node
+    }
+}
+
+impl<T: IntoOutput> std::ops::BitXor<T> for Output {
+    type Output = Node;
+
+    #[inline]
+    #[track_caller]
+    fn bitxor(self, rhs: T) -> Self::Output {
+        let this_node = self.node();
+        let graph = this_node.graph();
+        let rhs = rhs.into_output(graph);
+        assert_eq!(
+            self.signal_type(),
+            bool::signal_type(),
+            "XOR operation requires a boolean signal type"
+        );
+        assert_eq!(
+            self.signal_type(),
+            rhs.signal_type(),
+            "XOR operation requires a boolean signal type"
+        );
+        let node = graph.add(Xor::default());
+        node.input(0).connect(this_node);
+        node.input(1).connect(rhs);
+        node
+    }
+}
+
 impl<T: IntoOutput> std::ops::Add<T> for Node {
     type Output = Node;
 
@@ -705,6 +796,50 @@ impl std::ops::Neg for Node {
     }
 }
 
+impl<T: IntoOutput> std::ops::BitAnd<T> for Node {
+    type Output = Node;
+
+    #[inline]
+    #[track_caller]
+    fn bitand(self, rhs: T) -> Self::Output {
+        self.assert_single_output("bitand");
+        self.output(0) & rhs
+    }
+}
+
+impl<T: IntoOutput> std::ops::BitOr<T> for Node {
+    type Output = Node;
+
+    #[inline]
+    #[track_caller]
+    fn bitor(self, rhs: T) -> Self::Output {
+        self.assert_single_output("bitand");
+        self.output(0) | rhs
+    }
+}
+
+impl<T: IntoOutput> std::ops::BitXor<T> for Node {
+    type Output = Node;
+
+    #[inline]
+    #[track_caller]
+    fn bitxor(self, rhs: T) -> Self::Output {
+        self.assert_single_output("bitand");
+        self.output(0) ^ rhs
+    }
+}
+
+impl std::ops::Not for Node {
+    type Output = Node;
+
+    #[inline]
+    #[track_caller]
+    fn not(self) -> Self::Output {
+        self.assert_single_output("not");
+        !self.output(0)
+    }
+}
+
 impl<T: IntoOutput> std::ops::Add<T> for &Node {
     type Output = Node;
 
@@ -765,6 +900,46 @@ impl std::ops::Neg for &Node {
     }
 }
 
+impl<T: IntoOutput> std::ops::BitAnd<T> for &Node {
+    type Output = Node;
+
+    #[inline]
+    #[track_caller]
+    fn bitand(self, rhs: T) -> Self::Output {
+        self.clone() & rhs
+    }
+}
+
+impl<T: IntoOutput> std::ops::BitOr<T> for &Node {
+    type Output = Node;
+
+    #[inline]
+    #[track_caller]
+    fn bitor(self, rhs: T) -> Self::Output {
+        self.clone() | rhs
+    }
+}
+
+impl<T: IntoOutput> std::ops::BitXor<T> for &Node {
+    type Output = Node;
+
+    #[inline]
+    #[track_caller]
+    fn bitxor(self, rhs: T) -> Self::Output {
+        self.clone() ^ rhs
+    }
+}
+
+impl std::ops::Not for &Node {
+    type Output = Node;
+
+    #[inline]
+    #[track_caller]
+    fn not(self) -> Self::Output {
+        !self.clone()
+    }
+}
+
 mod sealed {
     use crate::{graph::NodeIndex, signal::Signal};
 
@@ -812,7 +987,7 @@ impl IntoOutput for &Node {
     }
 }
 
-impl<T: Signal> IntoOutput for T {
+impl<T: Signal + Default + Clone> IntoOutput for T {
     #[track_caller]
     fn into_output(self, graph: &Graph) -> Output {
         let node = graph.constant(self);

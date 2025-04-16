@@ -14,7 +14,7 @@ pub struct Buffer<T: Signal> {
     buf: Vec<T>,
 }
 
-impl<T: Signal> Debug for Buffer<T> {
+impl<T: Signal + Debug> Debug for Buffer<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_list().entries(self.buf.iter()).finish()
     }
@@ -23,7 +23,10 @@ impl<T: Signal> Debug for Buffer<T> {
 impl<T: Signal> Buffer<T> {
     /// Creates a new buffer of the given length filled with `None`.
     #[inline]
-    pub fn zeros(length: usize) -> Self {
+    pub fn zeros(length: usize) -> Self
+    where
+        T: Default + Clone,
+    {
         Buffer {
             buf: vec![T::default(); length],
         }
@@ -31,7 +34,10 @@ impl<T: Signal> Buffer<T> {
 
     /// Clones the slice into a new buffer. All elements are wrapped in `Some`.
     #[inline]
-    pub fn from_slice(value: &[T]) -> Self {
+    pub fn from_slice(value: &[T]) -> Self
+    where
+        T: Clone,
+    {
         Buffer {
             buf: value.to_vec(),
         }

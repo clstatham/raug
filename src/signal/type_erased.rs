@@ -2,7 +2,7 @@
 
 use any_vec::{
     AnyVec,
-    any_value::AnyValueWrapper,
+    any_value::{AnyValueCloneable, AnyValueWrapper},
     element::{ElementMut, ElementRef},
     traits::Cloneable,
 };
@@ -10,13 +10,12 @@ use any_vec::{
 use super::{Signal, SignalType};
 
 /// A type-erased buffer that can hold signals of any type.
-#[derive(Clone)]
-pub struct ErasedBuffer {
+pub struct AnyBuffer {
     signal_type: SignalType,
     buf: AnyVec<dyn Send + Sync + Cloneable>,
 }
 
-impl ErasedBuffer {
+impl AnyBuffer {
     /// Creates a new empty buffer of the given type.
     pub fn empty<T: Signal>() -> Self {
         Self {
@@ -26,7 +25,7 @@ impl ErasedBuffer {
     }
 
     /// Creates a new buffer of the given type with the specified length, initialized to the default value for `T`.
-    pub fn zeros<T: Signal>(len: usize) -> Self {
+    pub fn zeros<T: Signal + Default>(len: usize) -> Self {
         let mut buf = AnyVec::new::<T>();
         buf.reserve(len);
         for _ in 0..len {
@@ -65,9 +64,9 @@ impl ErasedBuffer {
     ///
     /// Returns `None` if the index is out of bounds.
     #[inline]
-    pub fn get(&self, index: usize) -> Option<ErasedSignalRef> {
+    pub fn get(&self, index: usize) -> Option<AnySignalRef> {
         let signal = self.buf.get(index)?;
-        Some(ErasedSignalRef {
+        Some(AnySignalRef {
             signal_type: self.signal_type,
             signal,
         })
@@ -77,24 +76,24 @@ impl ErasedBuffer {
     ///
     /// Returns `None` if the index is out of bounds.
     #[inline]
-    pub fn get_mut(&mut self, index: usize) -> Option<ErasedSignalMut> {
+    pub fn get_mut(&mut self, index: usize) -> Option<AnySignalMut> {
         let signal = self.buf.get_mut(index)?;
-        Some(ErasedSignalMut {
+        Some(AnySignalMut {
             signal_type: self.signal_type,
             signal,
         })
     }
 
-    /// Returns a copy of the signal at the given index, if the type matches.
+    /// Returns a reference to the signal at the given index, if the type matches.
     #[inline]
-    pub fn get_as<T: Signal>(&self, index: usize) -> Option<T> {
-        self.get(index)?.as_ref::<T>().cloned()
+    pub fn get_as<T: Signal>(&self, index: usize) -> Option<&T> {
+        self.get(index)?.downcast_ref::<T>()
     }
 
     /// Returns a mutable reference to the signal at the given index, if the type matches.
     #[inline]
     pub fn get_mut_as<T: Signal>(&mut self, index: usize) -> Option<&mut T> {
-        self.get_mut(index)?.as_mut::<T>()
+        self.get_mut(index)?.downcast_mut::<T>()
     }
 
     /// Returns the [`SignalType`] of the signals contained in this buffer.
@@ -106,12 +105,12 @@ impl ErasedBuffer {
 
 /// A reference to a signal of any type.
 #[derive(Clone)]
-pub struct ErasedSignalRef<'a> {
+pub struct AnySignalRef<'a> {
     signal_type: SignalType,
     signal: ElementRef<'a, dyn Send + Sync + Cloneable>,
 }
 
-impl<'a> ErasedSignalRef<'a> {
+impl<'a> AnySignalRef<'a> {
     /// Returns a reference to the signal, if the type matches.
     ///
     /// # Panics
@@ -119,7 +118,7 @@ impl<'a> ErasedSignalRef<'a> {
     /// Panics if the type of the signal does not match the expected type.
     #[allow(clippy::should_implement_trait)]
     #[inline]
-    pub fn as_ref<T: Signal>(&self) -> Option<&'a T> {
+    pub fn downcast_ref<T: Signal>(&self) -> Option<&'a T> {
         self.signal.downcast_ref::<T>()
     }
 
@@ -131,23 +130,23 @@ impl<'a> ErasedSignalRef<'a> {
 }
 
 /// A mutable reference to a signal of any type.
-pub struct ErasedSignalMut<'a> {
+pub struct AnySignalMut<'a> {
     signal_type: SignalType,
     signal: ElementMut<'a, dyn Send + Sync + Cloneable>,
 }
 
-impl<'a> ErasedSignalMut<'a> {
+impl<'a> AnySignalMut<'a> {
     /// Returns a reference to the signal, if the type matches.
     #[allow(clippy::should_implement_trait)]
     #[inline]
-    pub fn as_ref<T: Signal>(&self) -> Option<&'a T> {
+    pub fn downcast_ref<T: Signal>(&self) -> Option<&'a T> {
         self.signal.downcast_ref::<T>()
     }
 
     /// Returns a mutable reference to the signal, if the type matches.
     #[allow(clippy::should_implement_trait)]
     #[inline]
-    pub fn as_mut<T: Signal>(&mut self) -> Option<&'a mut T> {
+    pub fn downcast_mut<T: Signal>(&mut self) -> Option<&'a mut T> {
         self.signal.downcast_mut::<T>()
     }
 
@@ -155,5 +154,33 @@ impl<'a> ErasedSignalMut<'a> {
     #[inline]
     pub fn signal_type(&self) -> SignalType {
         self.signal_type
+    }
+
+    #[inline]
+    pub fn clone_from(&mut self, other: &AnySignalRef) {
+        self.signal
+            .lazy_clone()
+            .clone_from(&other.signal.lazy_clone())
+    }
+}
+
+impl<T: Signal> AsRef<T> for AnySignalRef<'_> {
+    fn as_ref(&self) -> &T {
+        self.downcast_ref::<T>()
+            .unwrap_or_else(|| panic!("Failed to downcast AnySignalRef to {:?}", T::signal_type()))
+    }
+}
+
+impl<T: Signal> AsRef<T> for AnySignalMut<'_> {
+    fn as_ref(&self) -> &T {
+        self.downcast_ref::<T>()
+            .unwrap_or_else(|| panic!("Failed to downcast AnySignalMut to {:?}", T::signal_type()))
+    }
+}
+
+impl<T: Signal> AsMut<T> for AnySignalMut<'_> {
+    fn as_mut(&mut self) -> &mut T {
+        self.downcast_mut::<T>()
+            .unwrap_or_else(|| panic!("Failed to downcast AnySignalMut to {:?}", T::signal_type()))
     }
 }

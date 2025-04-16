@@ -300,7 +300,7 @@ struct StreamThread {
 }
 
 impl StreamThread {
-    fn spawn(build_stream: impl FnOnce() -> cpal::Stream + Send + Sync + 'static) -> Self {
+    fn spawn(build_stream: impl FnOnce() -> cpal::Stream + Send + 'static) -> Self {
         let ops = Channels::unbounded();
         let ops_clone = ops.clone();
         std::thread::spawn(move || {
@@ -404,10 +404,13 @@ fn build_output_stream<T: cpal::SizedSample + cpal::FromSample<f32> + Send + 'st
     block_size: Arc<AtomicUsize>,
 ) -> cpal::Stream {
     let channels = config.channels as usize;
+    let (graph_tx, graph_rx) = crossbeam_channel::bounded(1);
+    graph_tx.send(graph).unwrap();
     output_device
         .build_output_stream(
             config,
             move |data: &mut [T], _| {
+                let graph = graph_rx.recv().unwrap();
                 let new_block_size = data.len() / channels;
                 let old_block_size = block_size.load(Ordering::Relaxed);
                 if new_block_size != old_block_size {
@@ -432,6 +435,7 @@ fn build_output_stream<T: cpal::SizedSample + cpal::FromSample<f32> + Send + 'st
                         }
                     }
                 });
+                graph_tx.send(graph).unwrap();
             },
             |err| {
                 eprintln!("Output stream error: {}", err);
@@ -465,7 +469,7 @@ impl AudioStream for CpalStream {
         let block_size = self.block_size.clone();
         graph.allocate(self.sample_rate(), self.block_size());
         let graph = graph.clone();
-        let output_stream = move || match sample_format {
+        let build_stream = move || match sample_format {
             cpal::SampleFormat::F32 => {
                 build_output_stream::<f32>(graph, &output_device, &output_config, block_size)
             }
@@ -500,7 +504,7 @@ impl AudioStream for CpalStream {
             _ => panic!("Unsupported sample format for output stream"),
         };
 
-        self.output_stream = Some(StreamThread::spawn(output_stream));
+        self.output_stream = Some(StreamThread::spawn(build_stream));
 
         Ok(())
     }

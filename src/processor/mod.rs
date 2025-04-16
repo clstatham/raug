@@ -6,7 +6,7 @@ use downcast_rs::{Downcast, impl_downcast};
 use io::{ProcessorInputs, ProcessorOutputs, SignalSpec};
 use thiserror::Error;
 
-use crate::{prelude::ErasedBuffer, signal::SignalType};
+use crate::{prelude::AnyBuffer, signal::SignalType};
 
 pub mod io;
 
@@ -34,6 +34,10 @@ pub enum ProcessorError {
         /// The actual signal type.
         actual: SignalType,
     },
+
+    /// Error during processing.
+    #[error("Processing error: {0}")]
+    ProcessingError(String),
 }
 
 /// A result type for processor operations.
@@ -42,7 +46,7 @@ pub type ProcResult<T> = Result<T, ProcessorError>;
 /// A processor that can process audio signals.
 pub trait Processor
 where
-    Self: Downcast + ProcessorClone + Send,
+    Self: Downcast + Send,
 {
     /// Returns the name of the processor.
     fn name(&self) -> &str {
@@ -64,7 +68,7 @@ where
     fn output_spec(&self) -> Vec<SignalSpec>;
 
     /// Creates a new set of output buffers for the processor.
-    fn create_output_buffers(&self, size: usize) -> Vec<ErasedBuffer>;
+    fn create_output_buffers(&self, size: usize) -> Vec<AnyBuffer>;
 
     /// Called once, before processing starts.
     ///
@@ -88,31 +92,6 @@ where
     ) -> Result<(), ProcessorError>;
 }
 impl_downcast!(Processor);
-
-mod sealed {
-    pub trait Sealed {}
-    impl<T: Clone> Sealed for T {}
-}
-
-#[doc(hidden)]
-pub trait ProcessorClone: sealed::Sealed {
-    fn clone_boxed(&self) -> Box<dyn Processor>;
-}
-
-impl<T> ProcessorClone for T
-where
-    T: Clone + Processor,
-{
-    fn clone_boxed(&self) -> Box<dyn Processor> {
-        Box::new(self.clone())
-    }
-}
-
-impl Clone for Box<dyn Processor> {
-    fn clone(&self) -> Self {
-        self.clone_boxed()
-    }
-}
 
 impl Debug for dyn Processor {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
