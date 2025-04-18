@@ -940,21 +940,8 @@ impl std::ops::Not for &Node {
     }
 }
 
-mod sealed {
-    use crate::{graph::NodeIndex, signal::Signal};
-
-    pub trait Sealed {}
-    impl Sealed for super::Node {}
-    impl Sealed for &super::Node {}
-    impl Sealed for super::Output {}
-    impl Sealed for &super::Output {}
-    impl<T: Signal> Sealed for T {}
-    impl Sealed for NodeIndex {}
-    impl Sealed for &str {}
-}
-
 /// A trait for coercing a value into an [`Output`].
-pub trait IntoOutput: sealed::Sealed {
+pub trait IntoOutput {
     /// Converts the value into an [`Output`] in the given graph.
     fn into_output(self, graph: &Graph) -> Output;
 }
@@ -996,7 +983,7 @@ impl<T: Signal + Default + Clone> IntoOutput for T {
 }
 
 /// A trait for coercing a value into a [`Node`].
-pub trait IntoNode: sealed::Sealed {
+pub trait IntoNode {
     /// Converts the value into a [`Node`] in the given graph.
     fn into_node(self, graph: &Graph) -> Node;
 }
@@ -1029,13 +1016,13 @@ impl IntoNode for NodeIndex {
 }
 
 /// A trait for coercing a value into an output index of a node.
-pub trait IntoOutputIdx: sealed::Sealed {
+pub trait IntoOutputIdx {
     /// Converts the value into an output index of the given node.
     fn into_output_idx(self, node: &Node) -> u32;
 }
 
 /// A trait for coercing a value into an input index of a node.
-pub trait IntoInputIdx: sealed::Sealed {
+pub trait IntoInputIdx {
     /// Converts the value into an input index of the given node.
     fn into_input_idx(self, node: &Node) -> u32;
 }
