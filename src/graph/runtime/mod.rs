@@ -7,6 +7,7 @@ use std::{
         Arc,
         atomic::{AtomicUsize, Ordering},
     },
+    thread::JoinHandle,
     time::Duration,
 };
 
@@ -159,6 +160,13 @@ pub trait AudioStream: Send + 'static {
 
     /// Spawns the audio stream, allocating buffers and preparing for processing.
     fn spawn(&mut self, graph: &Graph) -> GraphRunResult<()>;
+    /// Joins the audio stream, blocking until processing is complete.
+    fn join(self) -> GraphRunResult<()>
+    where
+        Self: Sized,
+    {
+        Ok(())
+    }
     /// Plays the audio stream.
     fn play(&mut self) -> GraphRunResult<()>;
     /// Pauses the audio stream.
@@ -297,13 +305,14 @@ enum StreamOps {
 
 struct StreamThread {
     ops: Channels<StreamOps>,
+    handle: JoinHandle<()>,
 }
 
 impl StreamThread {
     fn spawn(build_stream: impl FnOnce() -> cpal::Stream + Send + 'static) -> Self {
         let ops = Channels::unbounded();
         let ops_clone = ops.clone();
-        std::thread::spawn(move || {
+        let handle = std::thread::spawn(move || {
             let stream = build_stream();
             while let Ok(op) = ops_clone.recv_blocking() {
                 match op {
@@ -320,7 +329,7 @@ impl StreamThread {
                 }
             }
         });
-        Self { ops }
+        Self { ops, handle }
     }
 
     fn play(&self) -> GraphRunResult<()> {
@@ -341,6 +350,11 @@ impl StreamThread {
         self.ops
             .try_send(StreamOps::Stop)
             .map_err(|_| GraphRunError::StreamSendError)?;
+        Ok(())
+    }
+
+    fn join(self) -> GraphRunResult<()> {
+        self.handle.join().unwrap();
         Ok(())
     }
 }
@@ -506,6 +520,17 @@ impl AudioStream for CpalStream {
 
         self.output_stream = Some(StreamThread::spawn(build_stream));
 
+        Ok(())
+    }
+
+    fn join(mut self) -> GraphRunResult<()> {
+        if let Some(stream) = self.output_stream.take() {
+            stream.stop()?;
+            stream.join()?;
+            self.playing = false;
+        } else {
+            return Err(GraphRunError::StreamNotSpawned);
+        }
         Ok(())
     }
 
