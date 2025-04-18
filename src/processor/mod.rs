@@ -2,7 +2,6 @@
 
 use std::fmt::Debug;
 
-use downcast_rs::{Downcast, impl_downcast};
 use io::{ProcessorInputs, ProcessorOutputs, SignalSpec};
 use thiserror::Error;
 
@@ -46,7 +45,7 @@ pub type ProcResult<T> = Result<T, ProcessorError>;
 /// A processor that can process audio signals.
 pub trait Processor
 where
-    Self: Downcast + Send,
+    Self: Send + 'static,
 {
     /// Returns the name of the processor.
     fn name(&self) -> &str {
@@ -91,7 +90,6 @@ where
         outputs: ProcessorOutputs,
     ) -> Result<(), ProcessorError>;
 }
-impl_downcast!(Processor);
 
 impl Debug for dyn Processor {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

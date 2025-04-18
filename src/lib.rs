@@ -4,6 +4,7 @@
 pub mod builtins;
 pub mod graph;
 pub mod processor;
+#[macro_use]
 pub mod signal;
 pub mod util;
 

@@ -26,12 +26,12 @@ downcast-rs = "2.0"
 rustc-hash = "2"
 hashbrown = "0.15"
 crossbeam-channel = "0.5"
-smallvec = "1.13.2"
+smallvec = "1.15"
 raug-macros = { path = "../raug-macros" }
 allocation-counter = { version = "0.8", optional = true }
 any_vec = "0.14.0"
-allocator-api2 = "0.2"
-blink-alloc = { version = "0.3.1", features = ["sync"] }
+smallstr = "0.3.0"
+
 
 [dev-dependencies]
 env_logger = "0.11"

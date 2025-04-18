@@ -6,22 +6,14 @@ use std::{
     ops::{Deref, DerefMut},
 };
 
-use allocator::SIGNAL_ALLOC;
-use allocator_api2::SliceExt;
-use blink_alloc::SyncBlinkAlloc;
-
-pub mod allocator;
 pub mod buffer;
 pub mod type_erased;
 
 /// A type that can be stored in a [`Buffer`](buffer::Buffer) and processed by a [`Processor`](crate::processor::Processor).
-pub trait Signal: Clone + Send + Sync + 'static {
+pub trait Signal: Sized + Clone + Send + Sync + 'static {
     /// The type of the signal.
     #[inline]
-    fn signal_type() -> SignalType
-    where
-        Self: Sized,
-    {
+    fn signal_type() -> SignalType {
         SignalType::of::<Self>()
     }
 }
@@ -29,23 +21,18 @@ pub trait Signal: Clone + Send + Sync + 'static {
 impl<T: Signal> Signal for Option<T> {}
 impl<T: Signal> Signal for &'static [T] {}
 impl Signal for f32 {}
-impl Signal for f64 {}
-impl Signal for i32 {}
 impl Signal for i64 {}
 impl Signal for bool {}
-impl Signal for u32 {}
-impl Signal for u64 {}
-impl Signal for usize {}
 
 #[derive(Debug, PartialEq)]
 pub struct List<T: Signal> {
-    vec: allocator_api2::vec::Vec<T, &'static SyncBlinkAlloc>,
+    vec: smallvec::SmallVec<[T; 16]>,
 }
 
 impl<T: Signal> Default for List<T> {
     fn default() -> Self {
         Self {
-            vec: allocator_api2::vec::Vec::new_in(&SIGNAL_ALLOC),
+            vec: smallvec::SmallVec::default(),
         }
     }
 }
@@ -53,13 +40,12 @@ impl<T: Signal> Default for List<T> {
 impl<T: Signal> Clone for List<T> {
     fn clone(&self) -> Self {
         Self {
-            vec: SliceExt::to_vec_in(self.vec.as_slice(), &SIGNAL_ALLOC),
+            vec: self.vec.clone(),
         }
     }
 
     fn clone_from(&mut self, source: &Self) {
-        self.vec.clear();
-        self.vec.extend_from_slice(source.vec.as_slice());
+        self.vec.clone_from(&source.vec);
     }
 }
 
@@ -67,18 +53,18 @@ impl<T: Signal> List<T> {
     /// Creates a new list with the given capacity.
     pub fn with_capacity(capacity: usize) -> Self {
         Self {
-            vec: allocator_api2::vec::Vec::with_capacity_in(capacity, &SIGNAL_ALLOC),
+            vec: smallvec::SmallVec::with_capacity(capacity),
         }
     }
 
     pub fn from_slice(slice: &[T]) -> Self {
         Self {
-            vec: SliceExt::to_vec_in(slice, &SIGNAL_ALLOC),
+            vec: slice.iter().cloned().collect(),
         }
     }
 
     pub fn to_alloc_vec(&self) -> Vec<T> {
-        self.vec.as_slice().to_vec()
+        self.vec.to_vec()
     }
 }
 
@@ -90,7 +76,7 @@ impl<T: Signal> AsRef<[T]> for List<T> {
 }
 
 impl<T: Signal> Deref for List<T> {
-    type Target = allocator_api2::vec::Vec<T, &'static SyncBlinkAlloc>;
+    type Target = smallvec::SmallVec<[T; 16]>;
 
     fn deref(&self) -> &Self::Target {
         &self.vec
@@ -106,7 +92,7 @@ impl<T: Signal> DerefMut for List<T> {
 impl<T: Signal> From<Vec<T>> for List<T> {
     fn from(vec: Vec<T>) -> Self {
         Self {
-            vec: SliceExt::to_vec_in(vec.as_slice(), &SIGNAL_ALLOC),
+            vec: smallvec::SmallVec::from_iter(vec),
         }
     }
 }
@@ -121,56 +107,57 @@ impl<T: Signal> Signal for List<T> {}
 
 #[derive(Debug, PartialEq)]
 pub struct StringSignal {
-    vec: allocator_api2::vec::Vec<u8, &'static SyncBlinkAlloc>,
+    string: smallstr::SmallString<[u8; 128]>,
+}
+
+impl Default for StringSignal {
+    fn default() -> Self {
+        Self {
+            string: smallstr::SmallString::new(),
+        }
+    }
 }
 
 impl Clone for StringSignal {
     #[inline]
     fn clone(&self) -> Self {
         Self {
-            vec: SliceExt::to_vec_in(self.vec.as_slice(), &SIGNAL_ALLOC),
+            string: self.string.clone(),
         }
     }
 
     #[inline]
     fn clone_from(&mut self, source: &Self) {
-        self.vec.clear();
-        self.vec.extend_from_slice(source.vec.as_slice());
-    }
-}
-
-impl Default for StringSignal {
-    fn default() -> Self {
-        Self {
-            vec: allocator_api2::vec::Vec::new_in(&SIGNAL_ALLOC),
-        }
+        self.string.clone_from(&source.string);
     }
 }
 
 impl StringSignal {
-    pub fn as_str(&self) -> &str {
-        std::str::from_utf8(self.vec.as_slice()).unwrap()
+    pub fn new() -> Self {
+        Self::default()
     }
 
-    #[allow(clippy::should_implement_trait)]
-    pub fn from_str(s: &str) -> Self {
-        Self {
-            vec: SliceExt::to_vec_in(s.as_bytes(), &SIGNAL_ALLOC),
-        }
+    #[inline]
+    pub fn as_str(&self) -> &str {
+        self.string.as_str()
     }
 }
 
 impl Deref for StringSignal {
     type Target = str;
 
+    #[inline]
     fn deref(&self) -> &Self::Target {
         self.as_str()
     }
 }
 
 impl From<&str> for StringSignal {
+    #[inline]
     fn from(s: &str) -> Self {
-        Self::from_str(s)
+        Self {
+            string: smallstr::SmallString::from_str(s),
+        }
     }
 }
 

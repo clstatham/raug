@@ -536,31 +536,31 @@ impl Output {
     /// Attaches an addition processor to the nodes.
     #[inline]
     pub fn add(&self, b: impl IntoOutput) -> Node {
-        generic_binary_op_impl!(self, b, Add => f32 f64 i32 i64 u32 u64 usize)
+        generic_binary_op_impl!(self, b, Add => f32 i64)
     }
 
     /// Attaches a subtraction processor to the nodes.
     #[inline]
     pub fn sub(&self, b: impl IntoOutput) -> Node {
-        generic_binary_op_impl!(self, b, Sub => f32 f64 i64 i32 u32 u64 usize)
+        generic_binary_op_impl!(self, b, Sub => f32 i64)
     }
 
     /// Attaches a multiplication processor to the nodes.
     #[inline]
     pub fn mul(&self, b: impl IntoOutput) -> Node {
-        generic_binary_op_impl!(self, b, Mul => f32 f64 i64 i32 u32 u64 usize)
+        generic_binary_op_impl!(self, b, Mul => f32 i64)
     }
 
     /// Attaches a division processor to the nodes.
     #[inline]
     pub fn div(&self, b: impl IntoOutput) -> Node {
-        generic_binary_op_impl!(self, b, Div => f32 f64 i64 i32 u32 u64 usize)
+        generic_binary_op_impl!(self, b, Div => f32 i64)
     }
 
     /// Attaches a remainder processor to the nodes.
     #[inline]
     pub fn rem(&self, b: impl IntoOutput) -> Node {
-        generic_binary_op_impl!(self, b, Rem => f32 f64 i64 i32 u32 u64 usize)
+        generic_binary_op_impl!(self, b, Rem => f32 i64)
     }
 
     /// Attaches a negation processor to the node.
@@ -568,7 +568,7 @@ impl Output {
     pub fn neg(&self) -> Node {
         let this_node = self.node();
         let graph = this_node.graph();
-        let node = choose_node_generics!(graph, self.signal_type() => Neg => f32 f64 i32 i64);
+        let node = choose_node_generics!(graph, self.signal_type() => Neg => f32 i64);
         node.input(0).connect(self);
         node
     }
@@ -580,7 +580,7 @@ impl<T: IntoOutput> std::ops::Add<T> for Output {
     #[inline]
     #[track_caller]
     fn add(self, rhs: T) -> Self::Output {
-        generic_binary_op_impl!(self, rhs, Add => f32 f64 i32 i64 u32 u64 usize)
+        generic_binary_op_impl!(self, rhs, Add => f32 i64)
     }
 }
 
@@ -590,7 +590,7 @@ impl<T: IntoOutput> std::ops::Sub<T> for Output {
     #[inline]
     #[track_caller]
     fn sub(self, rhs: T) -> Self::Output {
-        generic_binary_op_impl!(self, rhs, Sub => f32 f64 i32 i64 u32 u64 usize)
+        generic_binary_op_impl!(self, rhs, Sub => f32 i64)
     }
 }
 
@@ -600,7 +600,7 @@ impl<T: IntoOutput> std::ops::Mul<T> for Output {
     #[inline]
     #[track_caller]
     fn mul(self, rhs: T) -> Self::Output {
-        generic_binary_op_impl!(self, rhs, Mul => f32 f64 i32 i64 u32 u64 usize)
+        generic_binary_op_impl!(self, rhs, Mul => f32 i64)
     }
 }
 
@@ -610,7 +610,7 @@ impl<T: IntoOutput> std::ops::Div<T> for Output {
     #[inline]
     #[track_caller]
     fn div(self, rhs: T) -> Self::Output {
-        generic_binary_op_impl!(self, rhs, Div => f32 f64 i32 i64 u32 u64 usize)
+        generic_binary_op_impl!(self, rhs, Div => f32 i64)
     }
 }
 
@@ -620,7 +620,7 @@ impl<T: IntoOutput> std::ops::Rem<T> for Output {
     #[inline]
     #[track_caller]
     fn rem(self, rhs: T) -> Self::Output {
-        generic_binary_op_impl!(self, rhs, Rem => f32 f64 i32 i64 u32 u64 usize)
+        generic_binary_op_impl!(self, rhs, Rem => f32 i64)
     }
 }
 
@@ -632,7 +632,7 @@ impl std::ops::Neg for Output {
     fn neg(self) -> Self::Output {
         let this_node = self.node();
         let graph = this_node.graph();
-        let node = choose_node_generics!(graph, self.signal_type() => Neg => f32 f64 i32 i64);
+        let node = choose_node_generics!(graph, self.signal_type() => Neg => f32 i64);
         node.input(0).connect(self);
         node
     }
@@ -982,6 +982,30 @@ impl<T: Signal + Default + Clone> IntoOutput for T {
     }
 }
 
+impl IntoOutput for &str {
+    #[track_caller]
+    fn into_output(self, graph: &Graph) -> Output {
+        let node = graph.constant(StringSignal::from(self));
+        node.output(0)
+    }
+}
+
+impl IntoOutput for f64 {
+    #[track_caller]
+    fn into_output(self, graph: &Graph) -> Output {
+        let node = graph.constant(self as f32);
+        node.output(0)
+    }
+}
+
+impl IntoOutput for i32 {
+    #[track_caller]
+    fn into_output(self, graph: &Graph) -> Output {
+        let node = graph.constant(self as i64);
+        node.output(0)
+    }
+}
+
 /// A trait for coercing a value into a [`Node`].
 pub trait IntoNode {
     /// Converts the value into a [`Node`] in the given graph.
@@ -1043,6 +1067,42 @@ impl IntoInputIdx for u32 {
     fn into_input_idx(self, node: &Node) -> u32 {
         assert!(self < node.num_inputs() as u32, "input index out of bounds");
         self
+    }
+}
+
+impl IntoOutputIdx for usize {
+    #[inline]
+    fn into_output_idx(self, node: &Node) -> u32 {
+        assert!(self < node.num_outputs(), "output index out of bounds");
+        self as u32
+    }
+}
+
+impl IntoInputIdx for usize {
+    #[inline]
+    fn into_input_idx(self, node: &Node) -> u32 {
+        assert!(self < node.num_inputs(), "input index out of bounds");
+        self as u32
+    }
+}
+
+impl IntoOutputIdx for i32 {
+    #[inline]
+    fn into_output_idx(self, node: &Node) -> u32 {
+        assert!(self >= 0, "output index must be non-negative");
+        let idx = self as usize;
+        assert!(idx < node.num_outputs(), "output index out of bounds");
+        idx as u32
+    }
+}
+
+impl IntoInputIdx for i32 {
+    #[inline]
+    fn into_input_idx(self, node: &Node) -> u32 {
+        assert!(self >= 0, "input index must be non-negative");
+        let idx = self as usize;
+        assert!(idx < node.num_inputs(), "input index out of bounds");
+        idx as u32
     }
 }
 
