@@ -224,6 +224,26 @@ impl<'a> ProcessorOutputs<'a> {
         }
     }
 
+    /// Returns the output signal at the given index, with an extended lifetime.
+    ///
+    /// # Safety
+    ///
+    /// This function is unsafe because it can mutably alias the output signal at the same index more than once.
+    /// Must NOT be called while the a previous `ProcessorOutput` for a particular index is still in use.
+    #[inline]
+    pub unsafe fn output_extended_lifetime(&mut self, index: usize) -> ProcessorOutput<'a> {
+        unsafe {
+            if let ProcessMode::Sample(sample_index) = self.mode {
+                ProcessorOutput::Sample(
+                    &mut *(&mut self.outputs[index] as *mut AnyBuffer),
+                    sample_index,
+                )
+            } else {
+                ProcessorOutput::Block(&mut *(&mut self.outputs[index] as *mut AnyBuffer))
+            }
+        }
+    }
+
     /// Returns the specification of the output signal at the given index.
     #[inline]
     pub fn output_spec(&self, index: usize) -> &SignalSpec {
