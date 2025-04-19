@@ -1,9 +1,6 @@
 //! A directed graph of [`Processor`]s connected by [`Edge`]s.
 
-use std::{
-    ops::Deref,
-    sync::{Arc, Mutex},
-};
+use std::sync::{Arc, Mutex};
 
 use edge::Edge;
 use node::{IntoInputIdx, IntoNode, IntoOutputIdx, Node, ProcessNodeError, ProcessorNode};
@@ -15,10 +12,7 @@ use runtime::AudioDevice;
 use rustc_hash::FxHashSet;
 
 use crate::{
-    prelude::{
-        Constant, Null, Passthrough, ProcEnv, ProcessorError, ProcessorInputs, ProcessorOutputs,
-        SignalSpec,
-    },
+    prelude::{Constant, Null, Passthrough, ProcEnv},
     processor::{Processor, io::ProcessMode},
     signal::{Signal, type_erased::AnyBuffer},
 };
@@ -26,6 +20,7 @@ use crate::{
 pub mod edge;
 pub mod node;
 pub mod runtime;
+pub mod sub_graph;
 
 pub(crate) type GraphIx = u32;
 /// The type of node indices.
@@ -465,7 +460,7 @@ pub struct Graph {
 }
 
 impl Graph {
-    /// Creates a new `GraphBuilder` with an empty graph.
+    /// Creates a new empty `Graph`.
     pub fn new() -> Self {
         Self::default()
     }
@@ -619,110 +614,5 @@ impl Graph {
     /// Creates a new [`Node`] that outputs a constant value.
     pub fn constant<T: Signal + Default + Clone>(&self, value: T) -> Node {
         self.add(Constant::new(value))
-    }
-}
-
-#[derive(Default)]
-pub struct SubGraph(Graph);
-
-impl SubGraph {
-    /// Creates a new `SubGraph` from the given `Graph`.
-    pub fn new(graph: Graph) -> Self {
-        Self(graph)
-    }
-}
-
-impl From<Graph> for SubGraph {
-    fn from(graph: Graph) -> Self {
-        Self(graph)
-    }
-}
-
-impl Deref for SubGraph {
-    type Target = Graph;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl Processor for SubGraph {
-    fn name(&self) -> &str {
-        "SubGraph"
-    }
-
-    fn input_spec(&self) -> Vec<SignalSpec> {
-        self.0.with_inner(|graph| {
-            graph
-                .input_nodes
-                .iter()
-                .flat_map(|&node_id| graph.digraph[node_id].input_spec())
-                .cloned()
-                .collect()
-        })
-    }
-
-    fn output_spec(&self) -> Vec<SignalSpec> {
-        self.0.with_inner(|graph| {
-            graph
-                .output_nodes
-                .iter()
-                .flat_map(|&node_id| graph.digraph[node_id].output_spec())
-                .cloned()
-                .collect()
-        })
-    }
-
-    fn create_output_buffers(&self, size: usize) -> Vec<AnyBuffer> {
-        self.0.with_inner(|graph| {
-            graph
-                .output_nodes
-                .iter()
-                .flat_map(|&node_id| graph.digraph[node_id].processor.create_output_buffers(size))
-                .collect()
-        })
-    }
-
-    fn allocate(&mut self, sample_rate: f32, max_block_size: usize) {
-        self.0
-            .with_inner(|graph| graph.allocate(sample_rate, max_block_size));
-    }
-
-    fn resize_buffers(&mut self, sample_rate: f32, block_size: usize) {
-        self.0
-            .with_inner(|graph| graph.resize_buffers(sample_rate, block_size));
-    }
-
-    fn process(
-        &mut self,
-        inputs: ProcessorInputs,
-        mut outputs: ProcessorOutputs,
-    ) -> Result<(), ProcessorError> {
-        self.0.with_inner(|graph| -> Result<(), ProcessorError> {
-            for input_idx in 0..inputs.num_inputs() {
-                let input = inputs.input(input_idx);
-
-                if let Some(input) = input {
-                    let node_id = graph.input_nodes[input_idx];
-                    graph.digraph[node_id].outputs[0].clone_from(input);
-                }
-            }
-
-            graph
-                .process()
-                .map_err(|e| ProcessorError::SubGraphError(Box::new(e)))?;
-
-            for output_idx in 0..outputs.num_outputs() {
-                let mut output = outputs.output(output_idx);
-
-                let node_id = graph.output_nodes[output_idx];
-                let output_buffer = &graph.digraph[node_id].outputs[0];
-                output.clone_from(output_buffer);
-            }
-
-            Ok(())
-        })?;
-
-        Ok(())
     }
 }
