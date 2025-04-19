@@ -2,21 +2,40 @@
 
 use std::fmt::Debug;
 
+use thiserror::Error;
+
 use crate::{
     graph::GraphConstructionError,
     prelude::*,
-    processor::io::ProcessMode,
     signal::{SignalType, type_erased::AnyBuffer},
 };
 
 use super::{Graph, GraphConstructionResult, NodeIndex};
 
+/// Error that can occur during the processing of a node.
+#[derive(Error, Debug)]
+#[error("Error processing node '{node_name}': {error})")]
+pub struct ProcessNodeError {
+    pub(crate) error: ProcessorError,
+    pub(crate) node_name: String,
+}
+
+impl ProcessNodeError {
+    pub fn node_name(&self) -> &str {
+        &self.node_name
+    }
+
+    pub fn error(&self) -> &ProcessorError {
+        &self.error
+    }
+}
+
 /// A node in the audio graph that processes signals.
 pub struct ProcessorNode {
-    processor: Box<dyn Processor>,
-    input_spec: Vec<SignalSpec>,
-    output_spec: Vec<SignalSpec>,
-    pub(crate) outputs: Option<Vec<AnyBuffer>>,
+    pub(crate) processor: Box<dyn Processor>,
+    pub(crate) input_spec: Vec<SignalSpec>,
+    pub(crate) output_spec: Vec<SignalSpec>,
+    pub(crate) outputs: Vec<AnyBuffer>,
 }
 
 impl Debug for ProcessorNode {
@@ -40,7 +59,7 @@ impl ProcessorNode {
             processor,
             input_spec,
             output_spec,
-            outputs: Some(outputs),
+            outputs,
         }
     }
 
@@ -90,7 +109,7 @@ impl ProcessorNode {
     #[inline]
     pub fn allocate(&mut self, sample_rate: f32, max_block_size: usize) {
         self.processor.allocate(sample_rate, max_block_size);
-        self.outputs = Some(self.processor.create_output_buffers(max_block_size));
+        self.outputs = self.processor.create_output_buffers(max_block_size);
     }
 
     /// Resizes the internal buffers of the processor and updates the sample rate and block size.
@@ -107,9 +126,7 @@ impl ProcessorNode {
         &mut self,
         inputs: &[Option<*const AnyBuffer>],
         env: ProcEnv,
-        outputs: &mut [AnyBuffer],
-        mode: ProcessMode,
-    ) -> Result<(), ProcessorError> {
+    ) -> Result<(), ProcessNodeError> {
         let inputs = ProcessorInputs {
             input_specs: &self.input_spec,
             inputs,
@@ -117,10 +134,17 @@ impl ProcessorNode {
         };
         let outputs = ProcessorOutputs {
             output_spec: &self.output_spec,
-            outputs,
-            mode,
+            outputs: &mut self.outputs,
+            mode: env.mode,
         };
-        self.processor.process(inputs, outputs)
+        if let Err(e) = self.processor.process(inputs, outputs) {
+            return Err(ProcessNodeError {
+                error: e,
+                node_name: self.name().to_string(),
+            });
+        }
+
+        Ok(())
     }
 }
 
@@ -144,9 +168,15 @@ pub struct Node {
     pub(crate) node_id: NodeIndex,
 }
 
+impl Debug for Node {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.name().as_str())
+    }
+}
+
 impl Node {
     #[inline]
-    pub(crate) fn id(&self) -> NodeIndex {
+    pub fn id(&self) -> NodeIndex {
         self.node_id
     }
 
@@ -265,6 +295,8 @@ impl Node {
         Input {
             node: self.clone(),
             input_index: index,
+            signal_type: self.input_type(index),
+            name: self.input_name(index),
         }
     }
 
@@ -285,6 +317,8 @@ impl Node {
         Output {
             node: self.clone(),
             output_index: index,
+            signal_type: self.output_type(index),
+            name: self.output_name(index),
         }
     }
 
@@ -364,7 +398,7 @@ impl Node {
         );
 
         self.graph
-            .connect(output.id(), source_output, self.id(), target_input);
+            .connect(output, source_output, self, target_input);
         self.clone()
     }
 
@@ -405,24 +439,95 @@ impl Node {
             target.name()
         );
 
-        self.graph
-            .connect(self.id(), output_index, target.id(), target_input);
+        self.graph.connect(self, output_index, target, target_input);
         self.clone()
+    }
+
+    /// Disconnects all inputs from this node.
+    #[inline]
+    pub fn disconnect_all_inputs(&self) {
+        self.graph.disconnect_all_inputs(self);
+    }
+
+    /// Disconnects all outputs of this node from the graph.
+    #[inline]
+    pub fn disconnect_all_outputs(&self) {
+        self.graph.disconnect_all_outputs(self);
+    }
+
+    /// Disconnects all inputs and outputs of this node from the graph.
+    #[inline]
+    pub fn disconnect_all(&self) {
+        self.graph.disconnect_all(self);
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct Edge {
+    pub(crate) source: Node,
+    pub(crate) source_output: u32,
+    pub(crate) target: Node,
+    pub(crate) target_input: u32,
+}
+
+impl Edge {
+    /// Returns the source node of the edge.
+    #[inline]
+    pub fn source(&self) -> Node {
+        self.source.clone()
+    }
+
+    /// Returns the output index of the source node.
+    #[inline]
+    pub fn source_output(&self) -> u32 {
+        self.source_output
+    }
+
+    /// Returns the target node of the edge.
+    #[inline]
+    pub fn target(&self) -> Node {
+        self.target.clone()
+    }
+
+    /// Returns the input index of the target node.
+    #[inline]
+    pub fn target_input(&self) -> u32 {
+        self.target_input
+    }
+
+    /// Returns the signal type of the edge.
+    #[inline]
+    pub fn signal_type(&self) -> SignalType {
+        self.source.output_type(self.source_output)
+    }
+
+    /// Disconnects the edge from the graph.
+    #[inline]
+    pub fn disconnect(self) {
+        let graph = self.source.graph().clone();
+        graph.disconnect(
+            self.source,
+            self.source_output,
+            self.target,
+            self.target_input,
+        );
     }
 }
 
 /// Represents an input of a [`Node`].
 #[derive(Clone)]
 pub struct Input {
-    node: Node,
-    input_index: u32,
+    pub(crate) node: Node,
+    pub(crate) input_index: u32,
+    pub(crate) signal_type: SignalType,
+    pub(crate) name: String,
 }
 
 impl Input {
     /// Returns the signal type of the input.
     #[inline]
     pub fn signal_type(&self) -> SignalType {
-        self.node.input_type(self.input_index)
+        self.signal_type
     }
 
     /// Returns the [`Node`] that this input is connected to.
@@ -439,8 +544,8 @@ impl Input {
 
     /// Returns the name of the input.
     #[inline]
-    pub fn name(&self) -> String {
-        self.node.input_name(self.input_index)
+    pub fn name(&self) -> &str {
+        &self.name
     }
 
     /// Connects the input to the output of another node.
@@ -492,6 +597,8 @@ macro_rules! generic_binary_op_impl {
 pub struct Output {
     pub(crate) node: Node,
     pub(crate) output_index: u32,
+    pub(crate) signal_type: SignalType,
+    pub(crate) name: String,
 }
 
 impl Output {
@@ -510,13 +617,13 @@ impl Output {
     /// Returns the signal type of the output.
     #[inline]
     pub fn signal_type(&self) -> SignalType {
-        self.node.output_type(self.output_index)
+        self.signal_type
     }
 
     /// Returns the name of the output.
     #[inline]
-    pub fn name(&self) -> String {
-        self.node.output_name(self.output_index)
+    pub fn name(&self) -> &str {
+        &self.name
     }
 
     /// Connects the output to the input of another node.

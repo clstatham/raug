@@ -185,6 +185,18 @@ impl ProcessorOutput<'_> {
             }
         }
     }
+
+    #[inline]
+    pub fn clone_from(&mut self, buf: &AnyBuffer) {
+        match self {
+            ProcessorOutput::Block(buffer) => buffer.clone_from(buf),
+            ProcessorOutput::Sample(buffer, sample_index) => {
+                let mut a = buffer.get_mut(*sample_index).unwrap();
+                let b = buf.get(*sample_index).unwrap();
+                a.clone_from(&b);
+            }
+        }
+    }
 }
 
 /// A collection of output signals for a [`Processor`](super::Processor) and their specifications.
@@ -212,6 +224,11 @@ impl<'a> ProcessorOutputs<'a> {
             outputs,
             mode,
         }
+    }
+
+    #[inline]
+    pub fn num_outputs(&self) -> usize {
+        self.output_spec.len()
     }
 
     /// Returns the output signal at the given index.

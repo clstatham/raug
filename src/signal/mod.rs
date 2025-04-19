@@ -10,7 +10,7 @@ pub mod buffer;
 pub mod type_erased;
 
 /// A type that can be stored in a [`Buffer`](buffer::Buffer) and processed by a [`Processor`](crate::processor::Processor).
-pub trait Signal: Sized + Clone + Send + Sync + 'static {
+pub trait Signal: Sized + Clone + Default + Send + Sync + 'static {
     /// The type of the signal.
     #[inline]
     fn signal_type() -> SignalType {

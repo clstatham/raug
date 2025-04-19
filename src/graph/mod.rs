@@ -1,9 +1,12 @@
 //! A directed graph of [`Processor`]s connected by [`Edge`]s.
 
-use std::sync::{Arc, Mutex};
+use std::{
+    ops::Deref,
+    sync::{Arc, Mutex},
+};
 
 use edge::Edge;
-use node::{IntoInputIdx, IntoNode, IntoOutputIdx, Node, ProcessorNode};
+use node::{IntoInputIdx, IntoNode, IntoOutputIdx, Node, ProcessNodeError, ProcessorNode};
 use petgraph::{
     prelude::{Direction, EdgeRef, StableDiGraph},
     visit::DfsPostOrder,
@@ -12,8 +15,11 @@ use runtime::AudioDevice;
 use rustc_hash::FxHashSet;
 
 use crate::{
-    prelude::{Constant, Null, Passthrough, ProcEnv},
-    processor::{Processor, ProcessorError, io::ProcessMode},
+    prelude::{
+        Constant, Null, Passthrough, ProcEnv, ProcessorError, ProcessorInputs, ProcessorOutputs,
+        SignalSpec,
+    },
+    processor::{Processor, io::ProcessMode},
     signal::{Signal, type_erased::AnyBuffer},
 };
 
@@ -28,14 +34,20 @@ pub type NodeIndex = petgraph::graph::NodeIndex<GraphIx>;
 /// The type of the directed graph.
 pub type DiGraph = StableDiGraph<ProcessorNode, Edge, GraphIx>;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+enum VisitorReset {
+    #[default]
+    Ready,
+    NeedsReset,
+}
+
 /// The type of error that occurred while running a graph.
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 #[error("Graph run error")]
 pub enum GraphRunError {
     /// An error occurred while processing the node.
-    #[error("Processor error: {0}")]
-    ProcessorError(#[from] ProcessorError),
+    ProcessorNodeError(#[from] ProcessNodeError),
 
     /// An error occurred while the stream was running.
     StreamError(#[from] cpal::StreamError),
@@ -49,7 +61,7 @@ pub enum GraphRunError {
     /// An error occurred while enumerating available audio devices.
     DevicesError(#[from] cpal::DevicesError),
 
-    /// An error occurred while enumerating available hosts.
+    /// An error occurred reading or writing the WAV file.
     Hound(#[from] hound::Error),
 
     /// The requested host is unavailable.
@@ -68,9 +80,6 @@ pub enum GraphRunError {
     /// Output stream sample format is not supported.
     #[error("Unsupported sample format: {0}")]
     UnsupportedSampleFormat(cpal::SampleFormat),
-
-    /// The runtime needs to reallocate buffers.
-    NeedsAlloc,
 
     /// An error occurred while modifying the graph.
     #[error("Graph modification error: {0}")]
@@ -146,6 +155,7 @@ pub(crate) struct GraphInner {
     // cached visitor state for graph traversal
     visitor: DfsPostOrder<NodeIndex, FxHashSet<NodeIndex>>,
     visit_path: Vec<NodeIndex>,
+    visitor_reset: VisitorReset,
 
     // cached strongly connected components (feedback loops)
     sccs: Vec<Vec<NodeIndex>>,
@@ -156,18 +166,6 @@ pub(crate) struct GraphInner {
 }
 
 impl GraphInner {
-    /// Returns a reference to the underlying [`DiGraph`].
-    #[inline]
-    pub fn digraph(&self) -> &DiGraph {
-        &self.digraph
-    }
-
-    /// Returns a mutable reference to the underlying [`DiGraph`].
-    #[inline]
-    pub fn digraph_mut(&mut self) -> &mut DiGraph {
-        &mut self.digraph
-    }
-
     /// Adds an audio input node to the graph.
     pub fn add_audio_input(&mut self) -> NodeIndex {
         let idx = self.digraph.add_node(ProcessorNode::new(Null::default()));
@@ -193,7 +191,10 @@ impl GraphInner {
         node.allocate(self.sample_rate, self.max_block_size);
         node.resize_buffers(self.sample_rate, self.max_block_size);
 
-        self.digraph.add_node(node)
+        let node = self.digraph.add_node(node);
+        self.visitor_reset = VisitorReset::NeedsReset;
+
+        node
     }
 
     /// Connects two nodes in the graph.
@@ -237,9 +238,7 @@ impl GraphInner {
             },
         );
 
-        self.reset_visitor();
-
-        self.detect_sccs();
+        self.visitor_reset = VisitorReset::NeedsReset;
 
         Ok(())
     }
@@ -266,9 +265,8 @@ impl GraphInner {
 
         if let Some(edge) = edge {
             self.digraph.remove_edge(edge.id()).unwrap();
-            self.reset_visitor();
-            self.detect_sccs();
         }
+        self.visitor_reset = VisitorReset::NeedsReset;
     }
 
     /// Disconnects all inputs to the specified node.
@@ -280,9 +278,8 @@ impl GraphInner {
             .collect::<Vec<_>>();
         for edge in incoming_edges {
             self.digraph.remove_edge(edge).unwrap();
-            self.reset_visitor();
-            self.detect_sccs();
         }
+        self.visitor_reset = VisitorReset::NeedsReset;
     }
 
     /// Disconnects all outputs from the specified node.
@@ -294,15 +291,15 @@ impl GraphInner {
             .collect::<Vec<_>>();
         for edge in outgoing_edges {
             self.digraph.remove_edge(edge).unwrap();
-            self.reset_visitor();
-            self.detect_sccs();
         }
+        self.visitor_reset = VisitorReset::NeedsReset;
     }
 
     /// Disconnects all inputs and outputs from the specified node.
     pub fn disconnect_all(&mut self, node: NodeIndex) {
         self.disconnect_all_inputs(node);
         self.disconnect_all_outputs(node);
+        self.visitor_reset = VisitorReset::NeedsReset;
     }
 
     /// Returns the number of audio inputs in the graph.
@@ -327,9 +324,9 @@ impl GraphInner {
     #[inline]
     pub fn get_output(&self, output_index: usize) -> Option<&AnyBuffer> {
         let output_index = *self.output_indices().get(output_index)?;
-        self.digraph()
+        self.digraph
             .node_weight(output_index)
-            .map(|buffers| &buffers.outputs.as_ref().unwrap()[0])
+            .map(|buffers| &buffers.outputs[0])
     }
 
     #[inline]
@@ -344,6 +341,9 @@ impl GraphInner {
     }
 
     pub(crate) fn reset_visitor(&mut self) {
+        if self.visitor_reset == VisitorReset::Ready {
+            return;
+        }
         if self.visit_path.capacity() < self.digraph.node_count() {
             self.visit_path = Vec::with_capacity(self.digraph.node_count());
         }
@@ -359,6 +359,8 @@ impl GraphInner {
             self.visit_path.push(node);
         }
         self.visit_path.reverse();
+        self.detect_sccs();
+        self.visitor_reset = VisitorReset::Ready;
     }
 
     /// Calls the provided closure on each node in the graph in topological order.
@@ -377,7 +379,6 @@ impl GraphInner {
 
     /// Calls [`Processor::allocate()`] on each node in the graph.
     pub fn allocate(&mut self, sample_rate: f32, max_block_size: usize) {
-        self.reset_visitor();
         self.visit(|graph, node| -> Result<(), ()> {
             graph.digraph[node].allocate(sample_rate, max_block_size);
             Ok(())
@@ -429,18 +430,14 @@ impl GraphInner {
 
     #[cfg_attr(feature = "profiling", inline(never))]
     fn process_node(&mut self, node_id: NodeIndex, mode: ProcessMode) -> GraphRunResult<()> {
-        let num_inputs = self.digraph()[node_id].num_inputs();
-
-        let mut inputs: smallvec::SmallVec<[_; 32]> = smallvec::smallvec![None; num_inputs];
-
-        let mut buffers = self.digraph_mut()[node_id].outputs.take().unwrap();
+        let mut inputs: [_; 32] = [None; 32];
 
         for (source_id, edge) in self
-            .digraph()
+            .digraph
             .edges_directed(node_id, Direction::Incoming)
             .map(|edge| (edge.source(), edge.weight()))
         {
-            let source_buffers = self.digraph[source_id].outputs.as_ref().unwrap();
+            let source_buffers = &self.digraph[source_id].outputs;
             let buffer = &source_buffers[edge.source_output as usize] as *const AnyBuffer;
 
             inputs[edge.target_input as usize] = Some(buffer);
@@ -448,26 +445,14 @@ impl GraphInner {
 
         let node = &mut self.digraph[node_id];
 
-        let result = node.process(
+        node.process(
             &inputs[..],
             ProcEnv {
                 sample_rate: self.sample_rate,
                 block_size: self.block_size,
                 mode,
             },
-            &mut buffers,
-            mode,
-        );
-
-        if let Err(err) = result {
-            let node = self.digraph().node_weight(node_id).unwrap();
-            log::error!("Error processing node {}: {:?}", node.name(), err);
-            return Err(err.into());
-        }
-
-        drop(inputs);
-
-        self.digraph_mut()[node_id].outputs = Some(buffers);
+        )?;
 
         Ok(())
     }
@@ -634,5 +619,110 @@ impl Graph {
     /// Creates a new [`Node`] that outputs a constant value.
     pub fn constant<T: Signal + Default + Clone>(&self, value: T) -> Node {
         self.add(Constant::new(value))
+    }
+}
+
+#[derive(Default)]
+pub struct SubGraph(Graph);
+
+impl SubGraph {
+    /// Creates a new `SubGraph` from the given `Graph`.
+    pub fn new(graph: Graph) -> Self {
+        Self(graph)
+    }
+}
+
+impl From<Graph> for SubGraph {
+    fn from(graph: Graph) -> Self {
+        Self(graph)
+    }
+}
+
+impl Deref for SubGraph {
+    type Target = Graph;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl Processor for SubGraph {
+    fn name(&self) -> &str {
+        "SubGraph"
+    }
+
+    fn input_spec(&self) -> Vec<SignalSpec> {
+        self.0.with_inner(|graph| {
+            graph
+                .input_nodes
+                .iter()
+                .flat_map(|&node_id| graph.digraph[node_id].input_spec())
+                .cloned()
+                .collect()
+        })
+    }
+
+    fn output_spec(&self) -> Vec<SignalSpec> {
+        self.0.with_inner(|graph| {
+            graph
+                .output_nodes
+                .iter()
+                .flat_map(|&node_id| graph.digraph[node_id].output_spec())
+                .cloned()
+                .collect()
+        })
+    }
+
+    fn create_output_buffers(&self, size: usize) -> Vec<AnyBuffer> {
+        self.0.with_inner(|graph| {
+            graph
+                .output_nodes
+                .iter()
+                .flat_map(|&node_id| graph.digraph[node_id].processor.create_output_buffers(size))
+                .collect()
+        })
+    }
+
+    fn allocate(&mut self, sample_rate: f32, max_block_size: usize) {
+        self.0
+            .with_inner(|graph| graph.allocate(sample_rate, max_block_size));
+    }
+
+    fn resize_buffers(&mut self, sample_rate: f32, block_size: usize) {
+        self.0
+            .with_inner(|graph| graph.resize_buffers(sample_rate, block_size));
+    }
+
+    fn process(
+        &mut self,
+        inputs: ProcessorInputs,
+        mut outputs: ProcessorOutputs,
+    ) -> Result<(), ProcessorError> {
+        self.0.with_inner(|graph| -> Result<(), ProcessorError> {
+            for input_idx in 0..inputs.num_inputs() {
+                let input = inputs.input(input_idx);
+
+                if let Some(input) = input {
+                    let node_id = graph.input_nodes[input_idx];
+                    graph.digraph[node_id].outputs[0].clone_from(input);
+                }
+            }
+
+            graph
+                .process()
+                .map_err(|e| ProcessorError::SubGraphError(Box::new(e)))?;
+
+            for output_idx in 0..outputs.num_outputs() {
+                let mut output = outputs.output(output_idx);
+
+                let node_id = graph.output_nodes[output_idx];
+                let output_buffer = &graph.digraph[node_id].outputs[0];
+                output.clone_from(output_buffer);
+            }
+
+            Ok(())
+        })?;
+
+        Ok(())
     }
 }

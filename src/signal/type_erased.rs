@@ -96,6 +96,18 @@ impl AnyBuffer {
         self.get_mut(index)?.downcast_mut::<T>()
     }
 
+    #[inline]
+    pub fn clone_from(&mut self, other: &AnyBuffer) {
+        assert_eq!(self.signal_type, other.signal_type);
+        self.buf.clear();
+        self.buf.reserve(other.len());
+        for i in 0..other.len() {
+            let signal = other.get(i).unwrap();
+            let signal = signal.signal.lazy_clone();
+            self.buf.push(signal);
+        }
+    }
+
     /// Returns the [`SignalType`] of the signals contained in this buffer.
     #[inline]
     pub fn signal_type(&self) -> SignalType {

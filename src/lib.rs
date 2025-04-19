@@ -14,7 +14,7 @@ extern crate self as raug;
 pub mod prelude {
     pub use crate::builtins::*;
     pub use crate::graph::{
-        Graph,
+        Graph, SubGraph,
         node::{Input, IntoNode, IntoOutput, Node, Output},
         runtime::{AudioBackend, AudioDevice, AudioStream, CpalStream, WavFileOutStream},
     };

@@ -5,7 +5,7 @@ use std::fmt::Debug;
 use io::{ProcessorInputs, ProcessorOutputs, SignalSpec};
 use thiserror::Error;
 
-use crate::{prelude::AnyBuffer, signal::SignalType};
+use crate::{graph::GraphRunError, prelude::AnyBuffer, signal::SignalType};
 
 pub mod io;
 
@@ -36,7 +36,18 @@ pub enum ProcessorError {
 
     /// Error during processing.
     #[error("Processing error: {0}")]
-    ProcessingError(String),
+    ProcessingError(#[from] Box<dyn std::error::Error + Send + Sync>),
+
+    /// Error during sub-graph processing.
+    #[error("Sub-graph processing error: {0}")]
+    SubGraphError(#[from] Box<GraphRunError>),
+}
+
+impl ProcessorError {
+    /// Creates a new [`ProcessorError::ProcessingError`] from a boxed error.
+    pub fn new<E: std::error::Error + Send + Sync + 'static>(error: E) -> Self {
+        Self::ProcessingError(Box::new(error))
+    }
 }
 
 /// A result type for processor operations.
