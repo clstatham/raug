@@ -1,6 +1,9 @@
 //! Contains the [`ProcessorNode`] struct, which represents a node in the audio graph that processes signals.
 
-use std::fmt::Debug;
+use std::{
+    fmt::Debug,
+    sync::{Arc, Weak},
+};
 
 use thiserror::Error;
 
@@ -161,11 +164,17 @@ fn assert_signals_compatible(a: &SignalType, b: &SignalType, op: impl Into<Strin
     );
 }
 
+pub(crate) struct NodeInner {
+    graph: Graph,
+    node_id: NodeIndex,
+    inputs: Vec<Input>,
+    outputs: Vec<Output>,
+}
+
 /// Represents a node in the audio graph. This type is used to build connections between nodes.
 #[derive(Clone)]
 pub struct Node {
-    pub(crate) graph: Graph,
-    pub(crate) node_id: NodeIndex,
+    inner: Arc<NodeInner>,
 }
 
 impl Debug for Node {
@@ -175,21 +184,59 @@ impl Debug for Node {
 }
 
 impl Node {
+    pub(crate) fn new(graph: Graph, node_id: NodeIndex) -> Self {
+        let inner = Arc::new_cyclic(|sref| {
+            let mut node = NodeInner {
+                graph: graph.clone(),
+                node_id,
+                inputs: Vec::new(),
+                outputs: Vec::new(),
+            };
+            let mut inputs = Vec::new();
+            let mut outputs = Vec::new();
+            graph.with_inner(|graph| {
+                let node = &graph.digraph[node_id];
+                for i in 0..node.num_inputs() {
+                    inputs.push(Input {
+                        node: sref.clone(),
+                        input_index: i as u32,
+                        signal_type: node.input_spec()[i].signal_type,
+                        name: node.input_spec()[i].name.clone(),
+                    });
+                }
+                for i in 0..node.num_outputs() {
+                    outputs.push(Output {
+                        node: sref.clone(),
+                        output_index: i as u32,
+                        signal_type: node.output_spec()[i].signal_type,
+                        name: node.output_spec()[i].name.clone(),
+                    });
+                }
+            });
+            node.inputs = inputs;
+            node.outputs = outputs;
+
+            node
+        });
+
+        Node { inner }
+    }
+
     #[inline]
     pub fn id(&self) -> NodeIndex {
-        self.node_id
+        self.inner.node_id
     }
 
     /// Returns the graph builder that this node belongs to.
     #[inline]
     pub fn graph(&self) -> &Graph {
-        &self.graph
+        &self.inner.graph
     }
 
     /// Returns the name of the processor this node represents.
     #[inline]
     pub fn name(&self) -> String {
-        self.graph
+        self.graph()
             .with_inner(|graph| graph.digraph[self.id()].name().to_string())
     }
 
@@ -222,14 +269,14 @@ impl Node {
     /// Returns the number of inputs of the node.
     #[inline]
     pub fn num_inputs(&self) -> usize {
-        self.graph
+        self.graph()
             .with_inner(|graph| graph.digraph[self.id()].num_inputs())
     }
 
     /// Returns the number of outputs of the node.
     #[inline]
     pub fn num_outputs(&self) -> usize {
-        self.graph
+        self.graph()
             .with_inner(|graph| graph.digraph[self.id()].num_outputs())
     }
 
@@ -248,7 +295,7 @@ impl Node {
             index,
             self.name()
         );
-        self.graph.with_inner(|graph| {
+        self.graph().with_inner(|graph| {
             graph.digraph[self.id()].input_spec()[index as usize]
                 .name
                 .clone()
@@ -270,7 +317,7 @@ impl Node {
             index,
             self.name()
         );
-        self.graph.with_inner(|graph| {
+        self.graph().with_inner(|graph| {
             graph.digraph[self.id()].output_spec()[index as usize]
                 .name
                 .clone()
@@ -284,20 +331,8 @@ impl Node {
     /// Panics if the index is out of bounds.
     #[inline]
     #[track_caller]
-    pub fn input(&self, index: impl IntoInputIdx) -> Input {
-        let index = index.into_input_idx(self);
-        assert!(
-            index < self.num_inputs() as u32,
-            "input index {} out of bounds for node {}",
-            index,
-            self.name()
-        );
-        Input {
-            node: self.clone(),
-            input_index: index,
-            signal_type: self.input_type(index),
-            name: self.input_name(index),
-        }
+    pub fn input(&self, index: impl IntoInputIdx) -> &Input {
+        &self.inner.inputs[index.into_input_idx(self) as usize]
     }
 
     /// Returns the output of the node at the given index.
@@ -306,20 +341,8 @@ impl Node {
     ///
     /// Panics if the index is out of bounds.
     #[inline]
-    pub fn output(&self, index: impl IntoOutputIdx) -> Output {
-        let index = index.into_output_idx(self);
-        assert!(
-            index < self.num_outputs() as u32,
-            "output index {} out of bounds for node {}",
-            index,
-            self.name()
-        );
-        Output {
-            node: self.clone(),
-            output_index: index,
-            signal_type: self.output_type(index),
-            name: self.output_name(index),
-        }
+    pub fn output(&self, index: impl IntoOutputIdx) -> &Output {
+        &self.inner.outputs[index.into_output_idx(self) as usize]
     }
 
     /// Returns the signal type of the input at the given index.
@@ -337,7 +360,7 @@ impl Node {
             index,
             self.name()
         );
-        self.graph
+        self.graph()
             .with_inner(|graph| graph.digraph[self.id()].input_spec()[index as usize].signal_type)
     }
 
@@ -356,7 +379,7 @@ impl Node {
             index,
             self.name()
         );
-        self.graph
+        self.graph()
             .with_inner(|graph| graph.digraph[self.id()].output_spec()[index as usize].signal_type)
     }
 
@@ -375,7 +398,7 @@ impl Node {
         source_output: impl IntoOutputIdx,
         target_input: impl IntoInputIdx,
     ) -> Node {
-        let output = source.into_node(&self.graph);
+        let output = source.into_node(self.graph());
         let source_output = source_output.into_output_idx(&output);
         let target_input = target_input.into_input_idx(self);
 
@@ -397,7 +420,7 @@ impl Node {
             output.name()
         );
 
-        self.graph
+        self.graph()
             .connect(output, source_output, self, target_input);
         self.clone()
     }
@@ -417,7 +440,7 @@ impl Node {
         target: impl IntoNode,
         target_input: impl IntoInputIdx,
     ) -> Node {
-        let target = target.into_node(&self.graph);
+        let target = target.into_node(self.graph());
         let output_index = output.into_output_idx(self);
         let target_input = target_input.into_input_idx(&target);
 
@@ -439,26 +462,27 @@ impl Node {
             target.name()
         );
 
-        self.graph.connect(self, output_index, target, target_input);
+        self.graph()
+            .connect(self, output_index, target, target_input);
         self.clone()
     }
 
     /// Disconnects all inputs from this node.
     #[inline]
     pub fn disconnect_all_inputs(&self) {
-        self.graph.disconnect_all_inputs(self);
+        self.graph().disconnect_all_inputs(self);
     }
 
     /// Disconnects all outputs of this node from the graph.
     #[inline]
     pub fn disconnect_all_outputs(&self) {
-        self.graph.disconnect_all_outputs(self);
+        self.graph().disconnect_all_outputs(self);
     }
 
     /// Disconnects all inputs and outputs of this node from the graph.
     #[inline]
     pub fn disconnect_all(&self) {
-        self.graph.disconnect_all(self);
+        self.graph().disconnect_all(self);
     }
 }
 
@@ -517,7 +541,7 @@ impl Edge {
 /// Represents an input of a [`Node`].
 #[derive(Clone)]
 pub struct Input {
-    pub(crate) node: Node,
+    pub(crate) node: Weak<NodeInner>,
     pub(crate) input_index: u32,
     pub(crate) signal_type: SignalType,
     pub(crate) name: String,
@@ -533,7 +557,9 @@ impl Input {
     /// Returns the [`Node`] that this input is connected to.
     #[inline]
     pub fn node(&self) -> Node {
-        self.node.clone()
+        Node {
+            inner: self.node.upgrade().unwrap(),
+        }
     }
 
     /// Returns the index of the input.
@@ -556,11 +582,11 @@ impl Input {
     #[inline]
     #[track_caller]
     pub fn connect(&self, output: impl IntoOutput) -> Node {
-        let output = output.into_output(self.node.graph());
+        let output = output.into_output(self.node().graph());
         assert_signals_compatible(&output.signal_type(), &self.signal_type(), "connect");
-        self.node
-            .connect_input(&output.node, output.output_index, self.input_index);
-        self.node.clone()
+        self.node()
+            .connect_input(output.node(), output.output_index, self.input_index);
+        self.node()
     }
 }
 
@@ -595,7 +621,7 @@ macro_rules! generic_binary_op_impl {
 /// Represents an output of a [`Node`].
 #[derive(Clone)]
 pub struct Output {
-    pub(crate) node: Node,
+    pub(crate) node: Weak<NodeInner>,
     pub(crate) output_index: u32,
     pub(crate) signal_type: SignalType,
     pub(crate) name: String,
@@ -605,7 +631,9 @@ impl Output {
     /// Returns the [`Node`] that this output is connected to.
     #[inline]
     pub fn node(&self) -> Node {
-        self.node.clone()
+        Node {
+            inner: self.node.upgrade().unwrap(),
+        }
     }
 
     /// Returns the index of the output.
@@ -635,9 +663,9 @@ impl Output {
     #[track_caller]
     pub fn connect(&self, input: &Input) -> Node {
         assert_signals_compatible(&self.signal_type(), &input.signal_type(), "connect");
-        self.node
-            .connect_output(self.output_index, &input.node, input.input_index);
-        self.node.clone()
+        self.node()
+            .connect_output(self.output_index, input.node(), input.input_index);
+        self.node()
     }
 
     /// Attaches an addition processor to the nodes.
@@ -844,7 +872,7 @@ impl<T: IntoOutput> std::ops::Add<T> for Node {
     #[track_caller]
     fn add(self, rhs: T) -> Self::Output {
         self.assert_single_output("add");
-        self.output(0) + rhs
+        self.output(0).clone() + rhs
     }
 }
 
@@ -855,7 +883,7 @@ impl<T: IntoOutput> std::ops::Sub<T> for Node {
     #[track_caller]
     fn sub(self, rhs: T) -> Self::Output {
         self.assert_single_output("sub");
-        self.output(0) - rhs
+        self.output(0).clone() - rhs
     }
 }
 
@@ -866,7 +894,7 @@ impl<T: IntoOutput> std::ops::Mul<T> for Node {
     #[track_caller]
     fn mul(self, rhs: T) -> Self::Output {
         self.assert_single_output("mul");
-        self.output(0) * rhs
+        self.output(0).clone() * rhs
     }
 }
 
@@ -877,7 +905,7 @@ impl<T: IntoOutput> std::ops::Div<T> for Node {
     #[track_caller]
     fn div(self, rhs: T) -> Self::Output {
         self.assert_single_output("div");
-        self.output(0) / rhs
+        self.output(0).clone() / rhs
     }
 }
 
@@ -888,7 +916,7 @@ impl<T: IntoOutput> std::ops::Rem<T> for Node {
     #[track_caller]
     fn rem(self, rhs: T) -> Self::Output {
         self.assert_single_output("rem");
-        self.output(0) % rhs
+        self.output(0).clone() % rhs
     }
 }
 
@@ -910,7 +938,7 @@ impl<T: IntoOutput> std::ops::BitAnd<T> for Node {
     #[track_caller]
     fn bitand(self, rhs: T) -> Self::Output {
         self.assert_single_output("bitand");
-        self.output(0) & rhs
+        self.output(0).clone() & rhs
     }
 }
 
@@ -921,7 +949,7 @@ impl<T: IntoOutput> std::ops::BitOr<T> for Node {
     #[track_caller]
     fn bitor(self, rhs: T) -> Self::Output {
         self.assert_single_output("bitand");
-        self.output(0) | rhs
+        self.output(0).clone() | rhs
     }
 }
 
@@ -932,7 +960,7 @@ impl<T: IntoOutput> std::ops::BitXor<T> for Node {
     #[track_caller]
     fn bitxor(self, rhs: T) -> Self::Output {
         self.assert_single_output("bitand");
-        self.output(0) ^ rhs
+        self.output(0).clone() ^ rhs
     }
 }
 
@@ -943,7 +971,7 @@ impl std::ops::Not for Node {
     #[track_caller]
     fn not(self) -> Self::Output {
         self.assert_single_output("not");
-        !self.output(0)
+        !self.output(0).clone()
     }
 }
 
@@ -1047,6 +1075,14 @@ impl std::ops::Not for &Node {
     }
 }
 
+impl<T: IntoOutputIdx> std::ops::Index<T> for Node {
+    type Output = Output;
+
+    fn index(&self, index: T) -> &Self::Output {
+        self.output(index)
+    }
+}
+
 /// A trait for coercing a value into an [`Output`].
 pub trait IntoOutput {
     /// Converts the value into an [`Output`] in the given graph.
@@ -1069,7 +1105,7 @@ impl IntoOutput for Node {
     #[track_caller]
     fn into_output(self, _graph: &Graph) -> Output {
         self.assert_single_output("into_output");
-        self.output(0)
+        self.output(0).clone()
     }
 }
 
@@ -1077,7 +1113,7 @@ impl IntoOutput for &Node {
     #[track_caller]
     fn into_output(self, _graph: &Graph) -> Output {
         self.assert_single_output("into_output");
-        self.output(0)
+        self.output(0).clone()
     }
 }
 
@@ -1085,7 +1121,7 @@ impl<T: Signal + Default + Clone> IntoOutput for T {
     #[track_caller]
     fn into_output(self, graph: &Graph) -> Output {
         let node = graph.constant(self);
-        node.output(0)
+        node.output(0).clone()
     }
 }
 
@@ -1093,7 +1129,7 @@ impl IntoOutput for &str {
     #[track_caller]
     fn into_output(self, graph: &Graph) -> Output {
         let node = graph.constant(StringSignal::from(self));
-        node.output(0)
+        node.output(0).clone()
     }
 }
 
@@ -1101,7 +1137,7 @@ impl IntoOutput for f64 {
     #[track_caller]
     fn into_output(self, graph: &Graph) -> Output {
         let node = graph.constant(self as f32);
-        node.output(0)
+        node.output(0).clone()
     }
 }
 
@@ -1109,7 +1145,23 @@ impl IntoOutput for i32 {
     #[track_caller]
     fn into_output(self, graph: &Graph) -> Output {
         let node = graph.constant(self as i64);
-        node.output(0)
+        node.output(0).clone()
+    }
+}
+
+pub trait IntoOutputOpt {
+    fn into_output_opt(self, graph: &Graph) -> Option<Output>;
+}
+
+impl<T: IntoOutput> IntoOutputOpt for T {
+    fn into_output_opt(self, graph: &Graph) -> Option<Output> {
+        Some(self.into_output(graph))
+    }
+}
+
+impl IntoOutputOpt for () {
+    fn into_output_opt(self, _graph: &Graph) -> Option<Output> {
+        None
     }
 }
 
@@ -1120,29 +1172,22 @@ pub trait IntoNode {
 }
 
 impl IntoNode for Node {
-    fn into_node(self, graph: &Graph) -> Node {
-        Node {
-            graph: graph.clone(),
-            node_id: self.node_id,
-        }
+    fn into_node(self, _graph: &Graph) -> Node {
+        // todo: make sure the graphs are the same
+        self
     }
 }
 
 impl IntoNode for &Node {
-    fn into_node(self, graph: &Graph) -> Node {
-        Node {
-            graph: graph.clone(),
-            node_id: self.node_id,
-        }
+    fn into_node(self, _graph: &Graph) -> Node {
+        // todo: make sure the graphs are the same
+        self.clone()
     }
 }
 
 impl IntoNode for NodeIndex {
     fn into_node(self, graph: &Graph) -> Node {
-        Node {
-            graph: graph.clone(),
-            node_id: self,
-        }
+        Node::new(graph.clone(), self)
     }
 }
 

@@ -33,16 +33,12 @@ fn main() {
     // create a new graph
     let graph = Graph::new();
 
-    // add some outputs
-    let out1 = graph.add_audio_output();
-    let out2 = graph.add_audio_output();
-
     // add a sine oscillator
-    let sine = graph.add(SineOscillator::new());
+    let sine = SineOscillator::new().node(&graph, 440.0);
 
-    // connect the sine oscillator to the outputs
-    sine.output(0).connect(&out1.input(0));
-    sine.output(0).connect(&out2.input(0));
+    // add some outputs (2 for stereo)
+    graph.dac(&sine);
+    graph.dac(&sine);
 
     // open the audio stream
     let mut stream = CpalStream::default();

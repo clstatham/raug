@@ -1,7 +1,7 @@
 use criterion::{Criterion, criterion_group, criterion_main};
 use raug::prelude::*;
 
-mod generative1;
+mod caterpillar;
 
 const SAMPLE_RATE: f32 = 48_000.0;
 const BLOCK_SIZES: &[usize] = &[128, 512, 2048];
@@ -25,13 +25,11 @@ pub fn sine_oscillator(
 pub fn bench_demo(c: &mut Criterion) {
     let graph = Graph::new();
 
-    let out1 = graph.add_audio_output();
-
     let sine = graph.add(SineOscillator {
         phase: 0.0,
         freq: 440.0,
     });
-    sine.output(0).connect(&out1.input(0));
+    graph.dac(sine);
 
     let mut group = c.benchmark_group(name("demo"));
 
@@ -49,10 +47,10 @@ pub fn bench_demo(c: &mut Criterion) {
     group.finish();
 }
 
-fn bench_generative1(c: &mut Criterion) {
+fn bench_caterpillar(c: &mut Criterion) {
     let num_tones = 20;
-    let graph = generative1::generative1(num_tones);
-    let mut group = c.benchmark_group(name(&format!("generative1_{}", num_tones)));
+    let graph = caterpillar::caterpillar(num_tones);
+    let mut group = c.benchmark_group(name(&format!("caterpillar_{}", num_tones)));
 
     for &block_size in BLOCK_SIZES {
         graph.allocate(SAMPLE_RATE, block_size);
@@ -68,5 +66,5 @@ fn bench_generative1(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, bench_generative1);
+criterion_group!(benches, bench_caterpillar);
 criterion_main!(benches);

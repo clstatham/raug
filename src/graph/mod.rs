@@ -3,7 +3,9 @@
 use std::sync::{Arc, Mutex};
 
 use edge::Edge;
-use node::{IntoInputIdx, IntoNode, IntoOutputIdx, Node, ProcessNodeError, ProcessorNode};
+use node::{
+    IntoInputIdx, IntoNode, IntoOutput, IntoOutputIdx, Node, ProcessNodeError, ProcessorNode,
+};
 use petgraph::{
     prelude::{Direction, EdgeRef, StableDiGraph},
     visit::DfsPostOrder,
@@ -22,6 +24,7 @@ pub mod node;
 pub mod runtime;
 pub mod sub_graph;
 
+/// The inner type of node indices.
 pub(crate) type GraphIx = u32;
 /// The type of node indices.
 pub type NodeIndex = petgraph::graph::NodeIndex<GraphIx>;
@@ -507,26 +510,19 @@ impl Graph {
 
     /// Adds an audio input node to the graph.
     pub fn add_audio_input(&self) -> Node {
-        self.with_inner(|graph| Node {
-            graph: self.clone(),
-            node_id: graph.add_audio_input(),
-        })
+        self.with_inner(|graph| Node::new(self.clone(), graph.add_audio_input()))
     }
 
     /// Adds an audio output node to the graph.
-    pub fn add_audio_output(&self) -> Node {
-        self.with_inner(|graph| Node {
-            graph: self.clone(),
-            node_id: graph.add_audio_output(),
-        })
+    pub fn dac(&self, input: impl IntoOutput) -> Node {
+        let node = self.with_inner(|graph| Node::new(self.clone(), graph.add_audio_output()));
+        node.input(0).connect(input);
+        node
     }
 
     /// Adds a processor node to the graph.
     pub fn add(&self, processor: impl Processor) -> Node {
-        self.with_inner(|graph| Node {
-            graph: self.clone(),
-            node_id: graph.add_processor(processor),
-        })
+        self.with_inner(|graph| Node::new(self.clone(), graph.add_processor(processor)))
     }
 
     /// Returns the number of nodes in the graph.
