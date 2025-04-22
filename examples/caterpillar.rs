@@ -59,7 +59,7 @@ pub fn random_tones(
     let amp = pick_randomly(graph, &trig, amps).unwrap_or(0.0f32);
 
     // create the amplitude envelope
-    let amp_env = DecayEnv::new(1.0f32).node(graph, &trig, amp_decay);
+    let amp_env = Decay::new(1.0f32).node(graph, &trig, amp_decay);
 
     // create the modulator
     let modulator = BlSawOscillator::default().node(graph, &freq * ratio);
