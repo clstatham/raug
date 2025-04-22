@@ -25,7 +25,7 @@ pub fn sine_oscillator(
 pub fn bench_demo(c: &mut Criterion) {
     let graph = Graph::new();
 
-    let sine = graph.add(SineOscillator {
+    let sine = graph.node(SineOscillator {
         phase: 0.0,
         freq: 440.0,
     });

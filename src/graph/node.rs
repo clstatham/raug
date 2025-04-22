@@ -219,6 +219,12 @@ impl Node {
         }
     }
 
+    /// Returns `true` if this node is the same as the other node.
+    /// [`Node`]s are internally reference counted, so this is implemented using [`Arc::ptr_eq`].
+    pub fn is_same_node(&self, other: &Node) -> bool {
+        Arc::ptr_eq(&self.inner, &other.inner)
+    }
+
     #[inline]
     pub fn id(&self) -> NodeIndex {
         self.inner.node_id
@@ -595,7 +601,7 @@ macro_rules! choose_node_generics {
     ($graph:expr, $signal_type:expr => $node_type:ident => $($options:ty)*) => {
         match $signal_type {
             $(
-                t if t == <$options>::signal_type() => $graph.add($node_type::<$options>::default()),
+                t if t == <$options>::signal_type() => $graph.node($node_type::<$options>::default()),
             )*
             _ => panic!("Unsupported signal type: {:?}", $signal_type),
         }
@@ -797,7 +803,7 @@ impl<T: IntoOutput> std::ops::BitAnd<T> for Output {
             rhs.signal_type(),
             "AND operation requires a boolean signal type"
         );
-        let node = graph.add(And::default());
+        let node = graph.node(And::default());
         node.input(0).connect(self);
         node.input(1).connect(rhs);
         node
@@ -822,7 +828,7 @@ impl<T: IntoOutput> std::ops::BitOr<T> for Output {
             rhs.signal_type(),
             "OR operation requires a boolean signal type"
         );
-        let node = graph.add(Or::default());
+        let node = graph.node(Or::default());
         node.input(0).connect(self);
         node.input(1).connect(rhs);
         node
@@ -836,7 +842,7 @@ impl std::ops::Not for Output {
     #[track_caller]
     fn not(self) -> Self::Output {
         let graph = self.graph();
-        let node = graph.add(Not::default());
+        let node = graph.node(Not::default());
         node.input(0).connect(self);
         node
     }
@@ -860,7 +866,7 @@ impl<T: IntoOutput> std::ops::BitXor<T> for Output {
             rhs.signal_type(),
             "XOR operation requires a boolean signal type"
         );
-        let node = graph.add(Xor::default());
+        let node = graph.node(Xor::default());
         node.input(0).connect(self);
         node.input(1).connect(rhs);
         node
@@ -1174,15 +1180,23 @@ pub trait IntoNode {
 }
 
 impl IntoNode for Node {
-    fn into_node(self, _graph: &Graph) -> Node {
-        // todo: make sure the graphs are the same
+    #[track_caller]
+    fn into_node(self, graph: &Graph) -> Node {
+        assert!(
+            self.graph().is_same_graph(graph),
+            "Nodes belong to different graphs"
+        );
         self
     }
 }
 
 impl IntoNode for &Node {
-    fn into_node(self, _graph: &Graph) -> Node {
-        // todo: make sure the graphs are the same
+    #[track_caller]
+    fn into_node(self, graph: &Graph) -> Node {
+        assert!(
+            self.graph().is_same_graph(graph),
+            "Nodes belong to different graphs"
+        );
         self.clone()
     }
 }

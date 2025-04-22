@@ -468,6 +468,12 @@ impl Graph {
         Self::default()
     }
 
+    /// Returns `true` if the [`Graph`] is the same graph as `other`.
+    /// [`Graph`]s are internally reference counted, so this is implemented using [`Arc::ptr_eq`].
+    pub fn is_same_graph(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.inner, &other.inner)
+    }
+
     /// Allocates internal buffers for the graph with the given sample rate and block size.
     pub fn allocate(&self, sample_rate: f32, block_size: usize) {
         self.with_inner(|graph| graph.allocate(sample_rate, block_size));
@@ -523,7 +529,7 @@ impl Graph {
     }
 
     /// Adds a processor node to the graph.
-    pub fn add(&self, processor: impl Processor) -> Node {
+    pub fn node(&self, processor: impl Processor) -> Node {
         let id = self.with_inner(|graph| graph.add_processor(processor));
         Node::new(self.clone(), id)
     }
@@ -625,6 +631,6 @@ impl Graph {
 
     /// Creates a new [`Node`] that outputs a constant value.
     pub fn constant<T: Signal + Default + Clone>(&self, value: T) -> Node {
-        self.add(Constant::new(value))
+        self.node(Constant::new(value))
     }
 }
