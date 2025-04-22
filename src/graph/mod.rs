@@ -1,6 +1,9 @@
 //! A directed graph of [`Processor`]s connected by [`Edge`]s.
 
-use std::sync::{Arc, Mutex};
+use std::{
+    sync::{Arc, Mutex},
+    time::Duration,
+};
 
 use edge::Edge;
 use node::{
@@ -10,7 +13,7 @@ use petgraph::{
     prelude::{Direction, EdgeRef, StableDiGraph},
     visit::DfsPostOrder,
 };
-use runtime::AudioDevice;
+use runtime::{AudioDevice, AudioStream};
 use rustc_hash::FxHashSet;
 
 use crate::{
@@ -632,5 +635,30 @@ impl Graph {
     /// Creates a new [`Node`] that outputs a constant value.
     pub fn constant<T: Signal + Default + Clone>(&self, value: T) -> Node {
         self.node(Constant::new(value))
+    }
+
+    /// Runs the graph on the given stream for the specified duration.
+    pub fn play_for<T: AudioStream>(&self, mut stream: T, duration: Duration) -> GraphRunResult<T> {
+        stream.spawn(self)?;
+        stream.play()?;
+        std::thread::sleep(duration);
+        stream.stop()?;
+        Ok(stream)
+    }
+
+    /// Runs the graph on the given stream until the closure returns `true`.
+    pub fn play_until<T: AudioStream>(
+        &self,
+        mut stream: T,
+        cond: impl Fn() -> bool,
+    ) -> GraphRunResult<T> {
+        stream.spawn(self)?;
+        stream.play()?;
+        while !cond() {
+            std::hint::spin_loop();
+        }
+        stream.stop()?;
+
+        Ok(stream)
     }
 }
