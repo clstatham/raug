@@ -12,23 +12,25 @@ extern crate self as raug;
 
 /// Re-exports of commonly used types and traits from the crate.
 pub mod prelude {
-    pub use crate::builtins::*;
-    pub use crate::graph::{
-        Graph,
-        node::{Input, IntoNode, IntoOutput, Node, Output},
-        runtime::{AudioBackend, AudioDevice, AudioStream, CpalStream, WavFileOutStream},
-        sub_graph::SubGraph,
+    pub use crate::{
+        builtins::*,
+        graph::{
+            Graph,
+            node::{Input, IntoNode, IntoOutput, Node, Output},
+            runtime::{AudioBackend, AudioDevice, AudioStream, CpalStream, WavFileOutStream},
+            sub_graph::SubGraph,
+        },
+        processor::{
+            ProcResult, Processor, ProcessorError,
+            io::{ProcEnv, ProcessorInputs, ProcessorOutputs, SignalSpec},
+        },
+        signal::{
+            List, Signal, SignalType, StringSignal,
+            buffer::Buffer,
+            type_erased::{AnyBuffer, AnySignalMut, AnySignalRef},
+        },
+        util::*,
     };
-    pub use crate::processor::{
-        ProcResult, Processor, ProcessorError,
-        io::{ProcEnv, ProcessorInputs, ProcessorOutputs, SignalSpec},
-    };
-    pub use crate::signal::{
-        List, Signal, SignalType, StringSignal,
-        buffer::Buffer,
-        type_erased::{AnyBuffer, AnySignalMut, AnySignalRef},
-    };
-    pub use crate::util::*;
     pub use raug_macros::{note, note_array, processor};
     pub use std::time::Duration;
 }
