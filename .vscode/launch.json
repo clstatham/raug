@@ -7,7 +7,7 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Launch `demo example`",
+            "name": "Launch `demo` example",
             "program": "${workspaceFolder}/target/debug/examples/demo.exe",
             "args": [],
             "cwd": "${workspaceFolder}"
@@ -15,16 +15,8 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Launch `bang` example",
-            "program": "${workspaceFolder}/target/debug/examples/bang.exe",
-            "args": [],
-            "cwd": "${workspaceFolder}"
-        },
-        {
-            "type": "lldb",
-            "request": "launch",
-            "name": "Launch `buffer` example",
-            "program": "${workspaceFolder}/target/debug/examples/buffer.exe",
+            "name": "Launch `caterpillar` example",
+            "program": "${workspaceFolder}/target/debug/examples/caterpillar.exe",
             "args": [],
             "cwd": "${workspaceFolder}"
         },

@@ -4,18 +4,12 @@ use raug::prelude::*;
 use raug_ext::prelude::*;
 
 pub fn pick_randomly(graph: &Graph, trig: &Node, options: &[f32]) -> Node {
-    let node = graph.add(RandomChoice::<f32>::default());
-    node.input("trig").connect(trig);
-    node.input("options")
-        .connect(graph.constant(List::from_slice(options)));
-    node
+    RandomChoice::<f32>::default().node(graph, trig, List::from_slice(options))
 }
 
 pub fn fm_sine_osc(graph: &Graph, freq: &Node, mod_freq: &Node) -> Node {
-    let sr = graph.add(SampleRate::default());
-    let phase = graph.add(PhaseAccumulator::default());
-    let increment = freq / sr;
-    phase.input(0).connect(increment);
+    let sr = SampleRate::default().node(graph);
+    let phase = PhaseAccumulator::default().node(graph, freq / sr, ());
     (phase * 2.0f32 * PI + mod_freq * 2.0f32 * PI).sin()
 }
 
@@ -50,13 +44,11 @@ pub fn random_tones(
     decays: &[f32],
     amps: &[f32],
 ) -> Node {
-    let mast = graph.add(Metro::default());
-    mast.input(0).connect(rates[0]);
+    let mast = Metro::default().node(graph, rates[0], ());
 
     let rate = pick_randomly(graph, &mast, rates).unwrap_or(0.0f32);
 
-    let trig = graph.add(Metro::default());
-    trig.input(0).connect(rate.output(0));
+    let trig = Metro::default().node(graph, rate, ());
 
     let freq = pick_randomly(graph, &trig, freqs).unwrap_or(440.0f32);
 
@@ -67,14 +59,10 @@ pub fn random_tones(
     let amp = pick_randomly(graph, &trig, amps).unwrap_or(0.0f32);
 
     // create the amplitude envelope
-
-    let amp_env = graph.add(DecayEnv::new(1.0f32));
-    amp_env.input("tau").connect(amp_decay.output(0));
-    amp_env.input("trig").connect(trig.output(0));
+    let amp_env = DecayEnv::new(1.0f32).node(graph, &trig, amp_decay);
 
     // create the modulator
-    let modulator = graph.add(BlSawOscillator::default());
-    modulator.input(0).connect((&freq * ratio).output(0));
+    let modulator = BlSawOscillator::default().node(graph, &freq * ratio);
 
     // create the carrier
     let carrier = fm_sine_osc(graph, &freq, &(modulator * 0.1f32));
@@ -105,8 +93,7 @@ pub fn caterpillar(num_tones: usize) -> Graph {
 
     let mix = mix * 0.1f32;
 
-    let master = graph.add(PeakLimiter::default());
-    master.input(0).connect(mix.output(0));
+    let master = PeakLimiter::default().node(&graph, mix, (), (), ());
 
     graph.dac(&master);
     graph.dac(&master);

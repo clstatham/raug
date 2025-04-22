@@ -44,8 +44,6 @@ pub fn random_tones(
     decays: &[f32],
     amps: &[f32],
 ) -> Node {
-    // let mast = graph.add(Metro::default());
-    // mast.input(0).connect(rates[0]);
     let mast = Metro::default().node(graph, rates[0], ());
 
     let rate = pick_randomly(graph, &mast, rates).unwrap_or(0.0f32);

@@ -1,9 +1,6 @@
 //! Contains the [`ProcessorNode`] struct, which represents a node in the audio graph that processes signals.
 
-use std::{
-    fmt::Debug,
-    sync::{Arc, Weak},
-};
+use std::{fmt::Debug, sync::Arc};
 
 use thiserror::Error;
 
@@ -185,41 +182,41 @@ impl Debug for Node {
 
 impl Node {
     pub(crate) fn new(graph: Graph, node_id: NodeIndex) -> Self {
-        let inner = Arc::new_cyclic(|sref| {
-            let mut node = NodeInner {
-                graph: graph.clone(),
-                node_id,
-                inputs: Vec::new(),
-                outputs: Vec::new(),
-            };
-            let mut inputs = Vec::new();
-            let mut outputs = Vec::new();
-            graph.with_inner(|graph| {
-                let node = &graph.digraph[node_id];
-                for i in 0..node.num_inputs() {
-                    inputs.push(Input {
-                        node: sref.clone(),
-                        input_index: i as u32,
-                        signal_type: node.input_spec()[i].signal_type,
-                        name: node.input_spec()[i].name.clone(),
-                    });
-                }
-                for i in 0..node.num_outputs() {
-                    outputs.push(Output {
-                        node: sref.clone(),
-                        output_index: i as u32,
-                        signal_type: node.output_spec()[i].signal_type,
-                        name: node.output_spec()[i].name.clone(),
-                    });
-                }
-            });
-            node.inputs = inputs;
-            node.outputs = outputs;
-
-            node
+        let mut node = NodeInner {
+            graph: graph.clone(),
+            node_id,
+            inputs: Vec::new(),
+            outputs: Vec::new(),
+        };
+        let mut inputs = Vec::new();
+        let mut outputs = Vec::new();
+        graph.with_inner(|graph_inner| {
+            let node = &graph_inner.digraph[node_id];
+            for i in 0..node.num_inputs() {
+                inputs.push(Input {
+                    graph: graph.clone(),
+                    node_id,
+                    input_index: i as u32,
+                    signal_type: node.input_spec()[i].signal_type,
+                    name: node.input_spec()[i].name.clone(),
+                });
+            }
+            for i in 0..node.num_outputs() {
+                outputs.push(Output {
+                    graph: graph.clone(),
+                    node_id,
+                    output_index: i as u32,
+                    signal_type: node.output_spec()[i].signal_type,
+                    name: node.output_spec()[i].name.clone(),
+                });
+            }
         });
+        node.inputs = inputs;
+        node.outputs = outputs;
 
-        Node { inner }
+        Node {
+            inner: Arc::new(node),
+        }
     }
 
     #[inline]
@@ -541,7 +538,8 @@ impl Edge {
 /// Represents an input of a [`Node`].
 #[derive(Clone)]
 pub struct Input {
-    pub(crate) node: Weak<NodeInner>,
+    pub(crate) graph: Graph,
+    pub(crate) node_id: NodeIndex,
     pub(crate) input_index: u32,
     pub(crate) signal_type: SignalType,
     pub(crate) name: String,
@@ -554,12 +552,16 @@ impl Input {
         self.signal_type
     }
 
-    /// Returns the [`Node`] that this input is connected to.
+    /// Returns the [`NodeIndex`] of the node that this input belongs to.
     #[inline]
-    pub fn node(&self) -> Node {
-        Node {
-            inner: self.node.upgrade().unwrap(),
-        }
+    pub fn node_id(&self) -> NodeIndex {
+        self.node_id
+    }
+
+    /// Returns the [`Graph`] that this input's node is a part of.
+    #[inline]
+    pub fn graph(&self) -> &Graph {
+        &self.graph
     }
 
     /// Returns the index of the input.
@@ -581,12 +583,11 @@ impl Input {
     /// Panics if the output and input signals do not have the same type.
     #[inline]
     #[track_caller]
-    pub fn connect(&self, output: impl IntoOutput) -> Node {
-        let output = output.into_output(self.node().graph());
+    pub fn connect(&self, output: impl IntoOutput) {
+        let output = output.into_output(self.graph());
         assert_signals_compatible(&output.signal_type(), &self.signal_type(), "connect");
-        self.node()
-            .connect_input(output.node(), output.output_index, self.input_index);
-        self.node()
+        self.graph()
+            .connect_raw(output.node_id, output.index(), self.node_id(), self.index());
     }
 }
 
@@ -603,8 +604,7 @@ macro_rules! choose_node_generics {
 
 macro_rules! generic_binary_op_impl {
     ($self:ident, $b:ident, $op:ident => $($options:ty)*) => {{
-        let this_node = $self.node();
-        let graph = this_node.graph();
+        let graph = $self.graph();
         let b = $b.into_output(graph);
         assert_eq!(
             $self.signal_type(),
@@ -621,19 +621,24 @@ macro_rules! generic_binary_op_impl {
 /// Represents an output of a [`Node`].
 #[derive(Clone)]
 pub struct Output {
-    pub(crate) node: Weak<NodeInner>,
+    pub(crate) graph: Graph,
+    pub(crate) node_id: NodeIndex,
     pub(crate) output_index: u32,
     pub(crate) signal_type: SignalType,
     pub(crate) name: String,
 }
 
 impl Output {
-    /// Returns the [`Node`] that this output is connected to.
+    /// Returns the [`NodeIndex`] of the node that this output is connected to.
     #[inline]
-    pub fn node(&self) -> Node {
-        Node {
-            inner: self.node.upgrade().unwrap(),
-        }
+    pub fn node_id(&self) -> NodeIndex {
+        self.node_id
+    }
+
+    /// Returns the [`Graph`] that this output's node is a part of.
+    #[inline]
+    pub fn graph(&self) -> &Graph {
+        &self.graph
     }
 
     /// Returns the index of the output.
@@ -661,11 +666,14 @@ impl Output {
     /// Panics if the output and input signals do not have the same type.
     #[inline]
     #[track_caller]
-    pub fn connect(&self, input: &Input) -> Node {
+    pub fn connect(&self, input: &Input) {
         assert_signals_compatible(&self.signal_type(), &input.signal_type(), "connect");
-        self.node()
-            .connect_output(self.output_index, input.node(), input.input_index);
-        self.node()
+        self.graph().connect_raw(
+            self.node_id,
+            self.output_index,
+            input.node_id,
+            input.index(),
+        );
     }
 
     /// Attaches an addition processor to the nodes.
@@ -701,8 +709,7 @@ impl Output {
     /// Attaches a negation processor to the node.
     #[inline]
     pub fn neg(&self) -> Node {
-        let this_node = self.node();
-        let graph = this_node.graph();
+        let graph = self.graph();
         let node = choose_node_generics!(graph, self.signal_type() => Neg => f32 i64);
         node.input(0).connect(self);
         node
@@ -765,8 +772,7 @@ impl std::ops::Neg for Output {
     #[inline]
     #[track_caller]
     fn neg(self) -> Self::Output {
-        let this_node = self.node();
-        let graph = this_node.graph();
+        let graph = self.graph();
         let node = choose_node_generics!(graph, self.signal_type() => Neg => f32 i64);
         node.input(0).connect(self);
         node
@@ -779,8 +785,7 @@ impl<T: IntoOutput> std::ops::BitAnd<T> for Output {
     #[inline]
     #[track_caller]
     fn bitand(self, rhs: T) -> Self::Output {
-        let this_node = self.node();
-        let graph = this_node.graph();
+        let graph = self.graph();
         let rhs = rhs.into_output(graph);
         assert_eq!(
             self.signal_type(),
@@ -793,7 +798,7 @@ impl<T: IntoOutput> std::ops::BitAnd<T> for Output {
             "AND operation requires a boolean signal type"
         );
         let node = graph.add(And::default());
-        node.input(0).connect(this_node);
+        node.input(0).connect(self);
         node.input(1).connect(rhs);
         node
     }
@@ -805,8 +810,7 @@ impl<T: IntoOutput> std::ops::BitOr<T> for Output {
     #[inline]
     #[track_caller]
     fn bitor(self, rhs: T) -> Self::Output {
-        let this_node = self.node();
-        let graph = this_node.graph();
+        let graph = self.graph();
         let rhs = rhs.into_output(graph);
         assert_eq!(
             self.signal_type(),
@@ -819,7 +823,7 @@ impl<T: IntoOutput> std::ops::BitOr<T> for Output {
             "OR operation requires a boolean signal type"
         );
         let node = graph.add(Or::default());
-        node.input(0).connect(this_node);
+        node.input(0).connect(self);
         node.input(1).connect(rhs);
         node
     }
@@ -831,10 +835,9 @@ impl std::ops::Not for Output {
     #[inline]
     #[track_caller]
     fn not(self) -> Self::Output {
-        let this_node = self.node();
-        let graph = this_node.graph();
+        let graph = self.graph();
         let node = graph.add(Not::default());
-        node.input(0).connect(this_node);
+        node.input(0).connect(self);
         node
     }
 }
@@ -845,8 +848,7 @@ impl<T: IntoOutput> std::ops::BitXor<T> for Output {
     #[inline]
     #[track_caller]
     fn bitxor(self, rhs: T) -> Self::Output {
-        let this_node = self.node();
-        let graph = this_node.graph();
+        let graph = self.graph();
         let rhs = rhs.into_output(graph);
         assert_eq!(
             self.signal_type(),
@@ -859,7 +861,7 @@ impl<T: IntoOutput> std::ops::BitXor<T> for Output {
             "XOR operation requires a boolean signal type"
         );
         let node = graph.add(Xor::default());
-        node.input(0).connect(this_node);
+        node.input(0).connect(self);
         node.input(1).connect(rhs);
         node
     }

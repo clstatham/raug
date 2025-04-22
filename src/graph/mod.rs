@@ -510,19 +510,22 @@ impl Graph {
 
     /// Adds an audio input node to the graph.
     pub fn add_audio_input(&self) -> Node {
-        self.with_inner(|graph| Node::new(self.clone(), graph.add_audio_input()))
+        let id = self.with_inner(|graph| graph.add_audio_input());
+        Node::new(self.clone(), id)
     }
 
     /// Adds an audio output node to the graph.
     pub fn dac(&self, input: impl IntoOutput) -> Node {
-        let node = self.with_inner(|graph| Node::new(self.clone(), graph.add_audio_output()));
+        let id = self.with_inner(|graph| graph.add_audio_output());
+        let node = Node::new(self.clone(), id);
         node.input(0).connect(input);
         node
     }
 
     /// Adds a processor node to the graph.
     pub fn add(&self, processor: impl Processor) -> Node {
-        self.with_inner(|graph| Node::new(self.clone(), graph.add_processor(processor)))
+        let id = self.with_inner(|graph| graph.add_processor(processor));
+        Node::new(self.clone(), id)
     }
 
     /// Returns the number of nodes in the graph.
@@ -558,6 +561,19 @@ impl Graph {
         let from_output = from_output.into_output_idx(&from);
         let to_input = to_input.into_input_idx(&to);
         self.with_inner(|graph| graph.connect(from.id(), from_output, to.id(), to_input))
+            .unwrap();
+    }
+
+    #[inline]
+    #[track_caller]
+    pub(crate) fn connect_raw(
+        &self,
+        from_id: NodeIndex,
+        from_output: u32,
+        to_id: NodeIndex,
+        to_input: u32,
+    ) {
+        self.with_inner(|graph| graph.connect(from_id, from_output, to_id, to_input))
             .unwrap();
     }
 
