@@ -10,7 +10,7 @@ pub fn pick_randomly(graph: &Graph, trig: &Node, options: &[f32]) -> Node {
 pub fn fm_sine_osc(graph: &Graph, freq: &Node, mod_freq: &Node) -> Node {
     let sr = SampleRate::default().node(graph);
     let phase = PhaseAccumulator::default().node(graph, freq / sr, ());
-    (phase * 2.0f32 * PI + mod_freq * 2.0f32 * PI).sin()
+    (phase * 2.0f32 * PI + mod_freq * 2.0f32 * PI)[0].sin()
 }
 
 pub fn midi_to_freq(midi: f32) -> f32 {
@@ -46,17 +46,17 @@ pub fn random_tones(
 ) -> Node {
     let mast = Metro::default().node(graph, rates[0], ());
 
-    let rate = pick_randomly(graph, &mast, rates).unwrap_or(0.0f32);
+    let rate = pick_randomly(graph, &mast, rates)[0].unwrap_or(0.0f32);
 
     let trig = Metro::default().node(graph, rate, ());
 
-    let freq = pick_randomly(graph, &trig, freqs).unwrap_or(440.0f32);
+    let freq = pick_randomly(graph, &trig, freqs)[0].unwrap_or(440.0f32);
 
-    let amp_decay = pick_randomly(graph, &trig, decays).unwrap_or(0.0f32);
+    let amp_decay = pick_randomly(graph, &trig, decays)[0].unwrap_or(0.0f32);
 
-    let ratio = pick_randomly(graph, &trig, ratios).unwrap_or(0.0f32);
+    let ratio = pick_randomly(graph, &trig, ratios)[0].unwrap_or(0.0f32);
 
-    let amp = pick_randomly(graph, &trig, amps).unwrap_or(0.0f32);
+    let amp = pick_randomly(graph, &trig, amps)[0].unwrap_or(0.0f32);
 
     // create the amplitude envelope
     let amp_env = Decay::new(1.0f32).node(graph, &trig, amp_decay);

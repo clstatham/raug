@@ -732,6 +732,16 @@ impl<T: IntoOutput> std::ops::Add<T> for Output {
     }
 }
 
+impl<T: IntoOutput> std::ops::Add<T> for &Output {
+    type Output = Node;
+
+    #[inline]
+    #[track_caller]
+    fn add(self, rhs: T) -> Self::Output {
+        self.clone() + rhs
+    }
+}
+
 impl<T: IntoOutput> std::ops::Sub<T> for Output {
     type Output = Node;
 
@@ -739,6 +749,16 @@ impl<T: IntoOutput> std::ops::Sub<T> for Output {
     #[track_caller]
     fn sub(self, rhs: T) -> Self::Output {
         generic_binary_op_impl!(self, rhs, Sub => f32 i64)
+    }
+}
+
+impl<T: IntoOutput> std::ops::Sub<T> for &Output {
+    type Output = Node;
+
+    #[inline]
+    #[track_caller]
+    fn sub(self, rhs: T) -> Self::Output {
+        self.clone() - rhs
     }
 }
 
@@ -752,6 +772,16 @@ impl<T: IntoOutput> std::ops::Mul<T> for Output {
     }
 }
 
+impl<T: IntoOutput> std::ops::Mul<T> for &Output {
+    type Output = Node;
+
+    #[inline]
+    #[track_caller]
+    fn mul(self, rhs: T) -> Self::Output {
+        self.clone() * rhs
+    }
+}
+
 impl<T: IntoOutput> std::ops::Div<T> for Output {
     type Output = Node;
 
@@ -759,6 +789,16 @@ impl<T: IntoOutput> std::ops::Div<T> for Output {
     #[track_caller]
     fn div(self, rhs: T) -> Self::Output {
         generic_binary_op_impl!(self, rhs, Div => f32 i64)
+    }
+}
+
+impl<T: IntoOutput> std::ops::Div<T> for &Output {
+    type Output = Node;
+
+    #[inline]
+    #[track_caller]
+    fn div(self, rhs: T) -> Self::Output {
+        self.clone() / rhs
     }
 }
 
@@ -772,6 +812,16 @@ impl<T: IntoOutput> std::ops::Rem<T> for Output {
     }
 }
 
+impl<T: IntoOutput> std::ops::Rem<T> for &Output {
+    type Output = Node;
+
+    #[inline]
+    #[track_caller]
+    fn rem(self, rhs: T) -> Self::Output {
+        self.clone() % rhs
+    }
+}
+
 impl std::ops::Neg for Output {
     type Output = Node;
 
@@ -782,6 +832,16 @@ impl std::ops::Neg for Output {
         let node = choose_node_generics!(graph, self.signal_type() => Neg => f32 i64);
         node.input(0).connect(self);
         node
+    }
+}
+
+impl std::ops::Neg for &Output {
+    type Output = Node;
+
+    #[inline]
+    #[track_caller]
+    fn neg(self) -> Self::Output {
+        -self.clone()
     }
 }
 
