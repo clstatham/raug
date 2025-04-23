@@ -16,7 +16,7 @@ pub mod prelude {
         builtins::*,
         graph::{
             Graph,
-            node::{Input, IntoNode, IntoOutput, Node, Output},
+            node::{Input, IntoNode, IntoOutput, IntoOutputOpt, Node, Output},
             runtime::{AudioBackend, AudioDevice, AudioStream, CpalStream, WavFileOutStream},
             sub_graph::SubGraph,
         },

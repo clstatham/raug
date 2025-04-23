@@ -1221,6 +1221,18 @@ pub trait IntoOutputOpt {
     fn into_output_opt(self, graph: &Graph) -> Option<Output>;
 }
 
+impl IntoOutputOpt for Option<Output> {
+    fn into_output_opt(self, graph: &Graph) -> Option<Output> {
+        if let Some(this) = self.as_ref() {
+            assert!(
+                this.graph().is_same_graph(graph),
+                "Output is from a different graph"
+            );
+        }
+        self
+    }
+}
+
 impl<T: IntoOutput> IntoOutputOpt for T {
     fn into_output_opt(self, graph: &Graph) -> Option<Output> {
         Some(self.into_output(graph))
