@@ -15,9 +15,9 @@ pub mod prelude {
     pub use crate::{
         builtins::*,
         graph::{
-            Graph,
+            Graph, RunningGraph,
             node::{Input, IntoNode, IntoOutput, IntoOutputOpt, Node, Output},
-            runtime::{AudioBackend, AudioDevice, AudioStream, CpalStream, WavFileOutStream},
+            runtime::{AudioBackend, AudioDevice, AudioOut, CpalOut, WavFileOut},
             sub_graph::SubGraph,
         },
         processor::{

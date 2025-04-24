@@ -41,10 +41,9 @@ fn main() {
     graph.dac(&sine);
 
     // open the audio stream
-    let mut stream = CpalStream::default();
-    // run the graph
-    stream.spawn(&graph).unwrap();
-    stream.play().unwrap();
-    std::thread::sleep(std::time::Duration::from_secs(60));
-    stream.stop().unwrap();
+    graph
+        .play(CpalOut::default())
+        .unwrap()
+        .run_for(Duration::from_secs(10))
+        .unwrap();
 }

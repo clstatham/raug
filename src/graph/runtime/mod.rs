@@ -3,6 +3,7 @@
 use std::{
     fs::File,
     io::BufWriter,
+    path::Path,
     sync::{
         Arc,
         atomic::{AtomicUsize, Ordering},
@@ -11,13 +12,10 @@ use std::{
     time::Duration,
 };
 
-use cpal::{
-    Sample,
-    traits::{DeviceTrait, HostTrait, StreamTrait},
-};
+use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use crossbeam_channel::{Receiver, RecvError, SendError, Sender, TryRecvError, TrySendError};
 
-use super::{Graph, GraphRunError, GraphRunResult};
+use super::GraphRunResult;
 
 /// The audio backend to use for audio I/O.
 #[derive(Default, Debug, Clone)]
@@ -147,48 +145,95 @@ impl<T> Channels<T> {
     }
 }
 
-/// An audio stream interface for processing audio data.
-pub trait AudioStream: Send + 'static {
+/// An audio stream interface for outputting audio data.
+pub trait AudioOut: Send + 'static {
     /// Returns the sample rate of the audio stream.
     fn sample_rate(&self) -> f32;
     /// Returns the block size of the audio stream.
     fn block_size(&self) -> usize;
-    /// Returns the number of input channels of the audio stream.
-    fn input_channels(&self) -> usize;
     /// Returns the number of output channels of the audio stream.
     fn output_channels(&self) -> usize;
 
-    /// Spawns the audio stream, allocating buffers and preparing for processing.
-    fn spawn(&mut self, graph: &Graph) -> GraphRunResult<()>;
-    /// Joins the audio stream, blocking until processing is complete.
-    fn join(self) -> GraphRunResult<()>
+    fn output_samples_needed(&self) -> isize;
+    fn output(&mut self, samps: impl Iterator<Item = f32>) -> GraphRunResult<usize>;
+
+    #[track_caller]
+    fn chain<B: AudioOut>(self, other: B) -> Chain<Self, B>
     where
         Self: Sized,
     {
-        Ok(())
+        assert_eq!(
+            self.sample_rate(),
+            other.sample_rate(),
+            "Sample rates must be equal to chain outputs"
+        );
+        // assert_eq!(
+        //     self.block_size(),
+        //     other.block_size(),
+        //     "Block sizes must be equal to chain outputs"
+        // );
+        assert_eq!(
+            self.output_channels(),
+            other.output_channels(),
+            "Number of output channels must be equal to chain outputs"
+        );
+
+        Chain {
+            a: Box::new(self),
+            b: Box::new(other),
+        }
     }
-    /// Plays the audio stream.
-    fn play(&mut self) -> GraphRunResult<()>;
-    /// Pauses the audio stream.
-    fn pause(&mut self) -> GraphRunResult<()>;
-    /// Stops the audio stream.
-    fn stop(&mut self) -> GraphRunResult<()>;
 }
 
-/// An [`AudioStream`] implementation that writes audio data to a WAV file.
-pub struct WavFileOutStream {
-    file: Option<hound::WavWriter<BufWriter<File>>>,
-    handle: Option<JoinHandle<()>>,
+pub struct Chain<A: AudioOut + ?Sized, B: AudioOut + ?Sized> {
+    a: Box<A>,
+    b: Box<B>,
+}
+
+impl<A: AudioOut + ?Sized, B: AudioOut + ?Sized> AudioOut for Chain<A, B> {
+    fn sample_rate(&self) -> f32 {
+        self.a.sample_rate()
+    }
+
+    fn block_size(&self) -> usize {
+        self.a.block_size()
+    }
+
+    fn output_channels(&self) -> usize {
+        self.a.output_channels()
+    }
+
+    fn output_samples_needed(&self) -> isize {
+        self.a
+            .output_samples_needed()
+            .min(self.b.output_samples_needed())
+    }
+
+    fn output(&mut self, samps: impl Iterator<Item = f32>) -> GraphRunResult<usize> {
+        let mut written = 0;
+        for samp in samps {
+            self.a.output(std::iter::once(samp))?;
+            self.b.output(std::iter::once(samp))?;
+            written += 1;
+        }
+        Ok(written)
+    }
+}
+
+/// An [`AudioOut`] implementation that writes audio data to a WAV file.
+pub struct WavFileOut {
+    file: hound::WavWriter<BufWriter<File>>,
     sample_rate: f32,
     block_size: usize,
     output_channels: usize,
+    samples_written: usize,
     max_samples: Option<usize>,
 }
 
-impl WavFileOutStream {
+impl WavFileOut {
     /// Creates a new `WavFileOutStream` with the given parameters.
     pub fn new(
-        file_path: &str,
+        filename: impl AsRef<Path>,
         sample_rate: f32,
         block_size: usize,
         output_channels: usize,
@@ -200,10 +245,10 @@ impl WavFileOutStream {
             bits_per_sample: 32,
             sample_format: hound::SampleFormat::Float,
         };
-        let file = hound::WavWriter::create(file_path, spec).unwrap();
+        let file = hound::WavWriter::create(filename, spec).unwrap();
 
         let max_samples = if let Some(max_duration) = max_duration {
-            let mut samples = (max_duration.as_secs_f64() as f32 * sample_rate) as usize;
+            let mut samples = (max_duration.as_secs_f32() * sample_rate) as usize;
             if samples % block_size != 0 {
                 samples += block_size - (samples % block_size);
             }
@@ -213,26 +258,24 @@ impl WavFileOutStream {
         };
 
         Self {
-            file: Some(file),
-            handle: None,
+            file,
             sample_rate,
             block_size,
             output_channels,
+            samples_written: 0,
             max_samples,
         }
     }
 
     /// Finalizes the WAV file, writing any remaining data and closing the file.
-    pub fn finalize(mut self) -> hound::Result<()> {
-        if let Some(file) = self.file.take() {
-            file.finalize()?;
-        }
+    pub fn finalize(self) -> hound::Result<()> {
+        self.file.finalize()?;
 
         Ok(())
     }
 }
 
-impl AudioStream for WavFileOutStream {
+impl AudioOut for WavFileOut {
     fn sample_rate(&self) -> f32 {
         self.sample_rate
     }
@@ -241,164 +284,43 @@ impl AudioStream for WavFileOutStream {
         self.block_size
     }
 
-    fn input_channels(&self) -> usize {
-        0
-    }
-
     fn output_channels(&self) -> usize {
         self.output_channels
     }
 
-    fn spawn(&mut self, graph: &Graph) -> GraphRunResult<()> {
-        graph.allocate(self.sample_rate, self.block_size);
-        graph.resize_buffers(self.sample_rate, self.block_size);
-
-        let graph = graph.clone();
-        let max_samples = self.max_samples;
-        let output_channels = self.output_channels;
-        let block_size = self.block_size;
-        let mut file = self.file.take().unwrap();
-
-        let handle = std::thread::spawn(move || {
-            let mut written_samples = 0;
-
-            let mut samples = vec![0.0; block_size * output_channels];
-            loop {
-                graph.with_inner(|graph| {
-                    graph.process().unwrap();
-                    for i in 0..output_channels {
-                        let Some(buffer) = graph.get_output(i) else {
-                            continue;
-                        };
-                        for (j, &sample) in buffer[..block_size].iter().enumerate() {
-                            samples[j * output_channels + i] = sample;
-                        }
-                    }
-                });
-
-                if let Some(max_samples) = max_samples {
-                    if written_samples >= max_samples {
-                        break;
-                    }
-                }
-
-                for sample in &samples {
-                    file.write_sample(*sample).unwrap();
-                }
-                written_samples += block_size * output_channels;
-            }
-        });
-
-        self.handle = Some(handle);
-
-        Ok(())
-    }
-
-    fn play(&mut self) -> GraphRunResult<()> {
-        Ok(())
-    }
-
-    fn pause(&mut self) -> GraphRunResult<()> {
-        Ok(())
-    }
-
-    fn stop(&mut self) -> GraphRunResult<()> {
-        Ok(())
-    }
-
-    fn join(mut self) -> GraphRunResult<()>
-    where
-        Self: Sized,
-    {
-        if let Some(handle) = self.handle.take() {
-            handle.join().unwrap();
+    fn output_samples_needed(&self) -> isize {
+        if let Some(max_samples) = self.max_samples {
+            max_samples as isize - self.samples_written as isize
+        } else {
+            self.block_size as isize * self.output_channels as isize
         }
+    }
 
-        self.finalize()?;
-
-        Ok(())
+    fn output(&mut self, samps: impl Iterator<Item = f32>) -> GraphRunResult<usize> {
+        let mut written = 0;
+        for samp in samps {
+            self.file.write_sample(samp)?;
+            written += 1;
+        }
+        Ok(written)
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-enum StreamOps {
-    Play,
-    Pause,
-    Stop,
-}
-
-struct StreamThread {
-    ops: Channels<StreamOps>,
-    handle: JoinHandle<()>,
-}
-
-impl StreamThread {
-    fn spawn(build_stream: impl FnOnce() -> cpal::Stream + Send + 'static) -> Self {
-        let ops = Channels::unbounded();
-        let ops_clone = ops.clone();
-        let handle = std::thread::spawn(move || {
-            let stream = build_stream();
-            while let Ok(op) = ops_clone.recv_blocking() {
-                match op {
-                    StreamOps::Play => {
-                        stream.play().unwrap();
-                    }
-                    StreamOps::Pause => {
-                        stream.pause().unwrap();
-                    }
-                    StreamOps::Stop => {
-                        stream.pause().unwrap();
-                        break;
-                    }
-                }
-            }
-        });
-        Self { ops, handle }
-    }
-
-    fn play(&self) -> GraphRunResult<()> {
-        self.ops
-            .try_send(StreamOps::Play)
-            .map_err(|_| GraphRunError::StreamSendError)?;
-        Ok(())
-    }
-
-    fn pause(&self) -> GraphRunResult<()> {
-        self.ops
-            .try_send(StreamOps::Pause)
-            .map_err(|_| GraphRunError::StreamSendError)?;
-        Ok(())
-    }
-
-    fn stop(&self) -> GraphRunResult<()> {
-        self.ops
-            .try_send(StreamOps::Stop)
-            .map_err(|_| GraphRunError::StreamSendError)?;
-        Ok(())
-    }
-
-    fn join(self) -> GraphRunResult<()> {
-        self.handle.join().unwrap();
-        Ok(())
-    }
-}
-
-/// An [`AudioStream`] implementation using the `cpal` crate for audio I/O with the system's sound card.
-pub struct CpalStream {
-    output_device: Arc<cpal::Device>,
-    output_stream: Option<StreamThread>,
-    output_config: cpal::SupportedStreamConfig,
+/// An [`AudioOut`] implementation using the `cpal` crate for audio I/O with the system's sound card.
+pub struct CpalOut {
+    config: cpal::SupportedStreamConfig,
+    samples: Channels<f32>,
+    kill_tx: Sender<()>,
     block_size: Arc<AtomicUsize>,
-    playing: bool,
 }
 
-impl Default for CpalStream {
+impl Default for CpalOut {
     fn default() -> Self {
         Self::new(AudioBackend::Default, AudioDevice::Default)
     }
 }
 
-impl CpalStream {
+impl CpalOut {
     /// Creates a new `CpalStream` with the given audio backend and output device.
     pub fn new(backend: AudioBackend, output_device: AudioDevice) -> Self {
         let host = match backend {
@@ -420,176 +342,182 @@ impl CpalStream {
                 .find(|d| d.name().unwrap().contains(&name))
                 .unwrap(),
         };
+        let output_device = Arc::new(output_device);
 
         let output_config = output_device.default_output_config().unwrap();
 
         let block_size = Arc::new(AtomicUsize::new(512)); // initialize with a default block size
+        let block_size_clone = block_size.clone();
+
+        let samples = Channels::unbounded();
+        let samples_clone = samples.clone();
+
+        let (kill_tx, kill_rx) = crossbeam_channel::bounded(1);
+
+        match output_config.sample_format() {
+            cpal::SampleFormat::F32 => build_output_stream::<f32>(
+                samples_clone,
+                output_device.clone(),
+                output_config.config(),
+                block_size,
+                kill_rx,
+            ),
+            cpal::SampleFormat::F64 => build_output_stream::<f64>(
+                samples_clone,
+                output_device.clone(),
+                output_config.config(),
+                block_size,
+                kill_rx,
+            ),
+            cpal::SampleFormat::I8 => build_output_stream::<i8>(
+                samples_clone,
+                output_device.clone(),
+                output_config.config(),
+                block_size,
+                kill_rx,
+            ),
+            cpal::SampleFormat::I16 => build_output_stream::<i16>(
+                samples_clone,
+                output_device.clone(),
+                output_config.config(),
+                block_size,
+                kill_rx,
+            ),
+            cpal::SampleFormat::I32 => build_output_stream::<i32>(
+                samples_clone,
+                output_device.clone(),
+                output_config.config(),
+                block_size,
+                kill_rx,
+            ),
+            cpal::SampleFormat::I64 => build_output_stream::<i64>(
+                samples_clone,
+                output_device.clone(),
+                output_config.config(),
+                block_size,
+                kill_rx,
+            ),
+            cpal::SampleFormat::U8 => build_output_stream::<u8>(
+                samples_clone,
+                output_device.clone(),
+                output_config.config(),
+                block_size,
+                kill_rx,
+            ),
+            cpal::SampleFormat::U16 => build_output_stream::<u16>(
+                samples_clone,
+                output_device.clone(),
+                output_config.config(),
+                block_size,
+                kill_rx,
+            ),
+            cpal::SampleFormat::U32 => build_output_stream::<u32>(
+                samples_clone,
+                output_device.clone(),
+                output_config.config(),
+                block_size,
+                kill_rx,
+            ),
+            cpal::SampleFormat::U64 => build_output_stream::<u64>(
+                samples_clone,
+                output_device.clone(),
+                output_config.config(),
+                block_size,
+                kill_rx,
+            ),
+
+            _ => panic!("Unsupported sample format for output stream"),
+        };
 
         Self {
-            output_device: Arc::new(output_device),
-            output_stream: None,
-            output_config,
-            block_size: block_size.clone(),
-            playing: false,
+            config: output_config,
+            samples,
+            block_size: block_size_clone,
+            kill_tx,
         }
+    }
+
+    pub fn record_to_wav(self, filename: impl AsRef<Path>) -> Chain<Self, WavFileOut> {
+        let wav = WavFileOut::new(
+            filename,
+            self.sample_rate(),
+            self.block_size(),
+            self.output_channels(),
+            None,
+        );
+        self.chain(wav)
+    }
+}
+
+impl Drop for CpalOut {
+    fn drop(&mut self) {
+        let _ = self.kill_tx.send(());
     }
 }
 
 fn build_output_stream<T: cpal::SizedSample + cpal::FromSample<f32> + Send + 'static>(
-    graph: Graph,
-    output_device: &cpal::Device,
-    config: &cpal::StreamConfig,
+    samples: Channels<f32>,
+    output_device: Arc<cpal::Device>,
+    config: cpal::StreamConfig,
     block_size: Arc<AtomicUsize>,
-) -> cpal::Stream {
+    kill_rx: Receiver<()>,
+) -> JoinHandle<()> {
     let channels = config.channels as usize;
-    let (graph_tx, graph_rx) = crossbeam_channel::bounded(1);
-    graph_tx.send(graph).unwrap();
-    output_device
-        .build_output_stream(
-            config,
-            move |data: &mut [T], _| {
-                let graph = graph_rx.recv().unwrap();
-                let new_block_size = data.len() / channels;
-                let old_block_size = block_size.load(Ordering::Relaxed);
-                if new_block_size != old_block_size {
-                    if new_block_size > old_block_size {
-                        graph.allocate(graph.sample_rate(), new_block_size);
-                    } else {
-                        graph.resize_buffers(graph.sample_rate(), new_block_size);
+    std::thread::spawn(move || {
+        let stream = output_device
+            .build_output_stream(
+                &config,
+                move |data: &mut [T], _| {
+                    let new_block_size = data.len() / channels;
+                    let old_block_size = block_size.load(Ordering::Relaxed);
+                    if new_block_size != old_block_size {
+                        block_size.store(new_block_size, Ordering::Relaxed);
                     }
-                    block_size.store(new_block_size, Ordering::Relaxed);
-                }
 
-                graph.with_inner(|graph| {
-                    graph.process().unwrap();
-                    for output_channel in 0..channels {
-                        let buffer = graph.get_output(output_channel);
-                        let Some(buffer) = buffer else {
-                            continue;
-                        };
-                        for (j, &sample) in buffer[..new_block_size].iter().enumerate() {
-                            data[j * channels + output_channel] = sample.to_sample();
+                    for out_samp in data.iter_mut() {
+                        if let Ok(Some(in_samp)) = samples.try_recv() {
+                            *out_samp = T::from_sample(in_samp);
+                        } else {
+                            *out_samp = T::from_sample(0.0f32);
                         }
                     }
-                });
-                graph_tx.send(graph).unwrap();
-            },
-            |err| {
-                eprintln!("Output stream error: {}", err);
-            },
-            None,
-        )
-        .expect("Failed to build output stream")
+                },
+                |err| {
+                    eprintln!("Output stream error: {}", err);
+                },
+                None,
+            )
+            .expect("Failed to build output stream");
+
+        stream.play().unwrap();
+        kill_rx.recv().unwrap();
+    })
 }
 
-impl AudioStream for CpalStream {
+impl AudioOut for CpalOut {
     fn sample_rate(&self) -> f32 {
-        self.output_config.sample_rate().0 as f32
+        self.config.sample_rate().0 as f32
     }
 
     fn block_size(&self) -> usize {
         self.block_size.load(Ordering::Relaxed)
     }
 
-    fn input_channels(&self) -> usize {
-        0
-    }
-
     fn output_channels(&self) -> usize {
-        self.output_config.channels() as usize
+        self.config.channels() as usize
     }
 
-    fn spawn(&mut self, graph: &Graph) -> GraphRunResult<()> {
-        let sample_format = self.output_config.sample_format();
-        let output_config = self.output_config.config();
-        let output_device = self.output_device.clone();
-        let block_size = self.block_size.clone();
-        graph.allocate(self.sample_rate(), self.block_size());
-        let graph = graph.clone();
-        let build_stream = move || match sample_format {
-            cpal::SampleFormat::F32 => {
-                build_output_stream::<f32>(graph, &output_device, &output_config, block_size)
-            }
-            cpal::SampleFormat::F64 => {
-                build_output_stream::<f64>(graph, &output_device, &output_config, block_size)
-            }
-            cpal::SampleFormat::I8 => {
-                build_output_stream::<i8>(graph, &output_device, &output_config, block_size)
-            }
-            cpal::SampleFormat::I16 => {
-                build_output_stream::<i16>(graph, &output_device, &output_config, block_size)
-            }
-            cpal::SampleFormat::I32 => {
-                build_output_stream::<i32>(graph, &output_device, &output_config, block_size)
-            }
-            cpal::SampleFormat::I64 => {
-                build_output_stream::<i64>(graph, &output_device, &output_config, block_size)
-            }
-            cpal::SampleFormat::U8 => {
-                build_output_stream::<u8>(graph, &output_device, &output_config, block_size)
-            }
-            cpal::SampleFormat::U16 => {
-                build_output_stream::<u16>(graph, &output_device, &output_config, block_size)
-            }
-            cpal::SampleFormat::U32 => {
-                build_output_stream::<u32>(graph, &output_device, &output_config, block_size)
-            }
-            cpal::SampleFormat::U64 => {
-                build_output_stream::<u64>(graph, &output_device, &output_config, block_size)
-            }
-
-            _ => panic!("Unsupported sample format for output stream"),
-        };
-
-        self.output_stream = Some(StreamThread::spawn(build_stream));
-
-        Ok(())
+    fn output_samples_needed(&self) -> isize {
+        let in_channel = self.samples.rx.len();
+        self.block_size() as isize - in_channel as isize
     }
 
-    fn join(mut self) -> GraphRunResult<()> {
-        if let Some(stream) = self.output_stream.take() {
-            stream.stop()?;
-            stream.join()?;
-            self.playing = false;
-        } else {
-            return Err(GraphRunError::StreamNotSpawned);
+    fn output(&mut self, samps: impl Iterator<Item = f32>) -> GraphRunResult<usize> {
+        let mut written = 0;
+        for samp in samps {
+            self.samples.send_blocking(samp).unwrap();
+            written += 1;
         }
-        Ok(())
-    }
-
-    fn play(&mut self) -> GraphRunResult<()> {
-        if !self.playing {
-            if let Some(ref stream) = self.output_stream {
-                stream.play()?;
-            } else {
-                return Err(GraphRunError::StreamNotSpawned);
-            }
-            self.playing = true;
-        }
-        Ok(())
-    }
-
-    fn pause(&mut self) -> GraphRunResult<()> {
-        if self.playing {
-            if let Some(ref stream) = self.output_stream {
-                stream.pause()?;
-            } else {
-                return Err(GraphRunError::StreamNotSpawned);
-            }
-            self.playing = false;
-        }
-        Ok(())
-    }
-
-    fn stop(&mut self) -> GraphRunResult<()> {
-        if self.playing {
-            if let Some(ref stream) = self.output_stream {
-                stream.stop()?;
-            } else {
-                return Err(GraphRunError::StreamNotSpawned);
-            }
-            self.playing = false;
-        }
-        Ok(())
+        Ok(written)
     }
 }

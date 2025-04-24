@@ -104,10 +104,9 @@ pub fn caterpillar(num_tones: usize) -> Graph {
 fn main() {
     let graph = caterpillar(8);
 
-    let mut stream = CpalStream::default();
-    stream.spawn(&graph).unwrap();
-    stream.play().unwrap();
-    std::thread::sleep(std::time::Duration::from_secs(10));
-    stream.stop().unwrap();
-    stream.join().unwrap();
+    graph
+        .play(CpalOut::default())
+        .unwrap()
+        .run_for(Duration::from_secs(10))
+        .unwrap();
 }

@@ -31,6 +31,7 @@ raug-macros = { path = "../raug-macros" }
 allocation-counter = { version = "0.8", optional = true }
 any_vec = "0.14.0"
 smallstr = "0.3.0"
+atomic-time = "0.1.5"
 
 
 [dev-dependencies]

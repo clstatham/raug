@@ -1,10 +1,16 @@
 //! A directed graph of [`Processor`]s connected by [`Edge`]s.
 
 use std::{
-    sync::{Arc, Mutex},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicUsize, Ordering},
+    },
+    thread::JoinHandle,
     time::Duration,
 };
 
+use atomic_time::AtomicDuration;
+use crossbeam_channel::Sender;
 use edge::Edge;
 use node::{
     IntoInputIdx, IntoNode, IntoOutput, IntoOutputIdx, Node, ProcessNodeError, ProcessorNode,
@@ -13,7 +19,7 @@ use petgraph::{
     prelude::{Direction, EdgeRef, StableDiGraph},
     visit::DfsPostOrder,
 };
-use runtime::{AudioDevice, AudioStream};
+use runtime::{AudioDevice, AudioOut};
 use rustc_hash::FxHashSet;
 
 use crate::{
@@ -676,28 +682,101 @@ impl Graph {
         self.node(Constant::new(value))
     }
 
-    /// Runs the graph on the given stream for the specified duration.
-    pub fn play_for<T: AudioStream>(&self, mut stream: T, duration: Duration) -> GraphRunResult<T> {
-        stream.spawn(self)?;
-        stream.play()?;
-        std::thread::sleep(duration);
-        stream.stop()?;
-        Ok(stream)
+    pub fn play(&self, mut output_stream: impl AudioOut) -> GraphRunResult<RunningGraph> {
+        let graph = self.clone();
+        let mut output_interleaved = vec![];
+        let samples_written = Arc::new(AtomicUsize::new(0));
+        let samples_written_clone = samples_written.clone();
+        let duration_written = Arc::new(AtomicDuration::new(Duration::ZERO));
+        let duration_written_clone = duration_written.clone();
+
+        let (kill_tx, kill_rx) = crossbeam_channel::bounded(1);
+        let handle = std::thread::spawn(move || -> GraphRunResult<()> {
+            loop {
+                if kill_rx.try_recv().is_ok() {
+                    return Ok(());
+                }
+
+                while output_stream.output_samples_needed() > 0 {
+                    if kill_rx.try_recv().is_ok() {
+                        return Ok(());
+                    }
+
+                    graph.with_inner(|graph| -> GraphRunResult<()> {
+                        let block_size = output_stream.block_size();
+                        if block_size != graph.block_size {
+                            if block_size > graph.block_size {
+                                graph.allocate(output_stream.sample_rate(), block_size);
+                            } else {
+                                graph.resize_buffers(output_stream.sample_rate(), block_size);
+                            }
+                        }
+
+                        graph.process()?;
+
+                        output_interleaved.clear();
+                        for sample_idx in 0..graph.block_size {
+                            for channel_idx in 0..output_stream.output_channels() {
+                                let Some(buffer) = graph.get_output(channel_idx) else {
+                                    continue;
+                                };
+
+                                output_interleaved.push(buffer[sample_idx]);
+                            }
+                        }
+
+                        let delta = output_stream.output(output_interleaved.drain(..))?;
+                        samples_written_clone.fetch_add(delta, Ordering::Relaxed);
+
+                        let duration_secs = delta as f32
+                            / graph.num_audio_outputs() as f32
+                            / output_stream.sample_rate();
+                        duration_written_clone
+                            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |dur| {
+                                Some(dur + Duration::from_secs_f32(duration_secs))
+                            })
+                            .unwrap();
+
+                        Ok(())
+                    })?;
+                }
+            }
+        });
+
+        Ok(RunningGraph {
+            handle,
+            kill_tx,
+            samples_written,
+            duration_written,
+        })
+    }
+}
+
+pub struct RunningGraph {
+    handle: JoinHandle<GraphRunResult<()>>,
+    kill_tx: Sender<()>,
+    samples_written: Arc<AtomicUsize>,
+    duration_written: Arc<AtomicDuration>,
+}
+
+impl RunningGraph {
+    pub fn stop(self) -> GraphRunResult<()> {
+        self.kill_tx.send(()).unwrap();
+        self.handle.join().unwrap()
     }
 
-    /// Runs the graph on the given stream until the closure returns `true`.
-    pub fn play_until<T: AudioStream>(
-        &self,
-        mut stream: T,
-        cond: impl Fn() -> bool,
-    ) -> GraphRunResult<T> {
-        stream.spawn(self)?;
-        stream.play()?;
-        while !cond() {
-            std::hint::spin_loop();
-        }
-        stream.stop()?;
+    pub fn samples_written(&self) -> usize {
+        self.samples_written.load(Ordering::Relaxed)
+    }
 
-        Ok(stream)
+    pub fn duration_written(&self) -> Duration {
+        self.duration_written.load(Ordering::SeqCst)
+    }
+
+    pub fn run_for(self, duration: Duration) -> GraphRunResult<()> {
+        while self.duration_written() < duration {
+            std::thread::yield_now();
+        }
+        self.stop()
     }
 }
