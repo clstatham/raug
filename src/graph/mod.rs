@@ -315,19 +315,34 @@ impl GraphInner {
         self.output_nodes.len()
     }
 
+    /// Returns the indices of the audio inputs in the graph.
+    #[inline]
+    pub fn input_indices(&self) -> &[NodeIndex] {
+        &self.input_nodes
+    }
+
     /// Returns the indices of the audio outputs in the graph.
     #[inline]
     pub fn output_indices(&self) -> &[NodeIndex] {
         &self.output_nodes
     }
 
-    /// Returns a reference to the runtime's output buffer for the given output index.
+    /// Returns a mutable reference to the graph's input buffer for the given input index.
     #[inline]
-    pub fn get_output(&self, output_index: usize) -> Option<&AnyBuffer> {
+    pub fn get_input_mut(&mut self, input_index: usize) -> Option<&mut [f32]> {
+        let input_index = *self.input_indices().get(input_index)?;
+        self.digraph
+            .node_weight_mut(input_index)
+            .map(|node| node.outputs[0].as_mut_slice::<f32>().unwrap())
+    }
+
+    /// Returns a reference to the graph's output buffer for the given output index.
+    #[inline]
+    pub fn get_output(&self, output_index: usize) -> Option<&[f32]> {
         let output_index = *self.output_indices().get(output_index)?;
         self.digraph
             .node_weight(output_index)
-            .map(|buffers| &buffers.outputs[0])
+            .map(|buffers| buffers.outputs[0].as_slice::<f32>().unwrap())
     }
 
     #[inline]
@@ -517,8 +532,32 @@ impl Graph {
         self.with_inner(|graph| graph.num_audio_outputs())
     }
 
+    /// Runs the specified closure on the input buffer at the given index. This can be used to fill the buffer manually, for instance.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the index is out of range for the number of inputs in the graph.
+    pub fn map_input<F, R>(&mut self, input_index: usize, f: F) -> R
+    where
+        F: FnOnce(&mut [f32]) -> R,
+    {
+        self.with_inner(|graph| f(graph.get_input_mut(input_index).unwrap()))
+    }
+
+    /// Runs the specified closure on the output buffer at the given index. This can be used to copy the buffer to something else, for instance.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the index is out of range for the number of outputs in the graph.
+    pub fn map_output<F, R>(&mut self, output_index: usize, f: F) -> R
+    where
+        F: FnOnce(&[f32]) -> R,
+    {
+        self.with_inner(|graph| f(graph.get_output(output_index).unwrap()))
+    }
+
     /// Adds an audio input node to the graph.
-    pub fn add_audio_input(&self) -> Node {
+    pub fn adc(&self) -> Node {
         let id = self.with_inner(|graph| graph.add_audio_input());
         Node::new(self.clone(), id)
     }

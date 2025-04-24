@@ -177,12 +177,11 @@ pub trait AudioStream: Send + 'static {
 
 /// An [`AudioStream`] implementation that writes audio data to a WAV file.
 pub struct WavFileOutStream {
-    file: hound::WavWriter<BufWriter<File>>,
+    file: Option<hound::WavWriter<BufWriter<File>>>,
+    handle: Option<JoinHandle<()>>,
     sample_rate: f32,
     block_size: usize,
-    input_channels: usize,
     output_channels: usize,
-    written_samples: usize,
     max_samples: Option<usize>,
 }
 
@@ -192,7 +191,6 @@ impl WavFileOutStream {
         file_path: &str,
         sample_rate: f32,
         block_size: usize,
-        input_channels: usize,
         output_channels: usize,
         max_duration: Option<Duration>,
     ) -> Self {
@@ -215,19 +213,22 @@ impl WavFileOutStream {
         };
 
         Self {
-            file,
+            file: Some(file),
+            handle: None,
             sample_rate,
             block_size,
-            input_channels,
             output_channels,
-            written_samples: 0,
             max_samples,
         }
     }
 
     /// Finalizes the WAV file, writing any remaining data and closing the file.
-    pub fn finalize(self) -> hound::Result<()> {
-        self.file.finalize()
+    pub fn finalize(mut self) -> hound::Result<()> {
+        if let Some(file) = self.file.take() {
+            file.finalize()?;
+        }
+
+        Ok(())
     }
 }
 
@@ -241,7 +242,7 @@ impl AudioStream for WavFileOutStream {
     }
 
     fn input_channels(&self) -> usize {
-        self.input_channels
+        0
     }
 
     fn output_channels(&self) -> usize {
@@ -252,33 +253,43 @@ impl AudioStream for WavFileOutStream {
         graph.allocate(self.sample_rate, self.block_size);
         graph.resize_buffers(self.sample_rate, self.block_size);
 
-        let mut samples = vec![0.0; self.block_size * self.output_channels];
-        loop {
-            graph.with_inner(|graph| {
-                graph.process().unwrap();
-                for i in 0..self.output_channels {
-                    let buffer = graph.get_output(i);
-                    let Some(buffer) = buffer else {
-                        continue;
-                    };
-                    let buffer = buffer.as_slice::<f32>().unwrap();
-                    for (j, &sample) in buffer[..self.block_size].iter().enumerate() {
-                        samples[j * self.output_channels + i] = sample;
+        let graph = graph.clone();
+        let max_samples = self.max_samples;
+        let output_channels = self.output_channels;
+        let block_size = self.block_size;
+        let mut file = self.file.take().unwrap();
+
+        let handle = std::thread::spawn(move || {
+            let mut written_samples = 0;
+
+            let mut samples = vec![0.0; block_size * output_channels];
+            loop {
+                graph.with_inner(|graph| {
+                    graph.process().unwrap();
+                    for i in 0..output_channels {
+                        let Some(buffer) = graph.get_output(i) else {
+                            continue;
+                        };
+                        for (j, &sample) in buffer[..block_size].iter().enumerate() {
+                            samples[j * output_channels + i] = sample;
+                        }
+                    }
+                });
+
+                if let Some(max_samples) = max_samples {
+                    if written_samples >= max_samples {
+                        break;
                     }
                 }
-            });
 
-            if let Some(max_samples) = self.max_samples {
-                if self.written_samples >= max_samples {
-                    break;
+                for sample in &samples {
+                    file.write_sample(*sample).unwrap();
                 }
+                written_samples += block_size * output_channels;
             }
+        });
 
-            for sample in &samples {
-                self.file.write_sample(*sample).unwrap();
-            }
-            self.written_samples += self.block_size * self.output_channels;
-        }
+        self.handle = Some(handle);
 
         Ok(())
     }
@@ -292,6 +303,19 @@ impl AudioStream for WavFileOutStream {
     }
 
     fn stop(&mut self) -> GraphRunResult<()> {
+        Ok(())
+    }
+
+    fn join(mut self) -> GraphRunResult<()>
+    where
+        Self: Sized,
+    {
+        if let Some(handle) = self.handle.take() {
+            handle.join().unwrap();
+        }
+
+        self.finalize()?;
+
         Ok(())
     }
 }
@@ -443,7 +467,6 @@ fn build_output_stream<T: cpal::SizedSample + cpal::FromSample<f32> + Send + 'st
                         let Some(buffer) = buffer else {
                             continue;
                         };
-                        let buffer = buffer.as_slice::<f32>().unwrap();
                         for (j, &sample) in buffer[..new_block_size].iter().enumerate() {
                             data[j * channels + output_channel] = sample.to_sample();
                         }
