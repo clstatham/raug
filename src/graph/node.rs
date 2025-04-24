@@ -1,6 +1,9 @@
 //! Contains the [`ProcessorNode`] struct, which represents a node in the audio graph that processes signals.
 
-use std::{fmt::Debug, sync::Arc};
+use std::{
+    fmt::Debug,
+    sync::{Arc, Weak},
+};
 
 use thiserror::Error;
 
@@ -182,41 +185,45 @@ impl Debug for Node {
 
 impl Node {
     pub(crate) fn new(graph: Graph, node_id: NodeIndex) -> Self {
-        let mut node = NodeInner {
-            graph: graph.clone(),
-            node_id,
-            inputs: Vec::new(),
-            outputs: Vec::new(),
-        };
-        let mut inputs = Vec::new();
-        let mut outputs = Vec::new();
-        graph.with_inner(|graph_inner| {
-            let node = &graph_inner.digraph[node_id];
-            for i in 0..node.num_inputs() {
-                inputs.push(Input {
-                    graph: graph.clone(),
-                    node_id,
-                    input_index: i as u32,
-                    signal_type: node.input_spec()[i].signal_type,
-                    name: node.input_spec()[i].name.clone(),
-                });
-            }
-            for i in 0..node.num_outputs() {
-                outputs.push(Output {
-                    graph: graph.clone(),
-                    node_id,
-                    output_index: i as u32,
-                    signal_type: node.output_spec()[i].signal_type,
-                    name: node.output_spec()[i].name.clone(),
-                });
-            }
-        });
-        node.inputs = inputs;
-        node.outputs = outputs;
+        let inner = Arc::new_cyclic(|sref| {
+            let mut node = NodeInner {
+                graph: graph.clone(),
+                node_id,
+                inputs: Vec::new(),
+                outputs: Vec::new(),
+            };
+            let mut inputs = Vec::new();
+            let mut outputs = Vec::new();
+            graph.with_inner(|graph_inner| {
+                let node = &graph_inner.digraph[node_id];
+                for i in 0..node.num_inputs() {
+                    inputs.push(Input {
+                        graph: graph.clone(),
+                        node: sref.clone(),
+                        node_id,
+                        input_index: i as u32,
+                        signal_type: node.input_spec()[i].signal_type,
+                        name: node.input_spec()[i].name.clone(),
+                    });
+                }
+                for i in 0..node.num_outputs() {
+                    outputs.push(Output {
+                        graph: graph.clone(),
+                        node: sref.clone(),
+                        node_id,
+                        output_index: i as u32,
+                        signal_type: node.output_spec()[i].signal_type,
+                        name: node.output_spec()[i].name.clone(),
+                    });
+                }
+            });
+            node.inputs = inputs;
+            node.outputs = outputs;
 
-        Node {
-            inner: Arc::new(node),
-        }
+            node
+        });
+
+        Node { inner }
     }
 
     /// Returns `true` if this node is the same as the other node.
@@ -545,6 +552,7 @@ impl Edge {
 #[derive(Clone)]
 pub struct Input {
     pub(crate) graph: Graph,
+    pub(crate) node: Weak<NodeInner>,
     pub(crate) node_id: NodeIndex,
     pub(crate) input_index: u32,
     pub(crate) signal_type: SignalType,
@@ -562,6 +570,16 @@ impl Input {
     #[inline]
     pub fn node_id(&self) -> NodeIndex {
         self.node_id
+    }
+
+    /// Returns the [`Node`] that this input belongs to.
+    #[inline]
+    pub fn node(&self) -> Node {
+        if let Some(inner) = self.node.upgrade() {
+            Node { inner }
+        } else {
+            Node::new(self.graph.clone(), self.node_id)
+        }
     }
 
     /// Returns the [`Graph`] that this input's node is a part of.
@@ -628,6 +646,7 @@ macro_rules! generic_binary_op_impl {
 #[derive(Clone)]
 pub struct Output {
     pub(crate) graph: Graph,
+    pub(crate) node: Weak<NodeInner>,
     pub(crate) node_id: NodeIndex,
     pub(crate) output_index: u32,
     pub(crate) signal_type: SignalType,
@@ -639,6 +658,16 @@ impl Output {
     #[inline]
     pub fn node_id(&self) -> NodeIndex {
         self.node_id
+    }
+
+    /// Returns the [`Node`] that this output belongs to.
+    #[inline]
+    pub fn node(&self) -> Node {
+        if let Some(inner) = self.node.upgrade() {
+            Node { inner }
+        } else {
+            Node::new(self.graph.clone(), self.node_id)
+        }
     }
 
     /// Returns the [`Graph`] that this output's node is a part of.
@@ -685,38 +714,38 @@ impl Output {
     /// Attaches an addition processor to the nodes.
     #[inline]
     pub fn add(&self, b: impl IntoOutput) -> Node {
-        generic_binary_op_impl!(self, b, Add => f32 i64)
+        generic_binary_op_impl!(self, b, Add => f32)
     }
 
     /// Attaches a subtraction processor to the nodes.
     #[inline]
     pub fn sub(&self, b: impl IntoOutput) -> Node {
-        generic_binary_op_impl!(self, b, Sub => f32 i64)
+        generic_binary_op_impl!(self, b, Sub => f32)
     }
 
     /// Attaches a multiplication processor to the nodes.
     #[inline]
     pub fn mul(&self, b: impl IntoOutput) -> Node {
-        generic_binary_op_impl!(self, b, Mul => f32 i64)
+        generic_binary_op_impl!(self, b, Mul => f32)
     }
 
     /// Attaches a division processor to the nodes.
     #[inline]
     pub fn div(&self, b: impl IntoOutput) -> Node {
-        generic_binary_op_impl!(self, b, Div => f32 i64)
+        generic_binary_op_impl!(self, b, Div => f32)
     }
 
     /// Attaches a remainder processor to the nodes.
     #[inline]
     pub fn rem(&self, b: impl IntoOutput) -> Node {
-        generic_binary_op_impl!(self, b, Rem => f32 i64)
+        generic_binary_op_impl!(self, b, Rem => f32)
     }
 
     /// Attaches a negation processor to the node.
     #[inline]
     pub fn neg(&self) -> Node {
         let graph = self.graph();
-        let node = choose_node_generics!(graph, self.signal_type() => Neg => f32 i64);
+        let node = choose_node_generics!(graph, self.signal_type() => Neg => f32);
         node.input(0).connect(self);
         node
     }
@@ -728,7 +757,7 @@ impl<T: IntoOutput> std::ops::Add<T> for Output {
     #[inline]
     #[track_caller]
     fn add(self, rhs: T) -> Self::Output {
-        generic_binary_op_impl!(self, rhs, Add => f32 i64)
+        generic_binary_op_impl!(self, rhs, Add => f32)
     }
 }
 
@@ -748,7 +777,7 @@ impl<T: IntoOutput> std::ops::Sub<T> for Output {
     #[inline]
     #[track_caller]
     fn sub(self, rhs: T) -> Self::Output {
-        generic_binary_op_impl!(self, rhs, Sub => f32 i64)
+        generic_binary_op_impl!(self, rhs, Sub => f32)
     }
 }
 
@@ -768,7 +797,7 @@ impl<T: IntoOutput> std::ops::Mul<T> for Output {
     #[inline]
     #[track_caller]
     fn mul(self, rhs: T) -> Self::Output {
-        generic_binary_op_impl!(self, rhs, Mul => f32 i64)
+        generic_binary_op_impl!(self, rhs, Mul => f32)
     }
 }
 
@@ -788,7 +817,7 @@ impl<T: IntoOutput> std::ops::Div<T> for Output {
     #[inline]
     #[track_caller]
     fn div(self, rhs: T) -> Self::Output {
-        generic_binary_op_impl!(self, rhs, Div => f32 i64)
+        generic_binary_op_impl!(self, rhs, Div => f32)
     }
 }
 
@@ -808,7 +837,7 @@ impl<T: IntoOutput> std::ops::Rem<T> for Output {
     #[inline]
     #[track_caller]
     fn rem(self, rhs: T) -> Self::Output {
-        generic_binary_op_impl!(self, rhs, Rem => f32 i64)
+        generic_binary_op_impl!(self, rhs, Rem => f32)
     }
 }
 
@@ -829,7 +858,7 @@ impl std::ops::Neg for Output {
     #[track_caller]
     fn neg(self) -> Self::Output {
         let graph = self.graph();
-        let node = choose_node_generics!(graph, self.signal_type() => Neg => f32 i64);
+        let node = choose_node_generics!(graph, self.signal_type() => Neg => f32);
         node.input(0).connect(self);
         node
     }
@@ -1212,7 +1241,7 @@ impl IntoOutput for f64 {
 impl IntoOutput for i32 {
     #[track_caller]
     fn into_output(self, graph: &Graph) -> Output {
-        let node = graph.constant(self as i64);
+        let node = graph.constant(self as f32);
         node.output(0).clone()
     }
 }

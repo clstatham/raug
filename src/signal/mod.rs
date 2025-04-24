@@ -16,13 +16,34 @@ pub trait Signal: Sized + Clone + Default + Send + Sync + 'static {
     fn signal_type() -> SignalType {
         SignalType::of::<Self>()
     }
+
+    fn as_bool(&self) -> bool;
 }
 
-impl<T: Signal> Signal for Option<T> {}
-impl<T: Signal> Signal for &'static [T] {}
-impl Signal for f32 {}
-impl Signal for i64 {}
-impl Signal for bool {}
+impl<T: Signal> Signal for Option<T> {
+    #[inline]
+    fn as_bool(&self) -> bool {
+        self.is_some()
+    }
+}
+impl<T: Signal> Signal for &'static [T] {
+    #[inline]
+    fn as_bool(&self) -> bool {
+        !self.is_empty()
+    }
+}
+impl Signal for f32 {
+    #[inline]
+    fn as_bool(&self) -> bool {
+        *self > 0.0
+    }
+}
+impl Signal for bool {
+    #[inline]
+    fn as_bool(&self) -> bool {
+        *self
+    }
+}
 
 #[derive(Debug, PartialEq)]
 pub struct List<T: Signal> {
@@ -103,7 +124,12 @@ impl<T: Signal> From<List<T>> for Vec<T> {
     }
 }
 
-impl<T: Signal> Signal for List<T> {}
+impl<T: Signal> Signal for List<T> {
+    #[inline]
+    fn as_bool(&self) -> bool {
+        !self.is_empty()
+    }
+}
 
 #[derive(Debug, PartialEq)]
 pub struct StringSignal {
@@ -161,7 +187,11 @@ impl From<&str> for StringSignal {
     }
 }
 
-impl Signal for StringSignal {}
+impl Signal for StringSignal {
+    fn as_bool(&self) -> bool {
+        !self.is_empty()
+    }
+}
 
 /// Type information for a signal.
 #[derive(Clone, Copy)]
