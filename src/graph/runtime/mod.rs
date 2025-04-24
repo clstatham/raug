@@ -154,43 +154,26 @@ pub trait AudioOut: Send + 'static {
     /// Returns the number of output channels of the audio stream.
     fn output_channels(&self) -> usize;
 
+    /// Returns the number of output samples the stream needs from the graph.
+    /// Negative values indicate that the stream has enough data already.
     fn output_samples_needed(&self) -> isize;
+
+    /// Writes the given samples to the stream. On success, returns the number of samples written.
     fn output(&mut self, samps: impl Iterator<Item = f32>) -> GraphRunResult<usize>;
+}
 
-    #[track_caller]
-    fn chain<B: AudioOut>(self, other: B) -> Chain<Self, B>
-    where
-        Self: Sized,
-    {
-        assert_eq!(
-            self.sample_rate(),
-            other.sample_rate(),
-            "Sample rates must be equal to chain outputs"
-        );
-        // assert_eq!(
-        //     self.block_size(),
-        //     other.block_size(),
-        //     "Block sizes must be equal to chain outputs"
-        // );
-        assert_eq!(
-            self.output_channels(),
-            other.output_channels(),
-            "Number of output channels must be equal to chain outputs"
-        );
+pub struct ParallelOut<A: AudioOut, B: AudioOut> {
+    a: A,
+    b: B,
+}
 
-        Chain {
-            a: Box::new(self),
-            b: Box::new(other),
-        }
+impl<A: AudioOut, B: AudioOut> ParallelOut<A, B> {
+    pub fn new(a: A, b: B) -> Self {
+        Self { a, b }
     }
 }
 
-pub struct Chain<A: AudioOut + ?Sized, B: AudioOut + ?Sized> {
-    a: Box<A>,
-    b: Box<B>,
-}
-
-impl<A: AudioOut + ?Sized, B: AudioOut + ?Sized> AudioOut for Chain<A, B> {
+impl<A: AudioOut, B: AudioOut> AudioOut for ParallelOut<A, B> {
     fn sample_rate(&self) -> f32 {
         self.a.sample_rate()
     }
@@ -306,7 +289,7 @@ impl AudioOut for WavFileOut {
     }
 }
 
-/// An [`AudioOut`] implementation using the `cpal` crate for audio I/O with the system's sound card.
+/// An [`AudioOut`] implementation using the [`cpal`] crate for audio I/O with the system's sound card.
 pub struct CpalOut {
     config: cpal::SupportedStreamConfig,
     samples: Channels<f32>,
@@ -316,13 +299,13 @@ pub struct CpalOut {
 
 impl Default for CpalOut {
     fn default() -> Self {
-        Self::new(AudioBackend::Default, AudioDevice::Default)
+        Self::spawn(AudioBackend::Default, AudioDevice::Default)
     }
 }
 
 impl CpalOut {
-    /// Creates a new `CpalStream` with the given audio backend and output device.
-    pub fn new(backend: AudioBackend, output_device: AudioDevice) -> Self {
+    /// Spawns a [`cpal`] stream on the given backend and device.
+    pub fn spawn(backend: AudioBackend, output_device: AudioDevice) -> Self {
         let host = match backend {
             AudioBackend::Default => cpal::default_host(),
             #[cfg(all(target_os = "linux", feature = "jack"))]
@@ -339,7 +322,7 @@ impl CpalOut {
             AudioDevice::Name(name) => host
                 .output_devices()
                 .unwrap()
-                .find(|d| d.name().unwrap().contains(&name))
+                .find(|d| d.name().is_ok_and(|n| n.contains(&name)))
                 .unwrap(),
         };
         let output_device = Arc::new(output_device);
@@ -437,7 +420,7 @@ impl CpalOut {
         }
     }
 
-    pub fn record_to_wav(self, filename: impl AsRef<Path>) -> Chain<Self, WavFileOut> {
+    pub fn record_to_wav(self, filename: impl AsRef<Path>) -> ParallelOut<Self, WavFileOut> {
         let wav = WavFileOut::new(
             filename,
             self.sample_rate(),
@@ -445,7 +428,7 @@ impl CpalOut {
             self.output_channels(),
             None,
         );
-        self.chain(wav)
+        ParallelOut::new(self, wav)
     }
 }
 
@@ -467,23 +450,25 @@ fn build_output_stream<T: cpal::SizedSample + cpal::FromSample<f32> + Send + 'st
         let stream = output_device
             .build_output_stream(
                 &config,
-                move |data: &mut [T], _| {
-                    let new_block_size = data.len() / channels;
+                move |data: &mut [T], _info| {
+                    let data_len = data.len();
+                    let new_block_size = data_len / channels;
                     let old_block_size = block_size.load(Ordering::Relaxed);
                     if new_block_size != old_block_size {
                         block_size.store(new_block_size, Ordering::Relaxed);
                     }
 
                     for out_samp in data.iter_mut() {
-                        if let Ok(Some(in_samp)) = samples.try_recv() {
+                        if let Ok(in_samp) = samples.recv_blocking() {
                             *out_samp = T::from_sample(in_samp);
                         } else {
+                            log::error!("samples.recv_blocking() returned Err");
                             *out_samp = T::from_sample(0.0f32);
                         }
                     }
                 },
                 |err| {
-                    eprintln!("Output stream error: {}", err);
+                    log::error!("Output stream error: {}", err);
                 },
                 None,
             )

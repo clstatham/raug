@@ -684,7 +684,6 @@ impl Graph {
 
     pub fn play(&self, mut output_stream: impl AudioOut) -> GraphRunResult<RunningGraph> {
         let graph = self.clone();
-        let mut output_interleaved = vec![];
         let samples_written = Arc::new(AtomicUsize::new(0));
         let samples_written_clone = samples_written.clone();
         let duration_written = Arc::new(AtomicDuration::new(Duration::ZERO));
@@ -714,18 +713,18 @@ impl Graph {
 
                         graph.process()?;
 
-                        output_interleaved.clear();
+                        let mut delta = 0;
                         for sample_idx in 0..graph.block_size {
                             for channel_idx in 0..output_stream.output_channels() {
                                 let Some(buffer) = graph.get_output(channel_idx) else {
                                     continue;
                                 };
 
-                                output_interleaved.push(buffer[sample_idx]);
+                                delta +=
+                                    output_stream.output(std::iter::once(buffer[sample_idx]))?;
                             }
                         }
 
-                        let delta = output_stream.output(output_interleaved.drain(..))?;
                         samples_written_clone.fetch_add(delta, Ordering::Relaxed);
 
                         let duration_secs = delta as f32
@@ -750,6 +749,12 @@ impl Graph {
             duration_written,
         })
     }
+
+    pub fn play_for(&self, output_stream: impl AudioOut, duration: Duration) -> GraphRunResult<()> {
+        let handle = self.play(output_stream)?;
+        handle.run_for(duration)?;
+        Ok(())
+    }
 }
 
 pub struct RunningGraph {
@@ -770,7 +775,7 @@ impl RunningGraph {
     }
 
     pub fn duration_written(&self) -> Duration {
-        self.duration_written.load(Ordering::SeqCst)
+        self.duration_written.load(Ordering::Relaxed)
     }
 
     pub fn run_for(self, duration: Duration) -> GraphRunResult<()> {
