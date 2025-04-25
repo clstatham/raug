@@ -615,27 +615,22 @@ impl Input {
     }
 }
 
-macro_rules! choose_node_generics {
-    ($graph:expr, $signal_type:expr => $node_type:ident => $($options:ty)*) => {
-        match $signal_type {
-            $(
-                t if t == <$options>::signal_type() => $graph.node($node_type::<$options>::default()),
-            )*
-            _ => panic!("Unsupported signal type: {:?}", $signal_type),
-        }
-    };
-}
-
-macro_rules! generic_binary_op_impl {
-    ($self:ident, $b:ident, $op:ident => $($options:ty)*) => {{
+macro_rules! specific_binary_op_impl {
+    ($self:ident, $b:ident, $op:ident => $type:ident) => {{
         let graph = $self.graph();
+        assert_eq!(
+            $self.signal_type(),
+            $type::signal_type(),
+            "Signal type must be {} for this operation",
+            stringify!($type),
+        );
         let b = $b.into_output(graph);
         assert_eq!(
             $self.signal_type(),
             b.signal_type(),
             "Signal types must match for this operation",
         );
-        let node = choose_node_generics!(graph, $self.signal_type() => $op => $($options)*);
+        let node = graph.node($op::default());
         node.input(0).connect($self);
         node.input(1).connect(b);
         node
@@ -714,38 +709,43 @@ impl Output {
     /// Attaches an addition processor to the nodes.
     #[inline]
     pub fn add(&self, b: impl IntoOutput) -> Node {
-        generic_binary_op_impl!(self, b, Add => f32)
+        specific_binary_op_impl!(self, b, Add => f32)
     }
 
     /// Attaches a subtraction processor to the nodes.
     #[inline]
     pub fn sub(&self, b: impl IntoOutput) -> Node {
-        generic_binary_op_impl!(self, b, Sub => f32)
+        specific_binary_op_impl!(self, b, Sub => f32)
     }
 
     /// Attaches a multiplication processor to the nodes.
     #[inline]
     pub fn mul(&self, b: impl IntoOutput) -> Node {
-        generic_binary_op_impl!(self, b, Mul => f32)
+        specific_binary_op_impl!(self, b, Mul => f32)
     }
 
     /// Attaches a division processor to the nodes.
     #[inline]
     pub fn div(&self, b: impl IntoOutput) -> Node {
-        generic_binary_op_impl!(self, b, Div => f32)
+        specific_binary_op_impl!(self, b, Div => f32)
     }
 
     /// Attaches a remainder processor to the nodes.
     #[inline]
     pub fn rem(&self, b: impl IntoOutput) -> Node {
-        generic_binary_op_impl!(self, b, Rem => f32)
+        specific_binary_op_impl!(self, b, Rem => f32)
     }
 
     /// Attaches a negation processor to the node.
     #[inline]
     pub fn neg(&self) -> Node {
         let graph = self.graph();
-        let node = choose_node_generics!(graph, self.signal_type() => Neg => f32);
+        assert_eq!(
+            self.signal_type(),
+            f32::signal_type(),
+            "Signal type must be f32 for this operation"
+        );
+        let node = graph.node(Neg::default());
         node.input(0).connect(self);
         node
     }
@@ -757,7 +757,7 @@ impl<T: IntoOutput> std::ops::Add<T> for Output {
     #[inline]
     #[track_caller]
     fn add(self, rhs: T) -> Self::Output {
-        generic_binary_op_impl!(self, rhs, Add => f32)
+        specific_binary_op_impl!(self, rhs, Add => f32)
     }
 }
 
@@ -777,7 +777,7 @@ impl<T: IntoOutput> std::ops::Sub<T> for Output {
     #[inline]
     #[track_caller]
     fn sub(self, rhs: T) -> Self::Output {
-        generic_binary_op_impl!(self, rhs, Sub => f32)
+        specific_binary_op_impl!(self, rhs, Sub => f32)
     }
 }
 
@@ -797,7 +797,7 @@ impl<T: IntoOutput> std::ops::Mul<T> for Output {
     #[inline]
     #[track_caller]
     fn mul(self, rhs: T) -> Self::Output {
-        generic_binary_op_impl!(self, rhs, Mul => f32)
+        specific_binary_op_impl!(self, rhs, Mul => f32)
     }
 }
 
@@ -817,7 +817,7 @@ impl<T: IntoOutput> std::ops::Div<T> for Output {
     #[inline]
     #[track_caller]
     fn div(self, rhs: T) -> Self::Output {
-        generic_binary_op_impl!(self, rhs, Div => f32)
+        specific_binary_op_impl!(self, rhs, Div => f32)
     }
 }
 
@@ -837,7 +837,7 @@ impl<T: IntoOutput> std::ops::Rem<T> for Output {
     #[inline]
     #[track_caller]
     fn rem(self, rhs: T) -> Self::Output {
-        generic_binary_op_impl!(self, rhs, Rem => f32)
+        specific_binary_op_impl!(self, rhs, Rem => f32)
     }
 }
 
@@ -858,7 +858,12 @@ impl std::ops::Neg for Output {
     #[track_caller]
     fn neg(self) -> Self::Output {
         let graph = self.graph();
-        let node = choose_node_generics!(graph, self.signal_type() => Neg => f32);
+        assert_eq!(
+            self.signal_type(),
+            f32::signal_type(),
+            "Signal type must be f32 for this operation"
+        );
+        let node = graph.node(Neg::default());
         node.input(0).connect(self);
         node
     }

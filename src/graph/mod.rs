@@ -152,7 +152,7 @@ pub type GraphRunResult<T> = Result<T, GraphRunError>;
 pub type GraphConstructionResult<T> = Result<T, GraphConstructionError>;
 
 #[derive(Default)]
-pub(crate) struct GraphInner {
+pub struct GraphInner {
     pub(crate) digraph: DiGraph,
 
     // cached input/output nodes
@@ -593,7 +593,7 @@ impl Graph {
     }
 
     /// Runs the given closure with a reference to the graph.
-    pub(crate) fn with_inner<F, R>(&self, f: F) -> R
+    pub fn with_inner<F, R>(&self, f: F) -> R
     where
         F: FnOnce(&mut GraphInner) -> R,
     {
@@ -728,7 +728,7 @@ impl Graph {
                         samples_written_clone.fetch_add(delta, Ordering::Relaxed);
 
                         let duration_secs = delta as f32
-                            / graph.num_audio_outputs() as f32
+                            / output_stream.output_channels() as f32
                             / output_stream.sample_rate();
                         duration_written_clone
                             .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |dur| {

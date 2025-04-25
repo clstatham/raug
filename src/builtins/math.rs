@@ -27,66 +27,42 @@ impl<T: Signal + Default + Clone> Constant<T> {
 
 /// A processor that adds two values and outputs the result.
 #[processor(derive(Default))]
-pub fn add<T>(#[input] a: &T, #[input] b: &T, #[output] out: &mut T) -> ProcResult<()>
-where
-    T: Signal + Default + Clone,
-    for<'a> &'a T: std::ops::Add<Output = T>,
-{
+pub fn add(#[input] a: &f32, #[input] b: &f32, #[output] out: &mut f32) -> ProcResult<()> {
     *out = a + b;
     Ok(())
 }
 
 /// A processor that subtracts two values and outputs the result.
 #[processor(derive(Default))]
-pub fn sub<T>(#[input] a: &T, #[input] b: &T, #[output] out: &mut T) -> ProcResult<()>
-where
-    T: Signal + Default + Clone,
-    for<'a> &'a T: std::ops::Sub<Output = T>,
-{
+pub fn sub(#[input] a: &f32, #[input] b: &f32, #[output] out: &mut f32) -> ProcResult<()> {
     *out = a - b;
     Ok(())
 }
 
 /// A processor that multiplies two values and outputs the result.
 #[processor(derive(Default))]
-pub fn mul<T>(#[input] a: &T, #[input] b: &T, #[output] out: &mut T) -> ProcResult<()>
-where
-    T: Signal + Default + Clone,
-    for<'a> &'a T: std::ops::Mul<Output = T>,
-{
+pub fn mul(#[input] a: &f32, #[input] b: &f32, #[output] out: &mut f32) -> ProcResult<()> {
     *out = a * b;
     Ok(())
 }
 
 /// A processor that divides two values and outputs the result.
 #[processor(derive(Default))]
-pub fn div<T>(#[input] a: &T, #[input] b: &T, #[output] out: &mut T) -> ProcResult<()>
-where
-    T: Signal + Default + Clone,
-    for<'a> &'a T: std::ops::Div<Output = T>,
-{
+pub fn div(#[input] a: &f32, #[input] b: &f32, #[output] out: &mut f32) -> ProcResult<()> {
     *out = a / b;
     Ok(())
 }
 
 /// A processor that computes the modulus of two values and outputs the result.
 #[processor(derive(Default))]
-pub fn rem<T>(#[input] a: &T, #[input] b: &T, #[output] out: &mut T) -> ProcResult<()>
-where
-    T: Signal + Default + Clone,
-    for<'a> &'a T: std::ops::Rem<Output = T>,
-{
+pub fn rem(#[input] a: &f32, #[input] b: &f32, #[output] out: &mut f32) -> ProcResult<()> {
     *out = a % b;
     Ok(())
 }
 
 /// A processor that computes the absolute value of a value and outputs the result.
 #[processor(derive(Default))]
-pub fn neg<T>(#[input] a: &T, #[output] out: &mut T) -> ProcResult<()>
-where
-    T: Signal + Default + Clone,
-    for<'a> &'a T: std::ops::Neg<Output = T>,
-{
+pub fn neg(#[input] a: &f32, #[output] out: &mut f32) -> ProcResult<()> {
     *out = -a;
     Ok(())
 }
