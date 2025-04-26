@@ -1,3 +1,4 @@
 /target
 /.vs
+/*.dot
 *.code-workspace

@@ -20,7 +20,7 @@ use petgraph::{
     visit::DfsPostOrder,
 };
 use runtime::{AudioDevice, AudioOut};
-use rustc_hash::FxHashSet;
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::{
     prelude::{Constant, Null, Passthrough, ProcEnv},
@@ -112,15 +112,6 @@ pub enum GraphConstructionError {
     /// Attempted to connect nodes from different graphs.
     #[error("Cannot connect nodes from different graphs")]
     MismatchedGraphs,
-
-    /// Attempted to perform an invalid operation on a node with multiple outputs.
-    #[error("Operation `{op}` invalid: Node type `{signal_type}` has multiple outputs")]
-    NodeHasMultipleOutputs {
-        /// The operation that was attempted.
-        op: String,
-        /// The type of the node.
-        signal_type: String,
-    },
 
     /// Index out of bounds for the specified input.
     #[error("Input index out of bounds: {index} >= {num_inputs}")]
@@ -215,7 +206,7 @@ impl GraphInner {
         source_output: u32,
         target: NodeIndex,
         target_input: u32,
-    ) -> Result<(), GraphConstructionError> {
+    ) {
         // check if there's already a connection to the target input
         if let Some(edge) = self
             .digraph
@@ -226,28 +217,18 @@ impl GraphInner {
             self.digraph.remove_edge(edge.id()).unwrap();
         }
 
-        let source_output_name = self.digraph[source].output_spec()[source_output as usize]
-            .name
-            .clone();
-
-        let target_input_name = self.digraph[target].input_spec()[target_input as usize]
-            .name
-            .clone();
-
         self.digraph.add_edge(
             source,
             target,
             Edge {
+                source,
+                target,
                 source_output,
                 target_input,
-                source_output_name: Some(source_output_name),
-                target_input_name: Some(target_input_name),
             },
         );
 
         self.visitor_reset = VisitorReset::NeedsReset;
-
-        Ok(())
     }
 
     /// Disconnects two nodes in the graph at the specified input and output indices.
@@ -277,36 +258,98 @@ impl GraphInner {
     }
 
     /// Disconnects all inputs to the specified node.
-    pub fn disconnect_all_inputs(&mut self, node: NodeIndex) {
+    pub fn disconnect_all_inputs(&mut self, node: NodeIndex) -> Vec<Edge> {
         let incoming_edges = self
             .digraph
             .edges_directed(node, Direction::Incoming)
             .map(|edge| edge.id())
             .collect::<Vec<_>>();
+        let mut edges_removed = Vec::new();
         for edge in incoming_edges {
-            self.digraph.remove_edge(edge).unwrap();
+            let edge = self.digraph.remove_edge(edge).unwrap();
+            edges_removed.push(edge);
         }
         self.visitor_reset = VisitorReset::NeedsReset;
+        edges_removed
     }
 
     /// Disconnects all outputs from the specified node.
-    pub fn disconnect_all_outputs(&mut self, node: NodeIndex) {
+    pub fn disconnect_all_outputs(&mut self, node: NodeIndex) -> Vec<Edge> {
         let outgoing_edges = self
             .digraph
             .edges_directed(node, Direction::Outgoing)
             .map(|edge| edge.id())
             .collect::<Vec<_>>();
+        let mut edges_removed = Vec::new();
         for edge in outgoing_edges {
-            self.digraph.remove_edge(edge).unwrap();
+            let edge = self.digraph.remove_edge(edge).unwrap();
+            edges_removed.push(edge);
         }
         self.visitor_reset = VisitorReset::NeedsReset;
+        edges_removed
     }
 
     /// Disconnects all inputs and outputs from the specified node.
-    pub fn disconnect_all(&mut self, node: NodeIndex) {
-        self.disconnect_all_inputs(node);
-        self.disconnect_all_outputs(node);
+    pub fn disconnect_all(&mut self, node: NodeIndex) -> Vec<Edge> {
+        let mut edges_removed = Vec::new();
+        edges_removed.extend(self.disconnect_all_inputs(node));
+        edges_removed.extend(self.disconnect_all_outputs(node));
         self.visitor_reset = VisitorReset::NeedsReset;
+        edges_removed
+    }
+
+    pub(crate) fn gc_nodes(&mut self) {
+        let nodes: FxHashSet<NodeIndex> = self.digraph.node_indices().collect();
+        let mut removed = FxHashSet::default();
+        let mut again = false;
+        while !again {
+            again = false;
+            for node in nodes.iter() {
+                if removed.contains(node) {
+                    continue;
+                }
+                if !self.output_nodes.contains(node)
+                    && self
+                        .digraph
+                        .edges_directed(*node, Direction::Outgoing)
+                        .count()
+                        == 0
+                {
+                    self.digraph.remove_node(*node);
+                    removed.insert(node);
+                    self.visitor_reset = VisitorReset::NeedsReset;
+                    again = true;
+                }
+            }
+        }
+    }
+
+    pub fn replace_node_gracefully(
+        &mut self,
+        replaced: NodeIndex,
+        replacement: NodeIndex,
+    ) -> NodeIndex {
+        let replaced_outputs = self.disconnect_all_outputs(replaced);
+
+        for edge in replaced_outputs {
+            let Edge {
+                target,
+                source_output,
+                target_input,
+                ..
+            } = edge;
+
+            if source_output < self.digraph[replacement].num_outputs() as u32 {
+                self.connect(replacement, source_output, target, target_input);
+            } else {
+                // leave it disconnected
+            }
+        }
+
+        self.visitor_reset = VisitorReset::NeedsReset;
+        self.gc_nodes();
+
+        replacement
     }
 
     /// Returns the number of audio inputs in the graph.
@@ -362,6 +405,7 @@ impl GraphInner {
         self.sccs.reverse();
     }
 
+    #[inline]
     pub(crate) fn reset_visitor(&mut self) {
         if self.visitor_reset == VisitorReset::Ready {
             return;
@@ -427,12 +471,35 @@ impl GraphInner {
 
     /// Writes a DOT representation of the graph to the provided writer, suitable for rendering with Graphviz.
     pub fn write_dot<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
-        write!(writer, "{:?}", petgraph::dot::Dot::new(&self.digraph))
+        let mut node_names = FxHashMap::default();
+        let mut graph = dot_graph::Graph::new("Raug", dot_graph::Kind::Digraph);
+        for (i, node) in self.digraph.node_indices().enumerate() {
+            let node_name = format!("_{}_{}", i, self.digraph[node].name());
+            graph.add_node(dot_graph::Node::new(&node_name).label(self.digraph[node].name()));
+            node_names.insert(node, node_name);
+        }
+
+        for edge in self.digraph.edge_weights() {
+            let source = &self.digraph[edge.source];
+            let target = &self.digraph[edge.target];
+            let source_name = &node_names[&edge.source];
+            let target_name = &node_names[&edge.target];
+            let output_name = &source.output_spec()[edge.source_output as usize].name;
+            let input_name = &target.input_spec()[edge.target_input as usize].name;
+            let edge_name = format!("{}->{}", output_name, input_name);
+            let edge = dot_graph::Edge::new(source_name, target_name, &edge_name)
+                .end_arrow(dot_graph::Arrow::normal());
+            graph.add_edge(edge);
+        }
+
+        write!(writer, "{}", graph.to_dot_string()?)
     }
 
     /// Runs the audio graph for one block of samples.
     #[cfg_attr(feature = "profiling", inline(never))]
     pub fn process(&mut self) -> GraphRunResult<()> {
+        self.reset_visitor();
+
         for i in 0..self.sccs.len() {
             if self.sccs()[i].len() == 1 {
                 let node_id = self.sccs[i][0];
@@ -614,8 +681,7 @@ impl Graph {
         let to = to.into_node(self);
         let from_output = from_output.into_output_idx(&from);
         let to_input = to_input.into_input_idx(&to);
-        self.with_inner(|graph| graph.connect(from.id(), from_output, to.id(), to_input))
-            .unwrap();
+        self.with_inner(|graph| graph.connect(from.id(), from_output, to.id(), to_input));
     }
 
     #[inline]
@@ -627,8 +693,7 @@ impl Graph {
         to_id: NodeIndex,
         to_input: u32,
     ) {
-        self.with_inner(|graph| graph.connect(from_id, from_output, to_id, to_input))
-            .unwrap();
+        self.with_inner(|graph| graph.connect(from_id, from_output, to_id, to_input));
     }
 
     /// Disconnects the given output of one node from the given input of another node.
@@ -670,6 +735,20 @@ impl Graph {
     pub fn disconnect_all(&self, node: impl IntoNode) {
         let node = node.into_node(self);
         self.with_inner(|graph| graph.disconnect_all(node.id()));
+    }
+
+    #[track_caller]
+    #[inline]
+    pub fn replace_node_gracefully(
+        &self,
+        target: impl IntoNode,
+        replacement: impl IntoNode,
+    ) -> Node {
+        let target = target.into_node(self);
+        let replacement = replacement.into_node(self);
+        let idx =
+            self.with_inner(|graph| graph.replace_node_gracefully(target.id(), replacement.id()));
+        Node::new(self.clone(), idx)
     }
 
     /// Writes a DOT representation of the graph to the provided writer, suitable for rendering with Graphviz.

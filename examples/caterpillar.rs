@@ -105,6 +105,10 @@ fn main() {
     let graph = caterpillar(8);
 
     graph
+        .write_dot(&mut std::fs::File::create("caterpillar.dot").unwrap())
+        .unwrap();
+
+    graph
         .play(CpalOut::default())
         .unwrap()
         .run_for(Duration::from_secs(10))

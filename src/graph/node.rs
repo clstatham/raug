@@ -1,4 +1,4 @@
-//! Contains the [`ProcessorNode`] struct, which represents a node in the audio graph that processes signals.
+//! Contains the [`ProcessorNode`] and [`Node`] structs, which represent nodes in the audio graph that process signals.
 
 use std::{
     fmt::Debug,
@@ -8,12 +8,11 @@ use std::{
 use thiserror::Error;
 
 use crate::{
-    graph::GraphConstructionError,
     prelude::*,
     signal::{SignalType, type_erased::AnyBuffer},
 };
 
-use super::{Graph, GraphConstructionResult, NodeIndex};
+use super::{Graph, NodeIndex};
 
 /// Error that can occur during the processing of a node.
 #[derive(Error, Debug)]
@@ -248,32 +247,6 @@ impl Node {
     pub fn name(&self) -> String {
         self.graph()
             .with_inner(|graph| graph.digraph[self.id()].name().to_string())
-    }
-
-    /// Asserts that the node has a single output.
-    #[inline]
-    #[track_caller]
-    pub fn assert_single_output(&self, op: impl Into<String>) {
-        assert_eq!(
-            self.num_outputs(),
-            1,
-            "{}: expected single output on node: {}",
-            op.into(),
-            self.name()
-        );
-    }
-
-    /// Ensures that the node has a single output, returning an error if it does not.
-    #[inline]
-    pub fn ensure_single_output(&self, op: impl Into<String>) -> GraphConstructionResult<()> {
-        if self.num_outputs() == 1 {
-            Ok(())
-        } else {
-            Err(GraphConstructionError::NodeHasMultipleOutputs {
-                op: op.into(),
-                signal_type: self.name(),
-            })
-        }
     }
 
     /// Returns the number of inputs of the node.
@@ -973,7 +946,6 @@ impl<T: IntoOutput> std::ops::Add<T> for Node {
     #[inline]
     #[track_caller]
     fn add(self, rhs: T) -> Self::Output {
-        self.assert_single_output("add");
         self.output(0).clone() + rhs
     }
 }
@@ -984,7 +956,6 @@ impl<T: IntoOutput> std::ops::Sub<T> for Node {
     #[inline]
     #[track_caller]
     fn sub(self, rhs: T) -> Self::Output {
-        self.assert_single_output("sub");
         self.output(0).clone() - rhs
     }
 }
@@ -995,7 +966,6 @@ impl<T: IntoOutput> std::ops::Mul<T> for Node {
     #[inline]
     #[track_caller]
     fn mul(self, rhs: T) -> Self::Output {
-        self.assert_single_output("mul");
         self.output(0).clone() * rhs
     }
 }
@@ -1006,7 +976,6 @@ impl<T: IntoOutput> std::ops::Div<T> for Node {
     #[inline]
     #[track_caller]
     fn div(self, rhs: T) -> Self::Output {
-        self.assert_single_output("div");
         self.output(0).clone() / rhs
     }
 }
@@ -1017,7 +986,6 @@ impl<T: IntoOutput> std::ops::Rem<T> for Node {
     #[inline]
     #[track_caller]
     fn rem(self, rhs: T) -> Self::Output {
-        self.assert_single_output("rem");
         self.output(0).clone() % rhs
     }
 }
@@ -1028,7 +996,6 @@ impl std::ops::Neg for Node {
     #[inline]
     #[track_caller]
     fn neg(self) -> Self::Output {
-        self.assert_single_output("neg");
         self.output(0).neg()
     }
 }
@@ -1039,7 +1006,6 @@ impl<T: IntoOutput> std::ops::BitAnd<T> for Node {
     #[inline]
     #[track_caller]
     fn bitand(self, rhs: T) -> Self::Output {
-        self.assert_single_output("bitand");
         self.output(0).clone() & rhs
     }
 }
@@ -1050,7 +1016,6 @@ impl<T: IntoOutput> std::ops::BitOr<T> for Node {
     #[inline]
     #[track_caller]
     fn bitor(self, rhs: T) -> Self::Output {
-        self.assert_single_output("bitand");
         self.output(0).clone() | rhs
     }
 }
@@ -1061,7 +1026,6 @@ impl<T: IntoOutput> std::ops::BitXor<T> for Node {
     #[inline]
     #[track_caller]
     fn bitxor(self, rhs: T) -> Self::Output {
-        self.assert_single_output("bitand");
         self.output(0).clone() ^ rhs
     }
 }
@@ -1072,7 +1036,6 @@ impl std::ops::Not for Node {
     #[inline]
     #[track_caller]
     fn not(self) -> Self::Output {
-        self.assert_single_output("not");
         !self.output(0).clone()
     }
 }
@@ -1206,7 +1169,6 @@ impl IntoOutput for &Output {
 impl IntoOutput for Node {
     #[track_caller]
     fn into_output(self, _graph: &Graph) -> Output {
-        self.assert_single_output("into_output");
         self.output(0).clone()
     }
 }
@@ -1214,7 +1176,6 @@ impl IntoOutput for Node {
 impl IntoOutput for &Node {
     #[track_caller]
     fn into_output(self, _graph: &Graph) -> Output {
-        self.assert_single_output("into_output");
         self.output(0).clone()
     }
 }
