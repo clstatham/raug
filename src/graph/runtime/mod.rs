@@ -4,6 +4,7 @@ use std::{
     fs::File,
     io::BufWriter,
     path::Path,
+    str::FromStr,
     sync::{
         Arc,
         atomic::{AtomicUsize, Ordering},
@@ -15,7 +16,7 @@ use std::{
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use crossbeam_channel::{Receiver, RecvError, SendError, Sender, TryRecvError, TrySendError};
 
-use super::GraphRunResult;
+use super::{GraphRunError, GraphRunResult};
 
 /// The audio backend to use for audio I/O.
 #[derive(Default, Debug, Clone)]
@@ -34,6 +35,23 @@ pub enum AudioBackend {
     Wasapi,
 }
 
+impl FromStr for AudioBackend {
+    type Err = GraphRunError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_ascii_lowercase().trim() {
+            "default" => Ok(Self::Default),
+            #[cfg(all(target_os = "linux", feature = "jack"))]
+            "jack" => Ok(Self::Jack),
+            #[cfg(target_os = "linux")]
+            "alsa" => Ok(Self::Alsa),
+            #[cfg(target_os = "windows")]
+            "wasapi" => Ok(Self::Wasapi),
+            _ => Err(GraphRunError::UnknownBackend(s.to_string())),
+        }
+    }
+}
+
 /// An audio device to use for audio I/O.
 #[derive(Default, Debug, Clone)]
 pub enum AudioDevice {
@@ -44,6 +62,20 @@ pub enum AudioDevice {
     Index(usize),
     /// Use the audio device with the given substring in its name.
     Name(String),
+}
+
+impl FromStr for AudioDevice {
+    type Err = GraphRunError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if s.to_ascii_lowercase().trim() == "default" {
+            Ok(Self::Default)
+        } else if let Ok(i) = s.trim().parse() {
+            Ok(Self::Index(i))
+        } else {
+            Ok(Self::Name(s.to_string()))
+        }
+    }
 }
 
 /// Utility struct for creating channels for communication between threads.
@@ -128,9 +160,6 @@ impl<T> Channels<T> {
     }
 
     /// Tries to receive data from the channel without blocking.
-    ///
-    /// Returns `Ok(Some(data))` if data is received, `Ok(None)` if the channel is empty,
-    /// or `Err(TryRecvError::Disconnected)` if the channel is disconnected.
     pub fn try_recv(&self) -> Result<Option<T>, TryRecvError> {
         match self.rx.try_recv() {
             Ok(data) => Ok(Some(data)),
@@ -297,15 +326,9 @@ pub struct CpalOut {
     block_size: Arc<AtomicUsize>,
 }
 
-impl Default for CpalOut {
-    fn default() -> Self {
-        Self::spawn(AudioBackend::Default, AudioDevice::Default)
-    }
-}
-
 impl CpalOut {
     /// Spawns a [`cpal`] stream on the given backend and device.
-    pub fn spawn(backend: AudioBackend, output_device: AudioDevice) -> Self {
+    pub fn spawn(backend: &AudioBackend, output_device: &AudioDevice) -> Self {
         let host = match backend {
             AudioBackend::Default => cpal::default_host(),
             #[cfg(all(target_os = "linux", feature = "jack"))]
@@ -318,11 +341,11 @@ impl CpalOut {
 
         let output_device = match output_device {
             AudioDevice::Default => host.default_output_device().unwrap(),
-            AudioDevice::Index(index) => host.output_devices().unwrap().nth(index).unwrap(),
+            AudioDevice::Index(index) => host.output_devices().unwrap().nth(*index).unwrap(),
             AudioDevice::Name(name) => host
                 .output_devices()
                 .unwrap()
-                .find(|d| d.name().is_ok_and(|n| n.contains(&name)))
+                .find(|d| d.name().is_ok_and(|n| n.contains(name.as_str())))
                 .unwrap(),
         };
         let output_device = Arc::new(output_device);

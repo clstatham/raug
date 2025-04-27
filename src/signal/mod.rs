@@ -6,51 +6,31 @@ use std::{
     ops::{Deref, DerefMut},
 };
 
-pub mod buffer;
 pub mod type_erased;
 
-/// A type that can be stored in a [`Buffer`](buffer::Buffer) and processed by a [`Processor`](crate::processor::Processor).
+/// A type that can be stored in a [buffer](type_erased::AnyBuffer) and processed by a [`Processor`](crate::processor::Processor).
 pub trait Signal: Sized + Clone + Default + Send + Sync + 'static {
     /// The type of the signal.
     #[inline]
     fn signal_type() -> SignalType {
         SignalType::of::<Self>()
     }
-
-    fn as_bool(&self) -> bool;
 }
 
-impl<T: Signal> Signal for Option<T> {
-    #[inline]
-    fn as_bool(&self) -> bool {
-        self.is_some()
-    }
-}
-impl<T: Signal> Signal for &'static [T] {
-    #[inline]
-    fn as_bool(&self) -> bool {
-        !self.is_empty()
-    }
-}
-impl Signal for f32 {
-    #[inline]
-    fn as_bool(&self) -> bool {
-        *self > 0.0
-    }
-}
-impl Signal for bool {
-    #[inline]
-    fn as_bool(&self) -> bool {
-        *self
-    }
-}
+impl<T: Signal> Signal for Option<T> {}
+impl<T: Signal> Signal for &'static [T] {}
+impl Signal for f32 {}
+impl Signal for bool {}
+
+pub const LIST_INLINE_SIZE: usize = 32;
 
 #[derive(Debug, PartialEq)]
 pub struct List<T: Signal> {
-    vec: smallvec::SmallVec<[T; 16]>,
+    vec: smallvec::SmallVec<[T; LIST_INLINE_SIZE]>,
 }
 
 impl<T: Signal> Default for List<T> {
+    #[inline]
     fn default() -> Self {
         Self {
             vec: smallvec::SmallVec::default(),
@@ -59,12 +39,14 @@ impl<T: Signal> Default for List<T> {
 }
 
 impl<T: Signal> Clone for List<T> {
+    #[inline]
     fn clone(&self) -> Self {
         Self {
             vec: self.vec.clone(),
         }
     }
 
+    #[inline]
     fn clone_from(&mut self, source: &Self) {
         self.vec.clone_from(&source.vec);
     }
@@ -72,18 +54,21 @@ impl<T: Signal> Clone for List<T> {
 
 impl<T: Signal> List<T> {
     /// Creates a new list with the given capacity.
+    #[inline]
     pub fn with_capacity(capacity: usize) -> Self {
         Self {
             vec: smallvec::SmallVec::with_capacity(capacity),
         }
     }
 
+    #[inline]
     pub fn from_slice(slice: &[T]) -> Self {
         Self {
             vec: slice.iter().cloned().collect(),
         }
     }
 
+    #[inline]
     pub fn to_alloc_vec(&self) -> Vec<T> {
         self.vec.to_vec()
     }
@@ -97,20 +82,23 @@ impl<T: Signal> AsRef<[T]> for List<T> {
 }
 
 impl<T: Signal> Deref for List<T> {
-    type Target = smallvec::SmallVec<[T; 16]>;
+    type Target = smallvec::SmallVec<[T; LIST_INLINE_SIZE]>;
 
+    #[inline]
     fn deref(&self) -> &Self::Target {
         &self.vec
     }
 }
 
 impl<T: Signal> DerefMut for List<T> {
+    #[inline]
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.vec
     }
 }
 
 impl<T: Signal> From<Vec<T>> for List<T> {
+    #[inline]
     fn from(vec: Vec<T>) -> Self {
         Self {
             vec: smallvec::SmallVec::from_iter(vec),
@@ -119,24 +107,23 @@ impl<T: Signal> From<Vec<T>> for List<T> {
 }
 
 impl<T: Signal> From<List<T>> for Vec<T> {
+    #[inline]
     fn from(list: List<T>) -> Self {
         list.to_alloc_vec()
     }
 }
 
-impl<T: Signal> Signal for List<T> {
-    #[inline]
-    fn as_bool(&self) -> bool {
-        !self.is_empty()
-    }
-}
+impl<T: Signal> Signal for List<T> {}
+
+pub const STRING_INLINE_SIZE: usize = LIST_INLINE_SIZE * size_of::<f32>();
 
 #[derive(Debug, PartialEq)]
-pub struct StringSignal {
-    string: smallstr::SmallString<[u8; 128]>,
+pub struct Str {
+    string: smallstr::SmallString<[u8; STRING_INLINE_SIZE]>,
 }
 
-impl Default for StringSignal {
+impl Default for Str {
+    #[inline]
     fn default() -> Self {
         Self {
             string: smallstr::SmallString::new(),
@@ -144,7 +131,7 @@ impl Default for StringSignal {
     }
 }
 
-impl Clone for StringSignal {
+impl Clone for Str {
     #[inline]
     fn clone(&self) -> Self {
         Self {
@@ -158,7 +145,7 @@ impl Clone for StringSignal {
     }
 }
 
-impl StringSignal {
+impl Str {
     pub fn new() -> Self {
         Self::default()
     }
@@ -169,7 +156,7 @@ impl StringSignal {
     }
 }
 
-impl Deref for StringSignal {
+impl Deref for Str {
     type Target = str;
 
     #[inline]
@@ -178,7 +165,7 @@ impl Deref for StringSignal {
     }
 }
 
-impl From<&str> for StringSignal {
+impl From<&str> for Str {
     #[inline]
     fn from(s: &str) -> Self {
         Self {
@@ -187,11 +174,7 @@ impl From<&str> for StringSignal {
     }
 }
 
-impl Signal for StringSignal {
-    fn as_bool(&self) -> bool {
-        !self.is_empty()
-    }
-}
+impl Signal for Str {}
 
 /// Type information for a signal.
 #[derive(Clone, Copy)]

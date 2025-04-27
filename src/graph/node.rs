@@ -1191,7 +1191,7 @@ impl<T: Signal + Default + Clone> IntoOutput for T {
 impl IntoOutput for &str {
     #[track_caller]
     fn into_output(self, graph: &Graph) -> Output {
-        let node = graph.constant(StringSignal::from(self));
+        let node = graph.constant(Str::from(self));
         node.output(0).clone()
     }
 }
@@ -1209,6 +1209,14 @@ impl IntoOutput for i32 {
     fn into_output(self, graph: &Graph) -> Output {
         let node = graph.constant(self as f32);
         node.output(0).clone()
+    }
+}
+
+impl IntoOutput for (NodeIndex, u32) {
+    fn into_output(self, graph: &Graph) -> Output {
+        let (index, output_idx) = self;
+        let node = Node::new(graph.clone(), index);
+        node.output(output_idx).clone()
     }
 }
 
@@ -1239,6 +1247,44 @@ impl IntoOutputOpt for () {
         None
     }
 }
+
+pub trait IntoOutputs {
+    fn into_outputs(self, graph: &Graph) -> Vec<Output>;
+}
+
+impl<A: IntoOutput> IntoOutputs for A {
+    fn into_outputs(self, graph: &Graph) -> Vec<Output> {
+        vec![self.into_output(graph)]
+    }
+}
+
+impl<T: IntoOutput> IntoOutputs for Vec<T> {
+    fn into_outputs(self, graph: &Graph) -> Vec<Output> {
+        self.into_iter().map(|o| o.into_output(graph)).collect()
+    }
+}
+
+macro_rules! impl_into_outputs {
+    ($($n:ident),*) => {
+        #[allow(non_snake_case)]
+        impl<$($n: IntoOutput),*> IntoOutputs for ($($n,)*) {
+            fn into_outputs(self, graph: &Graph) -> Vec<Output> {
+                let ($($n,)*) = self;
+                vec![$(
+                    $n.into_output(graph),
+                )*]
+            }
+        }
+    };
+}
+impl_into_outputs!(A);
+impl_into_outputs!(A, B);
+impl_into_outputs!(A, B, C);
+impl_into_outputs!(A, B, C, D);
+impl_into_outputs!(A, B, C, D, E);
+impl_into_outputs!(A, B, C, D, E, F);
+impl_into_outputs!(A, B, C, D, E, F, G);
+impl_into_outputs!(A, B, C, D, E, F, G, H);
 
 /// A trait for coercing a value into a [`Node`].
 pub trait IntoNode {

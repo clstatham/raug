@@ -11,29 +11,28 @@ use super::{Signal, SignalType};
 
 /// A type-erased buffer that can hold signals of any type.
 pub struct AnyBuffer {
-    signal_type: SignalType,
+    element_signal_type: SignalType,
     buf: AnyVec<dyn Send + Sync + Cloneable>,
 }
 
 impl AnyBuffer {
     /// Creates a new empty buffer of the given type.
-    pub fn empty<T: Signal>() -> Self {
+    pub fn new<T: Signal>() -> Self {
         Self {
-            signal_type: SignalType::of::<T>(),
+            element_signal_type: T::signal_type(),
             buf: AnyVec::new::<T>(),
         }
     }
 
     /// Creates a new buffer of the given type with the specified length, initialized to the default value for `T`.
-    pub fn zeros<T: Signal + Default>(len: usize) -> Self {
-        let mut buf = AnyVec::new::<T>();
-        buf.reserve(len);
+    pub fn zeros<T: Signal>(len: usize) -> Self {
+        let mut buf = AnyVec::with_capacity::<T>(len);
         for _ in 0..len {
             buf.push(AnyValueWrapper::<T>::new(T::default()));
         }
 
         Self {
-            signal_type: SignalType::of::<T>(),
+            element_signal_type: T::signal_type(),
             buf,
         }
     }
@@ -51,11 +50,13 @@ impl AnyBuffer {
     }
 
     /// Returns the length of the buffer.
+    #[inline]
     pub fn len(&self) -> usize {
         self.buf.len()
     }
 
     /// Returns `true` if the buffer is empty.
+    #[inline]
     pub fn is_empty(&self) -> bool {
         self.buf.is_empty()
     }
@@ -67,7 +68,7 @@ impl AnyBuffer {
     pub fn get(&self, index: usize) -> Option<AnySignalRef> {
         let signal = self.buf.get(index)?;
         Some(AnySignalRef {
-            signal_type: self.signal_type,
+            signal_type: self.element_signal_type,
             signal,
         })
     }
@@ -79,7 +80,7 @@ impl AnyBuffer {
     pub fn get_mut(&mut self, index: usize) -> Option<AnySignalMut> {
         let signal = self.buf.get_mut(index)?;
         Some(AnySignalMut {
-            signal_type: self.signal_type,
+            signal_type: self.element_signal_type,
             signal,
         })
     }
@@ -98,7 +99,7 @@ impl AnyBuffer {
 
     #[inline]
     pub fn clone_from(&mut self, other: &AnyBuffer) {
-        assert_eq!(self.signal_type, other.signal_type);
+        assert_eq!(self.element_signal_type, other.element_signal_type);
         self.buf.clear();
         self.buf.reserve(other.len());
         for i in 0..other.len() {
@@ -110,8 +111,16 @@ impl AnyBuffer {
 
     /// Returns the [`SignalType`] of the signals contained in this buffer.
     #[inline]
-    pub fn signal_type(&self) -> SignalType {
-        self.signal_type
+    pub fn element_signal_type(&self) -> SignalType {
+        self.element_signal_type
+    }
+}
+
+impl<T: Signal> AsRef<[T]> for AnyBuffer {
+    #[inline]
+    #[track_caller]
+    fn as_ref(&self) -> &[T] {
+        self.as_slice().expect("Signal type mismatch")
     }
 }
 

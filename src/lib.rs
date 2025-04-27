@@ -25,8 +25,7 @@ pub mod prelude {
             io::{ProcEnv, ProcessorInputs, ProcessorOutputs, SignalSpec},
         },
         signal::{
-            List, Signal, SignalType, StringSignal,
-            buffer::Buffer,
+            List, Signal, SignalType, Str,
             type_erased::{AnyBuffer, AnySignalMut, AnySignalRef},
         },
         util::*,

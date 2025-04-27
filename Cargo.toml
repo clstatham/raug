@@ -30,7 +30,7 @@ smallvec = "1.15"
 raug-macros = { path = "../raug-macros" }
 allocation-counter = { version = "0.8", optional = true }
 any_vec = "0.14.0"
-smallstr = "0.3.0"
+smallstr = { git = "https://github.com/clstatham/smallstr" }
 atomic-time = "0.1.5"
 dot_graph = "0.2.3"
 

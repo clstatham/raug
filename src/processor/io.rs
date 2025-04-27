@@ -141,8 +141,8 @@ impl ProcessorOutput<'_> {
     #[inline]
     pub fn signal_type(&self) -> SignalType {
         match self {
-            ProcessorOutput::Block(buffer) => buffer.signal_type(),
-            ProcessorOutput::Sample(buffer, _) => buffer.signal_type(),
+            ProcessorOutput::Block(buffer) => buffer.element_signal_type(),
+            ProcessorOutput::Sample(buffer, _) => buffer.element_signal_type(),
         }
     }
 

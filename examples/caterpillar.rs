@@ -78,7 +78,7 @@ pub fn caterpillar(num_tones: usize) -> Graph {
 
     let freqs = scale_freqs(0.0);
 
-    let graph = Graph::new();
+    let graph = Graph::new(0, 2);
 
     let mut tones = vec![];
     for _ in 0..num_tones {
@@ -95,8 +95,7 @@ pub fn caterpillar(num_tones: usize) -> Graph {
 
     let master = PeakLimiter::default().node(&graph, mix, (), (), ());
 
-    graph.dac(&master);
-    graph.dac(&master);
+    graph.dac((&master, &master));
 
     graph
 }
@@ -109,7 +108,10 @@ fn main() {
         .unwrap();
 
     graph
-        .play(CpalOut::default())
+        .play(CpalOut::spawn(
+            &AudioBackend::Default,
+            &AudioDevice::Default,
+        ))
         .unwrap()
         .run_for(Duration::from_secs(10))
         .unwrap();

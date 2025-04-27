@@ -13,7 +13,7 @@ use atomic_time::AtomicDuration;
 use crossbeam_channel::Sender;
 use edge::Edge;
 use node::{
-    IntoInputIdx, IntoNode, IntoOutput, IntoOutputIdx, Node, ProcessNodeError, ProcessorNode,
+    IntoInputIdx, IntoNode, IntoOutputIdx, IntoOutputs, Node, ProcessNodeError, ProcessorNode,
 };
 use petgraph::{
     prelude::{Direction, EdgeRef, StableDiGraph},
@@ -53,6 +53,9 @@ enum VisitorReset {
 #[non_exhaustive]
 #[error("Graph run error")]
 pub enum GraphRunError {
+    #[error("Unknown audio backend: {0}")]
+    UnknownBackend(String),
+
     /// An error occurred while processing the node.
     ProcessorNodeError(#[from] ProcessNodeError),
 
@@ -164,6 +167,17 @@ pub struct GraphInner {
 }
 
 impl GraphInner {
+    pub fn new(inputs: usize, outputs: usize) -> Self {
+        let mut this = Self::default();
+        for _ in 0..inputs {
+            this.add_audio_input();
+        }
+        for _ in 0..outputs {
+            this.add_audio_output();
+        }
+        this
+    }
+
     /// Adds an audio input node to the graph.
     pub fn add_audio_input(&mut self) -> NodeIndex {
         let idx = self.digraph.add_node(ProcessorNode::new(Null::default()));
@@ -172,7 +186,7 @@ impl GraphInner {
     }
 
     /// Adds an audio output node to the graph.
-    pub fn add_audio_output(&mut self) -> NodeIndex {
+    pub(crate) fn add_audio_output(&mut self) -> NodeIndex {
         let idx = self
             .digraph
             .add_node(ProcessorNode::new(Passthrough::<f32>::default()));
@@ -555,8 +569,10 @@ pub struct Graph {
 
 impl Graph {
     /// Creates a new empty `Graph`.
-    pub fn new() -> Self {
-        Self::default()
+    pub fn new(inputs: usize, outputs: usize) -> Self {
+        Self {
+            inner: Arc::new(Mutex::new(GraphInner::new(inputs, outputs))),
+        }
     }
 
     /// Returns `true` if the [`Graph`] is the same graph as `other`.
@@ -636,11 +652,13 @@ impl Graph {
     }
 
     /// Adds an audio output node to the graph.
-    pub fn dac(&self, input: impl IntoOutput) -> Node {
-        let id = self.with_inner(|graph| graph.add_audio_output());
-        let node = Node::new(self.clone(), id);
-        node.input(0).connect(input);
-        node
+    pub fn dac(&self, inputs: impl IntoOutputs) {
+        let inputs = inputs.into_outputs(self);
+        self.with_inner(|graph| {
+            for (o, i) in graph.output_nodes.clone().into_iter().zip(inputs) {
+                graph.connect(i.node_id, i.output_index, o, 0);
+            }
+        });
     }
 
     /// Adds a processor node to the graph.
@@ -741,10 +759,10 @@ impl Graph {
     #[inline]
     pub fn replace_node_gracefully(
         &self,
-        target: impl IntoNode,
+        replaced: impl IntoNode,
         replacement: impl IntoNode,
     ) -> Node {
-        let target = target.into_node(self);
+        let target = replaced.into_node(self);
         let replacement = replacement.into_node(self);
         let idx =
             self.with_inner(|graph| graph.replace_node_gracefully(target.id(), replacement.id()));
@@ -859,7 +877,7 @@ impl RunningGraph {
 
     pub fn run_for(self, duration: Duration) -> GraphRunResult<()> {
         while self.duration_written() < duration {
-            std::thread::yield_now();
+            std::hint::spin_loop();
         }
         self.stop()
     }

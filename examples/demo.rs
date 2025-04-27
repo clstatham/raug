@@ -31,18 +31,20 @@ fn main() {
     env_logger::init();
 
     // create a new graph
-    let graph = Graph::new();
+    let graph = Graph::new(0, 2);
 
     // add a sine oscillator
     let sine = SineOscillator::new().node(&graph, 440.0);
 
     // add some outputs (2 for stereo)
-    graph.dac(&sine);
-    graph.dac(&sine);
+    graph.dac((&sine, &sine));
 
     // open the audio stream
     graph
-        .play(CpalOut::default())
+        .play(CpalOut::spawn(
+            &AudioBackend::Default,
+            &AudioDevice::Default,
+        ))
         .unwrap()
         .run_for(Duration::from_secs(10))
         .unwrap();
