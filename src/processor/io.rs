@@ -24,6 +24,14 @@ impl SignalSpec {
             signal_type,
         }
     }
+
+    /// Creates a new [`SignalSpec`] with the given name and type.
+    pub fn of_type<S: Signal>(name: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            signal_type: S::signal_type(),
+        }
+    }
 }
 
 /// The mode in which a processor is processsing signals.

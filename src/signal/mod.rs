@@ -6,6 +6,9 @@ use std::{
     ops::{Deref, DerefMut},
 };
 
+use crate::{interned_short_type_name, processor::io::SignalSpec};
+use type_erased::AnyBuffer;
+
 pub mod type_erased;
 
 /// A type that can be stored in a [buffer](type_erased::AnyBuffer) and processed by a [`Processor`](crate::processor::Processor).
@@ -15,13 +18,25 @@ pub trait Signal: Sized + Clone + Default + Send + Sync + 'static {
     fn signal_type() -> SignalType {
         SignalType::of::<Self>()
     }
+
+    /// Creates a new buffer of the given size for this signal type.
+    #[inline]
+    fn create_buffer(size: usize) -> AnyBuffer {
+        AnyBuffer::zeros::<Self>(size)
+    }
+
+    /// Creates a [`SignalSpec`](crate::processor::io::SignalSpec) for this signal type with the given name.
+    #[inline]
+    fn signal_spec(name: impl Into<String>) -> SignalSpec {
+        SignalSpec::of_type::<Self>(name)
+    }
 }
 
 impl<T: Signal> Signal for Option<T> {}
 impl Signal for f32 {}
 impl Signal for bool {}
 
-pub const LIST_INLINE_SIZE: usize = 32;
+pub const LIST_INLINE_SIZE: usize = 16;
 
 #[derive(Debug, PartialEq)]
 pub struct List<T: Signal> {
@@ -190,7 +205,7 @@ impl SignalType {
     #[inline]
     pub fn of<T: Signal>() -> Self {
         Self {
-            name: std::any::type_name::<T>(),
+            name: interned_short_type_name::<T>(),
             id: TypeId::of::<T>(),
         }
     }

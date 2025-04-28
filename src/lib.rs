@@ -1,6 +1,8 @@
 #![doc = include_str!("../README.md")]
 #![cfg_attr(doc, warn(missing_docs))]
 
+use std::sync::OnceLock;
+
 pub mod builtins;
 pub mod graph;
 pub mod processor;
@@ -38,4 +40,10 @@ pub mod prelude {
 #[allow(unused)]
 pub mod __itertools {
     pub use itertools::*;
+}
+
+#[inline]
+pub(crate) fn interned_short_type_name<T: ?Sized>() -> &'static str {
+    static NAME: OnceLock<String> = OnceLock::new();
+    NAME.get_or_init(tynm::type_name::<T>)
 }

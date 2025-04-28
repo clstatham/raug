@@ -5,7 +5,9 @@ use std::fmt::Debug;
 use io::{ProcessorInputs, ProcessorOutputs, SignalSpec};
 use thiserror::Error;
 
-use crate::{graph::GraphRunError, prelude::AnyBuffer, signal::SignalType};
+use crate::{
+    graph::GraphRunError, interned_short_type_name, prelude::AnyBuffer, signal::SignalType,
+};
 
 pub mod io;
 
@@ -60,15 +62,7 @@ where
 {
     /// Returns the name of the processor.
     fn name(&self) -> &str {
-        let type_name = std::any::type_name::<Self>();
-        let has_generics = type_name.contains('<');
-        if has_generics {
-            let end = type_name.find('<').unwrap();
-            let start = type_name[..end].rfind(':').map_or(0, |i| i + 1);
-            &type_name[start..end]
-        } else {
-            type_name.rsplit(':').next().unwrap()
-        }
+        interned_short_type_name::<Self>()
     }
 
     /// Returns the specifications of the input signals of the processor.

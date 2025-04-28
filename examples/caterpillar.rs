@@ -46,20 +46,20 @@ pub fn random_tones(
 ) -> Node {
     let mast = Metro::default().node(graph, rates[0], ());
 
-    let rate = pick_randomly(graph, &mast, rates)[0].unwrap_or(0.0f32);
+    let rate = pick_randomly(graph, &mast, rates);
 
     let trig = Metro::default().node(graph, rate, ());
 
-    let freq = pick_randomly(graph, &trig, freqs)[0].unwrap_or(440.0f32);
+    let freq = pick_randomly(graph, &trig, freqs);
 
-    let amp_decay = pick_randomly(graph, &trig, decays)[0].unwrap_or(0.0f32);
+    let amp_decay = pick_randomly(graph, &trig, decays);
 
-    let ratio = pick_randomly(graph, &trig, ratios)[0].unwrap_or(0.0f32);
+    let ratio = pick_randomly(graph, &trig, ratios);
 
-    let amp = pick_randomly(graph, &trig, amps)[0].unwrap_or(0.0f32);
+    let amp = pick_randomly(graph, &trig, amps);
 
     // create the amplitude envelope
-    let amp_env = Decay::default().node(graph, &trig, amp_decay);
+    let amp_env = Decay::new(1.0f32).node(graph, &trig, amp_decay);
 
     // create the modulator
     let modulator = BlSawOscillator::default().node(graph, &freq * ratio);
@@ -76,7 +76,7 @@ pub fn caterpillar(num_tones: usize) -> Graph {
     let amps = &[0.125, 0.25, 0.5, 0.8];
     let rates = &[1. / 8., 1. / 4., 1. / 2., 1., 2.];
 
-    let freqs = scale_freqs(0.0);
+    let freqs = scale_freqs(24.0);
 
     let graph = Graph::new(0, 2);
 
@@ -93,15 +93,20 @@ pub fn caterpillar(num_tones: usize) -> Graph {
 
     let mix = mix * 0.1f32;
 
-    let master = PeakLimiter::default().node(&graph, mix, (), (), ());
+    let verb = StereoReverb::default().node(&graph, &mix, &mix, ());
+    let mix_l = (&verb[0] + &mix) * 0.5f32;
+    let mix_r = (&verb[1] + &mix) * 0.5f32;
 
-    graph.dac((&master, &master));
+    let master_l = PeakLimiter::default().node(&graph, mix_l, (), (), ());
+    let master_r = PeakLimiter::default().node(&graph, mix_r, (), (), ());
+
+    graph.dac((&master_l, &master_r));
 
     graph
 }
 
 fn main() {
-    let graph = caterpillar(8);
+    let graph = caterpillar(20);
 
     graph
         .write_dot(&mut std::fs::File::create("caterpillar.dot").unwrap())

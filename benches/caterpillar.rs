@@ -4,7 +4,7 @@ use raug::prelude::*;
 use raug_ext::prelude::*;
 
 pub fn pick_randomly(graph: &Graph, trig: &Node, options: &[f32]) -> Node {
-    RandomChoice::<f32>::default().node(graph, trig, List::from_slice(options))
+    RandomChoice::<f32>::default().node(graph, trig, options)
 }
 
 pub fn fm_sine_osc(graph: &Graph, freq: &Node, mod_freq: &Node) -> Node {
@@ -46,17 +46,17 @@ pub fn random_tones(
 ) -> Node {
     let mast = Metro::default().node(graph, rates[0], ());
 
-    let rate = pick_randomly(graph, &mast, rates)[0].unwrap_or(0.0f32);
+    let rate = pick_randomly(graph, &mast, rates);
 
     let trig = Metro::default().node(graph, rate, ());
 
-    let freq = pick_randomly(graph, &trig, freqs)[0].unwrap_or(440.0f32);
+    let freq = pick_randomly(graph, &trig, freqs);
 
-    let amp_decay = pick_randomly(graph, &trig, decays)[0].unwrap_or(0.0f32);
+    let amp_decay = pick_randomly(graph, &trig, decays);
 
-    let ratio = pick_randomly(graph, &trig, ratios)[0].unwrap_or(0.0f32);
+    let ratio = pick_randomly(graph, &trig, ratios);
 
-    let amp = pick_randomly(graph, &trig, amps)[0].unwrap_or(0.0f32);
+    let amp = pick_randomly(graph, &trig, amps);
 
     // create the amplitude envelope
     let amp_env = Decay::new(1.0f32).node(graph, &trig, amp_decay);
