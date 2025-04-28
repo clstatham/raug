@@ -1180,10 +1180,18 @@ impl IntoOutput for &Node {
     }
 }
 
-impl<T: Signal + Default + Clone> IntoOutput for T {
+impl<T: Signal> IntoOutput for T {
     #[track_caller]
     fn into_output(self, graph: &Graph) -> Output {
         let node = graph.constant(self);
+        node.output(0).clone()
+    }
+}
+
+impl<T: Signal> IntoOutput for &[T] {
+    #[track_caller]
+    fn into_output(self, graph: &Graph) -> Output {
+        let node = graph.constant(List::from_slice(self));
         node.output(0).clone()
     }
 }

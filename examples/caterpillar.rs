@@ -4,7 +4,7 @@ use raug::prelude::*;
 use raug_ext::prelude::*;
 
 pub fn pick_randomly(graph: &Graph, trig: &Node, options: &[f32]) -> Node {
-    RandomChoice::<f32>::default().node(graph, trig, List::from_slice(options))
+    RandomChoice::<f32>::default().node(graph, trig, options)
 }
 
 pub fn fm_sine_osc(graph: &Graph, freq: &Node, mod_freq: &Node) -> Node {
@@ -59,7 +59,7 @@ pub fn random_tones(
     let amp = pick_randomly(graph, &trig, amps)[0].unwrap_or(0.0f32);
 
     // create the amplitude envelope
-    let amp_env = Decay::new(1.0f32).node(graph, &trig, amp_decay);
+    let amp_env = Decay::default().node(graph, &trig, amp_decay);
 
     // create the modulator
     let modulator = BlSawOscillator::default().node(graph, &freq * ratio);

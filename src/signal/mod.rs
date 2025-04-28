@@ -18,7 +18,6 @@ pub trait Signal: Sized + Clone + Default + Send + Sync + 'static {
 }
 
 impl<T: Signal> Signal for Option<T> {}
-impl<T: Signal> Signal for &'static [T] {}
 impl Signal for f32 {}
 impl Signal for bool {}
 
