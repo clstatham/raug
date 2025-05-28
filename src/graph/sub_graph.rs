@@ -38,9 +38,9 @@ impl Processor for SubGraph {
     fn input_spec(&self) -> Vec<SignalSpec> {
         self.0.with_inner(|graph| {
             graph
-                .input_nodes
+                .input_indices()
                 .iter()
-                .flat_map(|&node_id| graph.digraph[node_id].input_spec())
+                .flat_map(|&node_id| graph.graph[node_id].input_spec())
                 .cloned()
                 .collect()
         })
@@ -49,9 +49,9 @@ impl Processor for SubGraph {
     fn output_spec(&self) -> Vec<SignalSpec> {
         self.0.with_inner(|graph| {
             graph
-                .output_nodes
+                .output_indices()
                 .iter()
-                .flat_map(|&node_id| graph.digraph[node_id].output_spec())
+                .flat_map(|&node_id| graph.graph[node_id].output_spec())
                 .cloned()
                 .collect()
         })
@@ -60,9 +60,9 @@ impl Processor for SubGraph {
     fn create_output_buffers(&self, size: usize) -> Vec<AnyBuffer> {
         self.0.with_inner(|graph| {
             graph
-                .output_nodes
+                .output_indices()
                 .iter()
-                .flat_map(|&node_id| graph.digraph[node_id].processor.create_output_buffers(size))
+                .flat_map(|&node_id| graph.graph[node_id].processor.create_output_buffers(size))
                 .collect()
         })
     }
@@ -87,8 +87,8 @@ impl Processor for SubGraph {
                 let input = inputs.input(input_idx);
 
                 if let Some(input) = input {
-                    let node_id = graph.input_nodes[input_idx];
-                    graph.digraph[node_id].outputs[0].clone_from(input);
+                    let node_id = graph.input_indices()[input_idx];
+                    graph.graph[node_id].outputs[0].clone_from(input);
                 }
             }
 
@@ -99,8 +99,8 @@ impl Processor for SubGraph {
             for output_idx in 0..outputs.num_outputs() {
                 let mut output = outputs.output(output_idx);
 
-                let node_id = graph.output_nodes[output_idx];
-                let output_buffer = &graph.digraph[node_id].outputs[0];
+                let node_id = graph.output_indices()[output_idx];
+                let output_buffer = &graph.graph[node_id].outputs[0];
                 output.clone_from(output_buffer);
             }
 

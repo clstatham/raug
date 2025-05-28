@@ -10,7 +10,9 @@ pub fn pick_randomly(graph: &Graph, trig: &Node, options: &[f32]) -> Node {
 pub fn fm_sine_osc(graph: &Graph, freq: &Node, mod_freq: &Node) -> Node {
     let sr = SampleRate::default().node(graph);
     let phase = PhaseAccumulator::default().node(graph, freq / sr, ());
-    (phase * 2.0f32 * PI + mod_freq * 2.0f32 * PI)[0].sin()
+    (phase * 2.0f32 * PI + mod_freq * 2.0f32 * PI)
+        .output(0)
+        .sin()
 }
 
 pub fn midi_to_freq(midi: f32) -> f32 {
@@ -94,8 +96,8 @@ pub fn caterpillar(num_tones: usize) -> Graph {
     let mix = mix * 0.1f32;
 
     let verb = StereoReverb::default().node(&graph, &mix, &mix, ());
-    let mix_l = (&verb[0] + &mix) * 0.5f32;
-    let mix_r = (&verb[1] + &mix) * 0.5f32;
+    let mix_l = (&verb.output(0) + &mix) * 0.5f32;
+    let mix_r = (&verb.output(1) + &mix) * 0.5f32;
 
     let master_l = PeakLimiter::default().node(&graph, mix_l, (), (), ());
     let master_r = PeakLimiter::default().node(&graph, mix_r, (), (), ());

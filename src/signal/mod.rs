@@ -6,7 +6,7 @@ use std::{
     ops::{Deref, DerefMut},
 };
 
-use crate::{interned_short_type_name, processor::io::SignalSpec};
+use crate::{processor::io::SignalSpec, util::interned_short_type_name};
 use type_erased::AnyBuffer;
 
 pub mod type_erased;
@@ -243,5 +243,25 @@ impl std::fmt::Debug for SignalType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "SignalType({})", self.name)?;
         Ok(())
+    }
+}
+
+impl From<SignalType> for raug_graph::TypeInfo {
+    #[inline]
+    fn from(signal_type: SignalType) -> Self {
+        Self {
+            type_name: signal_type.name,
+            type_id: signal_type.id,
+        }
+    }
+}
+
+impl From<raug_graph::TypeInfo> for SignalType {
+    #[inline]
+    fn from(type_info: raug_graph::TypeInfo) -> Self {
+        Self {
+            name: type_info.type_name,
+            id: type_info.type_id,
+        }
     }
 }

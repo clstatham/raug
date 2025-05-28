@@ -1,8 +1,9 @@
 //! A directed graph of [`Processor`]s connected by [`Edge`]s.
 
 use std::{
+    ops::Deref,
     sync::{
-        Arc, Mutex,
+        Arc,
         atomic::{AtomicUsize, Ordering},
     },
     thread::JoinHandle,
@@ -11,16 +12,15 @@ use std::{
 
 use atomic_time::AtomicDuration;
 use crossbeam_channel::Sender;
-use edge::Edge;
-use node::{
-    IntoInputIdx, IntoNode, IntoOutputIdx, IntoOutputs, Node, ProcessNodeError, ProcessorNode,
-};
-use petgraph::{
-    prelude::{Direction, EdgeRef, StableDiGraph},
-    visit::DfsPostOrder,
+use node::{IntoNode, IntoOutputs, Node, ProcessNodeError, ProcessorNode};
+use raug_graph::{
+    builder::IntoIndex,
+    graph::{AbstractGraph, Connection, EdgeIndex, NodeIndex},
+    petgraph::{self, Direction, visit::EdgeRef},
+    prelude::GraphBuilder,
 };
 use runtime::{AudioDevice, AudioOut};
-use rustc_hash::{FxHashMap, FxHashSet};
+use rustc_hash::FxHashMap;
 
 use crate::{
     prelude::{Constant, Null, Passthrough, ProcEnv},
@@ -28,25 +28,9 @@ use crate::{
     signal::{Signal, type_erased::AnyBuffer},
 };
 
-pub mod edge;
 pub mod node;
 pub mod runtime;
 pub mod sub_graph;
-
-/// The inner type of node indices.
-pub(crate) type GraphIx = u32;
-/// The type of node indices.
-pub type NodeIndex = petgraph::graph::NodeIndex<GraphIx>;
-
-/// The type of the directed graph.
-pub type DiGraph = StableDiGraph<ProcessorNode, Edge, GraphIx>;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-enum VisitorReset {
-    #[default]
-    Ready,
-    NeedsReset,
-}
 
 /// The type of error that occurred while running a graph.
 #[derive(Debug, thiserror::Error)]
@@ -147,16 +131,7 @@ pub type GraphConstructionResult<T> = Result<T, GraphConstructionError>;
 
 #[derive(Default)]
 pub struct GraphInner {
-    pub(crate) digraph: DiGraph,
-
-    // cached input/output nodes
-    input_nodes: Vec<NodeIndex>,
-    output_nodes: Vec<NodeIndex>,
-
-    // cached visitor state for graph traversal
-    visitor: DfsPostOrder<NodeIndex, FxHashSet<NodeIndex>>,
-    visit_path: Vec<NodeIndex>,
-    visitor_reset: VisitorReset,
+    pub(crate) graph: raug_graph::graph::Graph<Self>,
 
     // cached strongly connected components (feedback loops)
     sccs: Vec<Vec<NodeIndex>>,
@@ -164,6 +139,25 @@ pub struct GraphInner {
     pub(crate) sample_rate: f32,
     pub(crate) block_size: usize,
     pub(crate) max_block_size: usize,
+}
+
+pub type Edge = Connection<GraphInner>;
+
+impl AbstractGraph for GraphInner {
+    type Node = ProcessorNode;
+    type Edge = ();
+
+    fn duplicate_connection_mode() -> raug_graph::prelude::DuplicateConnectionMode {
+        raug_graph::graph::DuplicateConnectionMode::Disconnect
+    }
+
+    fn graph(&self) -> &raug_graph::prelude::Graph<Self> {
+        &self.graph
+    }
+
+    fn graph_mut(&mut self) -> &mut raug_graph::prelude::Graph<Self> {
+        &mut self.graph
+    }
 }
 
 impl GraphInner {
@@ -180,33 +174,29 @@ impl GraphInner {
 
     /// Adds an audio input node to the graph.
     pub fn add_audio_input(&mut self) -> NodeIndex {
-        let idx = self.digraph.add_node(ProcessorNode::new(Null::default()));
-        self.input_nodes.push(idx);
-        idx
+        self.graph.add_input(ProcessorNode::new(Null::default()))
     }
 
     /// Adds an audio output node to the graph.
     pub(crate) fn add_audio_output(&mut self) -> NodeIndex {
-        let idx = self
-            .digraph
-            .add_node(ProcessorNode::new(Passthrough::<f32>::default()));
-        self.output_nodes.push(idx);
-        idx
+        let mut node = ProcessorNode::new(Passthrough::<f32>::default());
+        node.allocate(self.sample_rate, self.max_block_size);
+        node.resize_buffers(self.sample_rate, self.max_block_size);
+        self.graph.add_output(node)
     }
 
-    /// Adds a processor node to the graph.
-    pub fn add_processor(&mut self, processor: impl Processor) -> NodeIndex {
-        let mut node = ProcessorNode::new(processor);
-
+    pub fn add_node(&mut self, mut node: ProcessorNode) -> NodeIndex {
         // allocate for the node on-the-fly with the current sample rate and
         // block size, so that it can immediately be used
         node.allocate(self.sample_rate, self.max_block_size);
         node.resize_buffers(self.sample_rate, self.max_block_size);
 
-        let node = self.digraph.add_node(node);
-        self.visitor_reset = VisitorReset::NeedsReset;
+        self.graph.add_node(node)
+    }
 
-        node
+    /// Adds a processor node to the graph.
+    pub fn add_processor(&mut self, processor: impl Processor) -> NodeIndex {
+        self.add_node(ProcessorNode::new(processor))
     }
 
     /// Connects two nodes in the graph.
@@ -220,122 +210,32 @@ impl GraphInner {
         source_output: u32,
         target: NodeIndex,
         target_input: u32,
-    ) {
-        // check if there's already a connection to the target input
-        if let Some(edge) = self
-            .digraph
-            .edges_directed(target, Direction::Incoming)
-            .find(|edge| edge.weight().target_input == target_input)
-        {
-            // remove the existing edge
-            self.digraph.remove_edge(edge.id()).unwrap();
-        }
-
-        self.digraph.add_edge(
-            source,
-            target,
-            Edge {
-                source,
-                target,
-                source_output,
-                target_input,
-            },
-        );
-
-        self.visitor_reset = VisitorReset::NeedsReset;
+    ) -> EdgeIndex {
+        self.graph
+            .connect(source, source_output, target, target_input)
+            .unwrap()
     }
 
     /// Disconnects two nodes in the graph at the specified input and output indices.
     ///
     /// Does nothing if the edge does not exist.
-    pub fn disconnect(
-        &mut self,
-        source: NodeIndex,
-        source_output: u32,
-        target: NodeIndex,
-        target_input: u32,
-    ) {
-        let edge = self
-            .digraph
-            .edges_directed(target, Direction::Incoming)
-            .find(|edge| {
-                let weight = edge.weight();
-                edge.source() == source
-                    && weight.source_output == source_output
-                    && weight.target_input == target_input
-            });
-
-        if let Some(edge) = edge {
-            self.digraph.remove_edge(edge.id()).unwrap();
-        }
-        self.visitor_reset = VisitorReset::NeedsReset;
+    pub fn disconnect(&mut self, target: NodeIndex, target_input: u32) {
+        self.graph.disconnect(target, target_input);
     }
 
     /// Disconnects all inputs to the specified node.
     pub fn disconnect_all_inputs(&mut self, node: NodeIndex) -> Vec<Edge> {
-        let incoming_edges = self
-            .digraph
-            .edges_directed(node, Direction::Incoming)
-            .map(|edge| edge.id())
-            .collect::<Vec<_>>();
-        let mut edges_removed = Vec::new();
-        for edge in incoming_edges {
-            let edge = self.digraph.remove_edge(edge).unwrap();
-            edges_removed.push(edge);
-        }
-        self.visitor_reset = VisitorReset::NeedsReset;
-        edges_removed
+        self.graph.disconnect_all_inputs(node)
     }
 
     /// Disconnects all outputs from the specified node.
     pub fn disconnect_all_outputs(&mut self, node: NodeIndex) -> Vec<Edge> {
-        let outgoing_edges = self
-            .digraph
-            .edges_directed(node, Direction::Outgoing)
-            .map(|edge| edge.id())
-            .collect::<Vec<_>>();
-        let mut edges_removed = Vec::new();
-        for edge in outgoing_edges {
-            let edge = self.digraph.remove_edge(edge).unwrap();
-            edges_removed.push(edge);
-        }
-        self.visitor_reset = VisitorReset::NeedsReset;
-        edges_removed
+        self.graph.disconnect_all_outputs(node)
     }
 
     /// Disconnects all inputs and outputs from the specified node.
     pub fn disconnect_all(&mut self, node: NodeIndex) -> Vec<Edge> {
-        let mut edges_removed = Vec::new();
-        edges_removed.extend(self.disconnect_all_inputs(node));
-        edges_removed.extend(self.disconnect_all_outputs(node));
-        self.visitor_reset = VisitorReset::NeedsReset;
-        edges_removed
-    }
-
-    pub(crate) fn gc_nodes(&mut self) {
-        let nodes: FxHashSet<NodeIndex> = self.digraph.node_indices().collect();
-        let mut removed = FxHashSet::default();
-        let mut again = false;
-        while !again {
-            again = false;
-            for node in nodes.iter() {
-                if removed.contains(node) {
-                    continue;
-                }
-                if !self.output_nodes.contains(node)
-                    && self
-                        .digraph
-                        .edges_directed(*node, Direction::Outgoing)
-                        .count()
-                        == 0
-                {
-                    self.digraph.remove_node(*node);
-                    removed.insert(node);
-                    self.visitor_reset = VisitorReset::NeedsReset;
-                    again = true;
-                }
-            }
-        }
+        self.graph.disconnect_all(node)
     }
 
     pub fn replace_node_gracefully(
@@ -353,15 +253,14 @@ impl GraphInner {
                 ..
             } = edge;
 
-            if source_output < self.digraph[replacement].num_outputs() as u32 {
+            if source_output < self.graph[replacement].num_outputs() as u32 {
                 self.connect(replacement, source_output, target, target_input);
             } else {
                 // leave it disconnected
             }
         }
 
-        self.visitor_reset = VisitorReset::NeedsReset;
-        self.gc_nodes();
+        // self.graph.garbage_collect();
 
         replacement
     }
@@ -369,32 +268,33 @@ impl GraphInner {
     /// Returns the number of audio inputs in the graph.
     #[inline]
     pub fn num_audio_inputs(&self) -> usize {
-        self.input_nodes.len()
+        self.graph.num_inputs()
     }
 
     /// Returns the number of audio outputs in the graph.
     #[inline]
     pub fn num_audio_outputs(&self) -> usize {
-        self.output_nodes.len()
+        self.graph.num_outputs()
     }
 
     /// Returns the indices of the audio inputs in the graph.
     #[inline]
     pub fn input_indices(&self) -> &[NodeIndex] {
-        &self.input_nodes
+        self.graph.inputs()
     }
 
     /// Returns the indices of the audio outputs in the graph.
     #[inline]
     pub fn output_indices(&self) -> &[NodeIndex] {
-        &self.output_nodes
+        self.graph.outputs()
     }
 
     /// Returns a mutable reference to the graph's input buffer for the given input index.
     #[inline]
     pub fn get_input_mut(&mut self, input_index: usize) -> Option<&mut [f32]> {
         let input_index = *self.input_indices().get(input_index)?;
-        self.digraph
+        self.graph
+            .digraph_mut()
             .node_weight_mut(input_index)
             .map(|node| node.outputs[0].as_mut_slice::<f32>().unwrap())
     }
@@ -403,7 +303,8 @@ impl GraphInner {
     #[inline]
     pub fn get_output(&self, output_index: usize) -> Option<&[f32]> {
         let output_index = *self.output_indices().get(output_index)?;
-        self.digraph
+        self.graph
+            .digraph()
             .node_weight(output_index)
             .map(|buffers| buffers.outputs[0].as_slice::<f32>().unwrap())
     }
@@ -415,55 +316,24 @@ impl GraphInner {
 
     #[inline]
     pub(crate) fn detect_sccs(&mut self) {
-        self.sccs = petgraph::algo::kosaraju_scc(&self.digraph);
+        self.sccs = petgraph::algo::kosaraju_scc(&self.graph.digraph());
         self.sccs.reverse();
     }
 
-    #[inline]
-    pub(crate) fn reset_visitor(&mut self) {
-        if self.visitor_reset == VisitorReset::Ready {
-            return;
+    pub fn reset_visitor(&mut self) {
+        if self.graph.needs_visitor_reset {
+            self.detect_sccs();
         }
-        if self.visit_path.capacity() < self.digraph.node_count() {
-            self.visit_path = Vec::with_capacity(self.digraph.node_count());
-        }
-        self.visit_path.clear();
-        self.visitor.discovered.clear();
-        self.visitor.stack.clear();
-        self.visitor.finished.clear();
-
-        for node in self.digraph.externals(Direction::Incoming) {
-            self.visitor.stack.push(node);
-        }
-        while let Some(node) = self.visitor.next(&self.digraph) {
-            self.visit_path.push(node);
-        }
-        self.visit_path.reverse();
-        self.detect_sccs();
-        self.visitor_reset = VisitorReset::Ready;
-    }
-
-    /// Calls the provided closure on each node in the graph in topological order.
-    pub fn visit<F, E>(&mut self, mut f: F) -> Result<(), E>
-    where
-        F: FnMut(&mut GraphInner, NodeIndex) -> Result<(), E>,
-    {
-        self.reset_visitor();
-
-        for i in 0..self.visit_path.len() {
-            f(self, self.visit_path[i])?;
-        }
-
-        Ok(())
+        self.graph.reset_visitor();
     }
 
     /// Calls [`Processor::allocate()`] on each node in the graph.
     pub fn allocate(&mut self, sample_rate: f32, max_block_size: usize) {
-        self.visit(|graph, node| -> Result<(), ()> {
-            graph.digraph[node].allocate(sample_rate, max_block_size);
-            Ok(())
-        })
-        .unwrap();
+        self.reset_visitor();
+        self.graph.visit_mut(|_id, node| {
+            node.allocate(sample_rate, max_block_size);
+            raug_graph::graph::VisitResult::Continue::<()>
+        });
         self.resize_buffers(sample_rate, max_block_size);
 
         self.sample_rate = sample_rate;
@@ -473,11 +343,11 @@ impl GraphInner {
 
     /// Calls [`Processor::resize_buffers()`] on each node in the graph.
     pub fn resize_buffers(&mut self, sample_rate: f32, block_size: usize) {
-        self.visit(|graph, node| -> Result<(), ()> {
-            graph.digraph[node].resize_buffers(sample_rate, block_size);
-            Ok(())
-        })
-        .unwrap();
+        self.reset_visitor();
+        self.graph.visit_mut(|_id, node| {
+            node.resize_buffers(sample_rate, block_size);
+            raug_graph::graph::VisitResult::Continue::<()>
+        });
 
         self.sample_rate = sample_rate;
         self.block_size = block_size;
@@ -487,15 +357,15 @@ impl GraphInner {
     pub fn write_dot<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
         let mut node_names = FxHashMap::default();
         let mut graph = dot_graph::Graph::new("Raug", dot_graph::Kind::Digraph);
-        for (i, node) in self.digraph.node_indices().enumerate() {
-            let node_name = format!("_{}_{}", i, self.digraph[node].name());
-            graph.add_node(dot_graph::Node::new(&node_name).label(self.digraph[node].name()));
+        for (i, node) in self.graph.digraph().node_indices().enumerate() {
+            let node_name = format!("_{}_{}", i, self.graph[node].name());
+            graph.add_node(dot_graph::Node::new(&node_name).label(self.graph[node].name()));
             node_names.insert(node, node_name);
         }
 
-        for edge in self.digraph.edge_weights() {
-            let source = &self.digraph[edge.source];
-            let target = &self.digraph[edge.target];
+        for edge in self.graph.digraph().edge_weights() {
+            let source = &self.graph[edge.source];
+            let target = &self.graph[edge.target];
             let source_name = &node_names[&edge.source];
             let target_name = &node_names[&edge.target];
             let output_name = &source.output_spec()[edge.source_output as usize].name;
@@ -536,17 +406,18 @@ impl GraphInner {
         let mut inputs: [_; 32] = [None; 32];
 
         for (source_id, edge) in self
-            .digraph
+            .graph
+            .digraph()
             .edges_directed(node_id, Direction::Incoming)
             .map(|edge| (edge.source(), edge.weight()))
         {
-            let source_buffers = &self.digraph[source_id].outputs;
+            let source_buffers = &self.graph[source_id].outputs;
             let buffer = &source_buffers[edge.source_output as usize] as *const AnyBuffer;
 
             inputs[edge.target_input as usize] = Some(buffer);
         }
 
-        let node = &mut self.digraph[node_id];
+        let node = &mut self.graph[node_id];
 
         node.process(
             &inputs[..],
@@ -564,21 +435,23 @@ impl GraphInner {
 /// A directed graph of [`Processor`]s connected by [`Edge`]s.
 #[derive(Clone, Default)]
 pub struct Graph {
-    inner: Arc<Mutex<GraphInner>>,
+    pub(crate) inner: GraphBuilder<GraphInner>,
+}
+
+impl Deref for Graph {
+    type Target = GraphBuilder<GraphInner>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
 }
 
 impl Graph {
     /// Creates a new empty `Graph`.
     pub fn new(inputs: usize, outputs: usize) -> Self {
         Self {
-            inner: Arc::new(Mutex::new(GraphInner::new(inputs, outputs))),
+            inner: GraphBuilder::from_inner(GraphInner::new(inputs, outputs)),
         }
-    }
-
-    /// Returns `true` if the [`Graph`] is the same graph as `other`.
-    /// [`Graph`]s are internally reference counted, so this is implemented using [`Arc::ptr_eq`].
-    pub fn is_same_graph(&self, other: &Self) -> bool {
-        Arc::ptr_eq(&self.inner, &other.inner)
     }
 
     /// Allocates internal buffers for the graph with the given sample rate and block size.
@@ -655,8 +528,9 @@ impl Graph {
     pub fn dac(&self, inputs: impl IntoOutputs) {
         let inputs = inputs.into_outputs(self);
         self.with_inner(|graph| {
-            for (o, i) in graph.output_nodes.clone().into_iter().zip(inputs) {
-                graph.connect(i.node_id, i.output_index, o, 0);
+            let outputs = graph.output_indices().to_vec();
+            for (o, i) in outputs.into_iter().zip(inputs) {
+                graph.connect(i.node_id(), i.output_index, o, 0);
             }
         });
     }
@@ -669,66 +543,21 @@ impl Graph {
 
     /// Returns the number of nodes in the graph.
     pub fn node_count(&self) -> usize {
-        self.with_inner(|graph| graph.digraph.node_count())
+        self.with_inner(|graph| graph.graph.digraph().node_count())
     }
 
     /// Returns the number of edges in the graph.
     pub fn edge_count(&self) -> usize {
-        self.with_inner(|graph| graph.digraph.edge_count())
-    }
-
-    /// Runs the given closure with a reference to the graph.
-    pub fn with_inner<F, R>(&self, f: F) -> R
-    where
-        F: FnOnce(&mut GraphInner) -> R,
-    {
-        f(&mut self.inner.lock().unwrap())
-    }
-
-    /// Connects the given output of one node to the given input of another node.
-    #[track_caller]
-    #[inline]
-    pub fn connect(
-        &self,
-        from: impl IntoNode,
-        from_output: impl IntoOutputIdx,
-        to: impl IntoNode,
-        to_input: impl IntoInputIdx,
-    ) {
-        let from = from.into_node(self);
-        let to = to.into_node(self);
-        let from_output = from_output.into_output_idx(&from);
-        let to_input = to_input.into_input_idx(&to);
-        self.with_inner(|graph| graph.connect(from.id(), from_output, to.id(), to_input));
-    }
-
-    #[inline]
-    #[track_caller]
-    pub(crate) fn connect_raw(
-        &self,
-        from_id: NodeIndex,
-        from_output: u32,
-        to_id: NodeIndex,
-        to_input: u32,
-    ) {
-        self.with_inner(|graph| graph.connect(from_id, from_output, to_id, to_input));
+        self.with_inner(|graph| graph.graph.digraph().edge_count())
     }
 
     /// Disconnects the given output of one node from the given input of another node.
     #[track_caller]
     #[inline]
-    pub fn disconnect(
-        &self,
-        from: impl IntoNode,
-        from_output: impl IntoOutputIdx,
-        to: impl IntoNode,
-        to_input: impl IntoInputIdx,
-    ) {
-        let from = from.into_node(self);
+    pub fn disconnect(&self, to: impl IntoNode, to_input: impl IntoIndex) {
         let to = to.into_node(self);
-        let from_output = from_output.into_output_idx(&from);
-        let to_input = to_input.into_input_idx(&to);
-        self.with_inner(|graph| graph.disconnect(from.id(), from_output, to.id(), to_input));
+        let to_input = to_input.into_input_idx(&to).expect("Invalid input index");
+        self.with_inner(|graph| graph.disconnect(to.id(), to_input));
     }
 
     /// Disconnects all inputs to the given node.

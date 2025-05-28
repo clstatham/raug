@@ -10,7 +10,9 @@ pub fn pick_randomly(graph: &Graph, trig: &Node, options: &[f32]) -> Node {
 pub fn fm_sine_osc(graph: &Graph, freq: &Node, mod_freq: &Node) -> Node {
     let sr = SampleRate::default().node(graph);
     let phase = PhaseAccumulator::default().node(graph, freq / sr, ());
-    (phase * 2.0f32 * PI + mod_freq * 2.0f32 * PI)[0].sin()
+    (phase * 2.0f32 * PI + mod_freq * 2.0f32 * PI)
+        .output(0)
+        .sin()
 }
 
 pub fn midi_to_freq(midi: f32) -> f32 {

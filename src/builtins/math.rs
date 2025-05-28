@@ -20,7 +20,7 @@ impl<T: Signal + Default + Clone> Constant<T> {
     pub fn new(value: T) -> Self {
         Self {
             value,
-            _marker0: PhantomData,
+            _t: PhantomData,
         }
     }
 }

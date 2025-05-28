@@ -19,7 +19,6 @@ profiling = ["dep:allocation-counter"]
 cpal = { version = "0.15.3", features = [] }
 itertools = "0.14"
 log = "0.4.22"
-petgraph = { version = "0.8", features = [] }
 hound = "3.5"
 thiserror = "2.0"
 downcast-rs = "2.0"
@@ -34,6 +33,7 @@ smallstr = { git = "https://github.com/clstatham/smallstr" }
 atomic-time = "0.1.5"
 dot_graph = "0.2.3"
 tynm = "0.2.0"
+raug-graph = { path = "../raug-graph" }
 
 
 [dev-dependencies]

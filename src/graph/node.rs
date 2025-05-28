@@ -1,10 +1,12 @@
 //! Contains the [`ProcessorNode`] and [`Node`] structs, which represent nodes in the audio graph that process signals.
 
-use std::{
-    fmt::Debug,
-    sync::{Arc, Weak},
-};
+use std::{fmt::Debug, ops::Deref};
 
+use raug_graph::{
+    builder::{IntoIndex, IntoInput, IntoOutput},
+    node::AbstractNode,
+    prelude::{GraphBuilder, NodeBuilder},
+};
 use thiserror::Error;
 
 use crate::{
@@ -12,14 +14,14 @@ use crate::{
     signal::{SignalType, type_erased::AnyBuffer},
 };
 
-use super::{Graph, NodeIndex};
+use super::{Graph, GraphInner, NodeIndex};
 
 /// Error that can occur during the processing of a node.
 #[derive(Error, Debug)]
 #[error("Error processing node '{node_name}': {error})")]
 pub struct ProcessNodeError {
-    pub(crate) error: ProcessorError,
-    pub(crate) node_name: String,
+    pub error: ProcessorError,
+    pub node_name: String,
 }
 
 impl ProcessNodeError {
@@ -43,6 +45,38 @@ pub struct ProcessorNode {
 impl Debug for ProcessorNode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(self.processor.name())
+    }
+}
+
+impl AbstractNode for ProcessorNode {
+    fn num_inputs(&self) -> usize {
+        self.input_spec.len()
+    }
+
+    fn num_outputs(&self) -> usize {
+        self.output_spec.len()
+    }
+
+    fn input_type(&self, index: u32) -> Option<raug_graph::TypeInfo> {
+        self.input_spec
+            .get(index as usize)
+            .map(|v| v.signal_type.into())
+    }
+
+    fn output_type(&self, index: u32) -> Option<raug_graph::TypeInfo> {
+        self.output_spec
+            .get(index as usize)
+            .map(|v| v.signal_type.into())
+    }
+
+    fn input_name(&self, index: u32) -> Option<&str> {
+        self.input_spec.get(index as usize).map(|v| v.name.as_str())
+    }
+
+    fn output_name(&self, index: u32) -> Option<&str> {
+        self.output_spec
+            .get(index as usize)
+            .map(|v| v.name.as_str())
     }
 }
 
@@ -150,30 +184,18 @@ impl ProcessorNode {
     }
 }
 
-#[inline]
-#[track_caller]
-fn assert_signals_compatible(a: &SignalType, b: &SignalType, op: impl Into<String>) {
-    assert_eq!(
-        a,
-        b,
-        "{}: incompatible signal types: {:?} vs {:?}",
-        op.into(),
-        a,
-        b
-    );
-}
-
-pub(crate) struct NodeInner {
-    graph: Graph,
-    node_id: NodeIndex,
-    inputs: Vec<Input>,
-    outputs: Vec<Output>,
-}
-
 /// Represents a node in the audio graph. This type is used to build connections between nodes.
 #[derive(Clone)]
 pub struct Node {
-    inner: Arc<NodeInner>,
+    inner: NodeBuilder<GraphInner>,
+}
+
+impl Deref for Node {
+    type Target = NodeBuilder<GraphInner>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
 }
 
 impl Debug for Node {
@@ -182,85 +204,47 @@ impl Debug for Node {
     }
 }
 
+impl IntoOutput<GraphInner> for Node {
+    fn into_output(
+        self,
+        graph: &GraphBuilder<GraphInner>,
+    ) -> std::result::Result<raug_graph::builder::Output<GraphInner>, raug_graph::Error> {
+        assert!(
+            graph.is_same_graph(&self.inner.graph()),
+            "Node must belong to the same graph"
+        );
+        self.inner.output(0)
+    }
+}
+
+impl IntoOutput<GraphInner> for &Node {
+    fn into_output(
+        self,
+        graph: &GraphBuilder<GraphInner>,
+    ) -> std::result::Result<raug_graph::builder::Output<GraphInner>, raug_graph::Error> {
+        IntoOutput::into_output(self.clone(), graph)
+    }
+}
+
 impl Node {
     pub(crate) fn new(graph: Graph, node_id: NodeIndex) -> Self {
-        let inner = Arc::new_cyclic(|sref| {
-            let mut node = NodeInner {
-                graph: graph.clone(),
-                node_id,
-                inputs: Vec::new(),
-                outputs: Vec::new(),
-            };
-            let mut inputs = Vec::new();
-            let mut outputs = Vec::new();
-            graph.with_inner(|graph_inner| {
-                let node = &graph_inner.digraph[node_id];
-                for i in 0..node.num_inputs() {
-                    inputs.push(Input {
-                        graph: graph.clone(),
-                        node: sref.clone(),
-                        node_id,
-                        input_index: i as u32,
-                        signal_type: node.input_spec()[i].signal_type,
-                        name: node.input_spec()[i].name.clone(),
-                    });
-                }
-                for i in 0..node.num_outputs() {
-                    outputs.push(Output {
-                        graph: graph.clone(),
-                        node: sref.clone(),
-                        node_id,
-                        output_index: i as u32,
-                        signal_type: node.output_spec()[i].signal_type,
-                        name: node.output_spec()[i].name.clone(),
-                    });
-                }
-            });
-            node.inputs = inputs;
-            node.outputs = outputs;
-
-            node
-        });
-
-        Node { inner }
-    }
-
-    /// Returns `true` if this node is the same as the other node.
-    /// [`Node`]s are internally reference counted, so this is implemented using [`Arc::ptr_eq`].
-    pub fn is_same_node(&self, other: &Node) -> bool {
-        Arc::ptr_eq(&self.inner, &other.inner)
-    }
-
-    #[inline]
-    pub fn id(&self) -> NodeIndex {
-        self.inner.node_id
+        Node {
+            inner: NodeBuilder::new(graph.inner, node_id),
+        }
     }
 
     /// Returns the graph builder that this node belongs to.
     #[inline]
-    pub fn graph(&self) -> &Graph {
-        &self.inner.graph
+    pub fn graph(&self) -> Graph {
+        Graph {
+            inner: self.inner.graph(),
+        }
     }
 
     /// Returns the name of the processor this node represents.
     #[inline]
     pub fn name(&self) -> String {
-        self.graph()
-            .with_inner(|graph| graph.digraph[self.id()].name().to_string())
-    }
-
-    /// Returns the number of inputs of the node.
-    #[inline]
-    pub fn num_inputs(&self) -> usize {
-        self.graph()
-            .with_inner(|graph| graph.digraph[self.id()].num_inputs())
-    }
-
-    /// Returns the number of outputs of the node.
-    #[inline]
-    pub fn num_outputs(&self) -> usize {
-        self.graph()
-            .with_inner(|graph| graph.digraph[self.id()].num_outputs())
+        self.inner.name().expect("Processor should have a name")
     }
 
     /// Returns the name of the input at the given index.
@@ -270,19 +254,10 @@ impl Node {
     /// Panics if the index is out of bounds.
     #[inline]
     #[track_caller]
-    pub fn input_name(&self, index: impl IntoInputIdx) -> String {
-        let index = index.into_input_idx(self);
-        assert!(
-            index < self.num_inputs() as u32,
-            "input index {} out of bounds for node {}",
-            index,
-            self.name()
-        );
-        self.graph().with_inner(|graph| {
-            graph.digraph[self.id()].input_spec()[index as usize]
-                .name
-                .clone()
-        })
+    pub fn input_name(&self, index: impl IntoIndex) -> String {
+        self.inner
+            .input_name(index)
+            .expect("Input should have a name")
     }
 
     /// Returns the name of the output at the given index.
@@ -292,19 +267,10 @@ impl Node {
     /// Panics if the index is out of bounds.
     #[inline]
     #[track_caller]
-    pub fn output_name(&self, index: impl IntoOutputIdx) -> String {
-        let index = index.into_output_idx(self);
-        assert!(
-            index < self.num_outputs() as u32,
-            "output index {} out of bounds for node {}",
-            index,
-            self.name()
-        );
-        self.graph().with_inner(|graph| {
-            graph.digraph[self.id()].output_spec()[index as usize]
-                .name
-                .clone()
-        })
+    pub fn output_name(&self, index: impl IntoIndex) -> String {
+        self.inner
+            .output_name(index)
+            .expect("Output should have a name")
     }
 
     /// Returns the input of the node at the given index.
@@ -314,8 +280,10 @@ impl Node {
     /// Panics if the index is out of bounds.
     #[inline]
     #[track_caller]
-    pub fn input(&self, index: impl IntoInputIdx) -> &Input {
-        &self.inner.inputs[index.into_input_idx(self) as usize]
+    pub fn input(&self, index: impl IntoIndex) -> Input {
+        Input {
+            inner: self.inner.input(index).expect("Input should exist"),
+        }
     }
 
     /// Returns the output of the node at the given index.
@@ -324,8 +292,10 @@ impl Node {
     ///
     /// Panics if the index is out of bounds.
     #[inline]
-    pub fn output(&self, index: impl IntoOutputIdx) -> &Output {
-        &self.inner.outputs[index.into_output_idx(self) as usize]
+    pub fn output(&self, index: impl IntoIndex) -> Output {
+        Output {
+            inner: self.inner.output(index).expect("Output should exist"),
+        }
     }
 
     /// Returns the signal type of the input at the given index.
@@ -335,16 +305,11 @@ impl Node {
     /// Panics if the index is out of bounds.
     #[inline]
     #[track_caller]
-    pub fn input_type(&self, index: impl IntoInputIdx) -> SignalType {
-        let index = index.into_input_idx(self);
-        assert!(
-            index < self.num_inputs() as u32,
-            "input index {} out of bounds for node {}",
-            index,
-            self.name()
-        );
-        self.graph()
-            .with_inner(|graph| graph.digraph[self.id()].input_spec()[index as usize].signal_type)
+    pub fn input_type(&self, index: impl IntoIndex) -> SignalType {
+        self.inner
+            .input_type(index)
+            .expect("Input should have a signal type")
+            .into()
     }
 
     /// Returns the signal type of the output at the given index.
@@ -354,118 +319,11 @@ impl Node {
     /// Panics if the index is out of bounds.
     #[inline]
     #[track_caller]
-    pub fn output_type(&self, index: impl IntoOutputIdx) -> SignalType {
-        let index = index.into_output_idx(self);
-        assert!(
-            index < self.num_outputs() as u32,
-            "output index {} out of bounds for node {}",
-            index,
-            self.name()
-        );
-        self.graph()
-            .with_inner(|graph| graph.digraph[self.id()].output_spec()[index as usize].signal_type)
-    }
-
-    /// Connects the output of another node to the input of this node.
-    ///
-    /// # Panics
-    ///
-    /// - Panics if the input signal type does not match the output signal type.
-    /// - Panics if the output index is out of bounds.
-    /// - Panics if the input index is out of bounds.
-    #[inline]
-    #[track_caller]
-    pub fn connect_input(
-        &self,
-        source: impl IntoNode,
-        source_output: impl IntoOutputIdx,
-        target_input: impl IntoInputIdx,
-    ) -> Node {
-        let output = source.into_node(self.graph());
-        let source_output = source_output.into_output_idx(&output);
-        let target_input = target_input.into_input_idx(self);
-
-        assert_signals_compatible(
-            &output.output_type(source_output),
-            &self.input_type(target_input),
-            "connect_input",
-        );
-        assert!(
-            target_input < self.num_inputs() as u32,
-            "input index {} out of bounds for node {}",
-            target_input,
-            self.name()
-        );
-        assert!(
-            source_output < output.num_outputs() as u32,
-            "output index {} out of bounds for node {}",
-            source_output,
-            output.name()
-        );
-
-        self.graph()
-            .connect(output, source_output, self, target_input);
-        self.clone()
-    }
-
-    /// Connects the output of this node to the input of another node.
-    ///
-    /// # Panics
-    ///
-    /// - Panics if the output signal type does not match the input signal type.
-    /// - Panics if the output index is out of bounds.
-    /// - Panics if the input index is out of bounds.
-    #[inline]
-    #[track_caller]
-    pub fn connect_output(
-        &self,
-        output: impl IntoOutputIdx,
-        target: impl IntoNode,
-        target_input: impl IntoInputIdx,
-    ) -> Node {
-        let target = target.into_node(self.graph());
-        let output_index = output.into_output_idx(self);
-        let target_input = target_input.into_input_idx(&target);
-
-        assert_signals_compatible(
-            &self.output_type(output_index),
-            &target.input_type(target_input),
-            "connect_output",
-        );
-        assert!(
-            output_index < self.num_outputs() as u32,
-            "output index {} out of bounds for node {}",
-            output_index,
-            self.name()
-        );
-        assert!(
-            target_input < target.num_inputs() as u32,
-            "input index {} out of bounds for node {}",
-            target_input,
-            target.name()
-        );
-
-        self.graph()
-            .connect(self, output_index, target, target_input);
-        self.clone()
-    }
-
-    /// Disconnects all inputs from this node.
-    #[inline]
-    pub fn disconnect_all_inputs(&self) {
-        self.graph().disconnect_all_inputs(self);
-    }
-
-    /// Disconnects all outputs of this node from the graph.
-    #[inline]
-    pub fn disconnect_all_outputs(&self) {
-        self.graph().disconnect_all_outputs(self);
-    }
-
-    /// Disconnects all inputs and outputs of this node from the graph.
-    #[inline]
-    pub fn disconnect_all(&self) {
-        self.graph().disconnect_all(self);
+    pub fn output_type(&self, index: impl IntoIndex) -> SignalType {
+        self.inner
+            .output_type(index)
+            .expect("Output should have a signal type")
+            .into()
     }
 }
 
@@ -512,65 +370,50 @@ impl Edge {
     #[inline]
     pub fn disconnect(self) {
         let graph = self.source.graph().clone();
-        graph.disconnect(
-            self.source,
-            self.source_output,
-            self.target,
-            self.target_input,
-        );
+        graph.disconnect(self.target, self.target_input);
     }
 }
 
 /// Represents an input of a [`Node`].
 #[derive(Clone)]
 pub struct Input {
-    pub(crate) graph: Graph,
-    pub(crate) node: Weak<NodeInner>,
-    pub(crate) node_id: NodeIndex,
-    pub(crate) input_index: u32,
-    pub(crate) signal_type: SignalType,
-    pub(crate) name: String,
+    pub(crate) inner: raug_graph::builder::Input<GraphInner>,
 }
 
 impl Input {
     /// Returns the signal type of the input.
     #[inline]
     pub fn signal_type(&self) -> SignalType {
-        self.signal_type
+        self.inner
+            .type_info()
+            .expect("Input should have a signal type")
+            .into()
     }
 
     /// Returns the [`NodeIndex`] of the node that this input belongs to.
     #[inline]
     pub fn node_id(&self) -> NodeIndex {
-        self.node_id
+        self.inner.node_id()
     }
 
     /// Returns the [`Node`] that this input belongs to.
     #[inline]
     pub fn node(&self) -> Node {
-        if let Some(inner) = self.node.upgrade() {
-            Node { inner }
-        } else {
-            Node::new(self.graph.clone(), self.node_id)
+        Node {
+            inner: self.inner.node(),
         }
     }
 
     /// Returns the [`Graph`] that this input's node is a part of.
     #[inline]
-    pub fn graph(&self) -> &Graph {
-        &self.graph
-    }
-
-    /// Returns the index of the input.
-    #[inline]
-    pub fn index(&self) -> u32 {
-        self.input_index
+    pub fn graph(&self) -> Graph {
+        self.node().graph()
     }
 
     /// Returns the name of the input.
     #[inline]
-    pub fn name(&self) -> &str {
-        &self.name
+    pub fn name(&self) -> String {
+        self.inner.name().expect("Input should have a name")
     }
 
     /// Connects the input to the output of another node.
@@ -580,11 +423,18 @@ impl Input {
     /// Panics if the output and input signals do not have the same type.
     #[inline]
     #[track_caller]
-    pub fn connect(&self, output: impl IntoOutput) {
-        let output = output.into_output(self.graph());
-        assert_signals_compatible(&output.signal_type(), &self.signal_type(), "connect");
-        self.graph()
-            .connect_raw(output.node_id, output.index(), self.node_id(), self.index());
+    pub fn connect(&self, output: impl IntoOutputExt) {
+        let output = self::IntoOutputExt::into_output(output, &self.graph());
+        self.inner.connect(output).expect("Failed to connect input");
+    }
+}
+
+impl IntoInput<GraphInner> for Input {
+    fn into_input(
+        self,
+        graph: &GraphBuilder<GraphInner>,
+    ) -> std::result::Result<raug_graph::builder::Input<GraphInner>, raug_graph::Error> {
+        self.inner.into_input(graph)
     }
 }
 
@@ -597,7 +447,7 @@ macro_rules! specific_binary_op_impl {
             "Signal type must be {} for this operation",
             stringify!($type),
         );
-        let b = $b.into_output(graph);
+        let b = self::IntoOutputExt::into_output($b, &graph);
         assert_eq!(
             $self.signal_type(),
             b.signal_type(),
@@ -613,35 +463,48 @@ macro_rules! specific_binary_op_impl {
 /// Represents an output of a [`Node`].
 #[derive(Clone)]
 pub struct Output {
-    pub(crate) graph: Graph,
-    pub(crate) node: Weak<NodeInner>,
-    pub(crate) node_id: NodeIndex,
-    pub(crate) output_index: u32,
-    pub(crate) signal_type: SignalType,
-    pub(crate) name: String,
+    pub(crate) inner: raug_graph::builder::Output<GraphInner>,
+}
+
+impl Deref for Output {
+    type Target = raug_graph::builder::Output<GraphInner>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
+}
+
+impl raug_graph::builder::IntoOutput<GraphInner> for Output {
+    fn into_output(
+        self,
+        graph: &GraphBuilder<GraphInner>,
+    ) -> std::result::Result<raug_graph::builder::Output<GraphInner>, raug_graph::Error> {
+        self.inner.into_output(graph)
+    }
+}
+
+impl raug_graph::builder::IntoOutput<GraphInner> for &Output {
+    fn into_output(
+        self,
+        graph: &GraphBuilder<GraphInner>,
+    ) -> std::result::Result<raug_graph::builder::Output<GraphInner>, raug_graph::Error> {
+        self.inner.clone().into_output(graph)
+    }
 }
 
 impl Output {
-    /// Returns the [`NodeIndex`] of the node that this output is connected to.
-    #[inline]
-    pub fn node_id(&self) -> NodeIndex {
-        self.node_id
-    }
-
     /// Returns the [`Node`] that this output belongs to.
     #[inline]
     pub fn node(&self) -> Node {
-        if let Some(inner) = self.node.upgrade() {
-            Node { inner }
-        } else {
-            Node::new(self.graph.clone(), self.node_id)
+        Node {
+            inner: self.inner.node.clone(),
         }
     }
 
     /// Returns the [`Graph`] that this output's node is a part of.
     #[inline]
-    pub fn graph(&self) -> &Graph {
-        &self.graph
+    pub fn graph(&self) -> Graph {
+        self.node().graph()
     }
 
     /// Returns the index of the output.
@@ -653,13 +516,16 @@ impl Output {
     /// Returns the signal type of the output.
     #[inline]
     pub fn signal_type(&self) -> SignalType {
-        self.signal_type
+        self.inner
+            .type_info()
+            .expect("Output should have a signal type")
+            .into()
     }
 
     /// Returns the name of the output.
     #[inline]
-    pub fn name(&self) -> &str {
-        &self.name
+    pub fn name(&self) -> String {
+        self.inner.name().expect("Output should have a name")
     }
 
     /// Connects the output to the input of another node.
@@ -670,42 +536,36 @@ impl Output {
     #[inline]
     #[track_caller]
     pub fn connect(&self, input: &Input) {
-        assert_signals_compatible(&self.signal_type(), &input.signal_type(), "connect");
-        self.graph().connect_raw(
-            self.node_id,
-            self.output_index,
-            input.node_id,
-            input.index(),
-        );
+        input.connect(self);
     }
 
     /// Attaches an addition processor to the nodes.
     #[inline]
-    pub fn add(&self, b: impl IntoOutput) -> Node {
+    pub fn add(&self, b: impl IntoOutputExt) -> Node {
         specific_binary_op_impl!(self, b, Add => f32)
     }
 
     /// Attaches a subtraction processor to the nodes.
     #[inline]
-    pub fn sub(&self, b: impl IntoOutput) -> Node {
+    pub fn sub(&self, b: impl IntoOutputExt) -> Node {
         specific_binary_op_impl!(self, b, Sub => f32)
     }
 
     /// Attaches a multiplication processor to the nodes.
     #[inline]
-    pub fn mul(&self, b: impl IntoOutput) -> Node {
+    pub fn mul(&self, b: impl IntoOutputExt) -> Node {
         specific_binary_op_impl!(self, b, Mul => f32)
     }
 
     /// Attaches a division processor to the nodes.
     #[inline]
-    pub fn div(&self, b: impl IntoOutput) -> Node {
+    pub fn div(&self, b: impl IntoOutputExt) -> Node {
         specific_binary_op_impl!(self, b, Div => f32)
     }
 
     /// Attaches a remainder processor to the nodes.
     #[inline]
-    pub fn rem(&self, b: impl IntoOutput) -> Node {
+    pub fn rem(&self, b: impl IntoOutputExt) -> Node {
         specific_binary_op_impl!(self, b, Rem => f32)
     }
 
@@ -724,7 +584,7 @@ impl Output {
     }
 }
 
-impl<T: IntoOutput> std::ops::Add<T> for Output {
+impl<T: IntoOutputExt> std::ops::Add<T> for Output {
     type Output = Node;
 
     #[inline]
@@ -734,7 +594,7 @@ impl<T: IntoOutput> std::ops::Add<T> for Output {
     }
 }
 
-impl<T: IntoOutput> std::ops::Add<T> for &Output {
+impl<T: IntoOutputExt> std::ops::Add<T> for &Output {
     type Output = Node;
 
     #[inline]
@@ -744,7 +604,7 @@ impl<T: IntoOutput> std::ops::Add<T> for &Output {
     }
 }
 
-impl<T: IntoOutput> std::ops::Sub<T> for Output {
+impl<T: IntoOutputExt> std::ops::Sub<T> for Output {
     type Output = Node;
 
     #[inline]
@@ -754,7 +614,7 @@ impl<T: IntoOutput> std::ops::Sub<T> for Output {
     }
 }
 
-impl<T: IntoOutput> std::ops::Sub<T> for &Output {
+impl<T: IntoOutputExt> std::ops::Sub<T> for &Output {
     type Output = Node;
 
     #[inline]
@@ -764,7 +624,7 @@ impl<T: IntoOutput> std::ops::Sub<T> for &Output {
     }
 }
 
-impl<T: IntoOutput> std::ops::Mul<T> for Output {
+impl<T: IntoOutputExt> std::ops::Mul<T> for Output {
     type Output = Node;
 
     #[inline]
@@ -774,7 +634,7 @@ impl<T: IntoOutput> std::ops::Mul<T> for Output {
     }
 }
 
-impl<T: IntoOutput> std::ops::Mul<T> for &Output {
+impl<T: IntoOutputExt> std::ops::Mul<T> for &Output {
     type Output = Node;
 
     #[inline]
@@ -784,7 +644,7 @@ impl<T: IntoOutput> std::ops::Mul<T> for &Output {
     }
 }
 
-impl<T: IntoOutput> std::ops::Div<T> for Output {
+impl<T: IntoOutputExt> std::ops::Div<T> for Output {
     type Output = Node;
 
     #[inline]
@@ -794,7 +654,7 @@ impl<T: IntoOutput> std::ops::Div<T> for Output {
     }
 }
 
-impl<T: IntoOutput> std::ops::Div<T> for &Output {
+impl<T: IntoOutputExt> std::ops::Div<T> for &Output {
     type Output = Node;
 
     #[inline]
@@ -804,7 +664,7 @@ impl<T: IntoOutput> std::ops::Div<T> for &Output {
     }
 }
 
-impl<T: IntoOutput> std::ops::Rem<T> for Output {
+impl<T: IntoOutputExt> std::ops::Rem<T> for Output {
     type Output = Node;
 
     #[inline]
@@ -814,7 +674,7 @@ impl<T: IntoOutput> std::ops::Rem<T> for Output {
     }
 }
 
-impl<T: IntoOutput> std::ops::Rem<T> for &Output {
+impl<T: IntoOutputExt> std::ops::Rem<T> for &Output {
     type Output = Node;
 
     #[inline]
@@ -852,14 +712,14 @@ impl std::ops::Neg for &Output {
     }
 }
 
-impl<T: IntoOutput> std::ops::BitAnd<T> for Output {
+impl<T: IntoOutputExt> std::ops::BitAnd<T> for Output {
     type Output = Node;
 
     #[inline]
     #[track_caller]
     fn bitand(self, rhs: T) -> Self::Output {
         let graph = self.graph();
-        let rhs = rhs.into_output(graph);
+        let rhs = self::IntoOutputExt::into_output(rhs, &graph);
         assert_eq!(
             self.signal_type(),
             bool::signal_type(),
@@ -877,14 +737,14 @@ impl<T: IntoOutput> std::ops::BitAnd<T> for Output {
     }
 }
 
-impl<T: IntoOutput> std::ops::BitOr<T> for Output {
+impl<T: IntoOutputExt> std::ops::BitOr<T> for Output {
     type Output = Node;
 
     #[inline]
     #[track_caller]
     fn bitor(self, rhs: T) -> Self::Output {
         let graph = self.graph();
-        let rhs = rhs.into_output(graph);
+        let rhs = self::IntoOutputExt::into_output(rhs, &graph);
         assert_eq!(
             self.signal_type(),
             bool::signal_type(),
@@ -915,14 +775,14 @@ impl std::ops::Not for Output {
     }
 }
 
-impl<T: IntoOutput> std::ops::BitXor<T> for Output {
+impl<T: IntoOutputExt> std::ops::BitXor<T> for Output {
     type Output = Node;
 
     #[inline]
     #[track_caller]
     fn bitxor(self, rhs: T) -> Self::Output {
         let graph = self.graph();
-        let rhs = rhs.into_output(graph);
+        let rhs = self::IntoOutputExt::into_output(rhs, &graph);
         assert_eq!(
             self.signal_type(),
             bool::signal_type(),
@@ -940,7 +800,7 @@ impl<T: IntoOutput> std::ops::BitXor<T> for Output {
     }
 }
 
-impl<T: IntoOutput> std::ops::Add<T> for Node {
+impl<T: IntoOutputExt> std::ops::Add<T> for Node {
     type Output = Node;
 
     #[inline]
@@ -950,7 +810,7 @@ impl<T: IntoOutput> std::ops::Add<T> for Node {
     }
 }
 
-impl<T: IntoOutput> std::ops::Sub<T> for Node {
+impl<T: IntoOutputExt> std::ops::Sub<T> for Node {
     type Output = Node;
 
     #[inline]
@@ -960,7 +820,7 @@ impl<T: IntoOutput> std::ops::Sub<T> for Node {
     }
 }
 
-impl<T: IntoOutput> std::ops::Mul<T> for Node {
+impl<T: IntoOutputExt> std::ops::Mul<T> for Node {
     type Output = Node;
 
     #[inline]
@@ -970,7 +830,7 @@ impl<T: IntoOutput> std::ops::Mul<T> for Node {
     }
 }
 
-impl<T: IntoOutput> std::ops::Div<T> for Node {
+impl<T: IntoOutputExt> std::ops::Div<T> for Node {
     type Output = Node;
 
     #[inline]
@@ -980,7 +840,7 @@ impl<T: IntoOutput> std::ops::Div<T> for Node {
     }
 }
 
-impl<T: IntoOutput> std::ops::Rem<T> for Node {
+impl<T: IntoOutputExt> std::ops::Rem<T> for Node {
     type Output = Node;
 
     #[inline]
@@ -1000,7 +860,7 @@ impl std::ops::Neg for Node {
     }
 }
 
-impl<T: IntoOutput> std::ops::BitAnd<T> for Node {
+impl<T: IntoOutputExt> std::ops::BitAnd<T> for Node {
     type Output = Node;
 
     #[inline]
@@ -1010,7 +870,7 @@ impl<T: IntoOutput> std::ops::BitAnd<T> for Node {
     }
 }
 
-impl<T: IntoOutput> std::ops::BitOr<T> for Node {
+impl<T: IntoOutputExt> std::ops::BitOr<T> for Node {
     type Output = Node;
 
     #[inline]
@@ -1020,7 +880,7 @@ impl<T: IntoOutput> std::ops::BitOr<T> for Node {
     }
 }
 
-impl<T: IntoOutput> std::ops::BitXor<T> for Node {
+impl<T: IntoOutputExt> std::ops::BitXor<T> for Node {
     type Output = Node;
 
     #[inline]
@@ -1040,7 +900,7 @@ impl std::ops::Not for Node {
     }
 }
 
-impl<T: IntoOutput> std::ops::Add<T> for &Node {
+impl<T: IntoOutputExt> std::ops::Add<T> for &Node {
     type Output = Node;
 
     #[inline]
@@ -1050,7 +910,7 @@ impl<T: IntoOutput> std::ops::Add<T> for &Node {
     }
 }
 
-impl<T: IntoOutput> std::ops::Sub<T> for &Node {
+impl<T: IntoOutputExt> std::ops::Sub<T> for &Node {
     type Output = Node;
 
     #[inline]
@@ -1060,7 +920,7 @@ impl<T: IntoOutput> std::ops::Sub<T> for &Node {
     }
 }
 
-impl<T: IntoOutput> std::ops::Mul<T> for &Node {
+impl<T: IntoOutputExt> std::ops::Mul<T> for &Node {
     type Output = Node;
 
     #[inline]
@@ -1070,7 +930,7 @@ impl<T: IntoOutput> std::ops::Mul<T> for &Node {
     }
 }
 
-impl<T: IntoOutput> std::ops::Div<T> for &Node {
+impl<T: IntoOutputExt> std::ops::Div<T> for &Node {
     type Output = Node;
 
     #[inline]
@@ -1080,7 +940,7 @@ impl<T: IntoOutput> std::ops::Div<T> for &Node {
     }
 }
 
-impl<T: IntoOutput> std::ops::Rem<T> for &Node {
+impl<T: IntoOutputExt> std::ops::Rem<T> for &Node {
     type Output = Node;
 
     #[inline]
@@ -1100,7 +960,7 @@ impl std::ops::Neg for &Node {
     }
 }
 
-impl<T: IntoOutput> std::ops::BitAnd<T> for &Node {
+impl<T: IntoOutputExt> std::ops::BitAnd<T> for &Node {
     type Output = Node;
 
     #[inline]
@@ -1110,7 +970,7 @@ impl<T: IntoOutput> std::ops::BitAnd<T> for &Node {
     }
 }
 
-impl<T: IntoOutput> std::ops::BitOr<T> for &Node {
+impl<T: IntoOutputExt> std::ops::BitOr<T> for &Node {
     type Output = Node;
 
     #[inline]
@@ -1120,7 +980,7 @@ impl<T: IntoOutput> std::ops::BitOr<T> for &Node {
     }
 }
 
-impl<T: IntoOutput> std::ops::BitXor<T> for &Node {
+impl<T: IntoOutputExt> std::ops::BitXor<T> for &Node {
     type Output = Node;
 
     #[inline]
@@ -1140,47 +1000,39 @@ impl std::ops::Not for &Node {
     }
 }
 
-impl<T: IntoOutputIdx> std::ops::Index<T> for Node {
-    type Output = Output;
-
-    fn index(&self, index: T) -> &Self::Output {
-        self.output(index)
-    }
-}
-
 /// A trait for coercing a value into an [`Output`].
-pub trait IntoOutput {
+pub trait IntoOutputExt {
     /// Converts the value into an [`Output`] in the given graph.
     fn into_output(self, graph: &Graph) -> Output;
 }
 
-impl IntoOutput for Output {
+impl IntoOutputExt for Output {
     fn into_output(self, _graph: &Graph) -> Output {
         self
     }
 }
 
-impl IntoOutput for &Output {
+impl IntoOutputExt for &Output {
     fn into_output(self, _graph: &Graph) -> Output {
         self.clone()
     }
 }
 
-impl IntoOutput for Node {
+impl IntoOutputExt for Node {
     #[track_caller]
     fn into_output(self, _graph: &Graph) -> Output {
         self.output(0).clone()
     }
 }
 
-impl IntoOutput for &Node {
+impl IntoOutputExt for &Node {
     #[track_caller]
     fn into_output(self, _graph: &Graph) -> Output {
         self.output(0).clone()
     }
 }
 
-impl<T: Signal> IntoOutput for T {
+impl<T: Signal> IntoOutputExt for T {
     #[track_caller]
     fn into_output(self, graph: &Graph) -> Output {
         let node = graph.constant(self);
@@ -1188,7 +1040,7 @@ impl<T: Signal> IntoOutput for T {
     }
 }
 
-impl<T: Signal> IntoOutput for &[T] {
+impl<T: Signal> IntoOutputExt for &[T] {
     #[track_caller]
     fn into_output(self, graph: &Graph) -> Output {
         let node = graph.constant(List::from_slice(self));
@@ -1196,7 +1048,7 @@ impl<T: Signal> IntoOutput for &[T] {
     }
 }
 
-impl IntoOutput for &str {
+impl IntoOutputExt for &str {
     #[track_caller]
     fn into_output(self, graph: &Graph) -> Output {
         let node = graph.constant(Str::from(self));
@@ -1204,7 +1056,7 @@ impl IntoOutput for &str {
     }
 }
 
-impl IntoOutput for f64 {
+impl IntoOutputExt for f64 {
     #[track_caller]
     fn into_output(self, graph: &Graph) -> Output {
         let node = graph.constant(self as f32);
@@ -1212,19 +1064,11 @@ impl IntoOutput for f64 {
     }
 }
 
-impl IntoOutput for i32 {
+impl IntoOutputExt for i32 {
     #[track_caller]
     fn into_output(self, graph: &Graph) -> Output {
         let node = graph.constant(self as f32);
         node.output(0).clone()
-    }
-}
-
-impl IntoOutput for (NodeIndex, u32) {
-    fn into_output(self, graph: &Graph) -> Output {
-        let (index, output_idx) = self;
-        let node = Node::new(graph.clone(), index);
-        node.output(output_idx).clone()
     }
 }
 
@@ -1244,7 +1088,7 @@ impl IntoOutputOpt for Option<Output> {
     }
 }
 
-impl<T: IntoOutput> IntoOutputOpt for T {
+impl<T: IntoOutputExt> IntoOutputOpt for T {
     fn into_output_opt(self, graph: &Graph) -> Option<Output> {
         Some(self.into_output(graph))
     }
@@ -1260,13 +1104,13 @@ pub trait IntoOutputs {
     fn into_outputs(self, graph: &Graph) -> Vec<Output>;
 }
 
-impl<A: IntoOutput> IntoOutputs for A {
+impl<A: IntoOutputExt> IntoOutputs for A {
     fn into_outputs(self, graph: &Graph) -> Vec<Output> {
         vec![self.into_output(graph)]
     }
 }
 
-impl<T: IntoOutput> IntoOutputs for Vec<T> {
+impl<T: IntoOutputExt> IntoOutputs for Vec<T> {
     fn into_outputs(self, graph: &Graph) -> Vec<Output> {
         self.into_iter().map(|o| o.into_output(graph)).collect()
     }
@@ -1275,7 +1119,7 @@ impl<T: IntoOutput> IntoOutputs for Vec<T> {
 macro_rules! impl_into_outputs {
     ($($n:ident),*) => {
         #[allow(non_snake_case)]
-        impl<$($n: IntoOutput),*> IntoOutputs for ($($n,)*) {
+        impl<$($n: IntoOutputExt),*> IntoOutputs for ($($n,)*) {
             fn into_outputs(self, graph: &Graph) -> Vec<Output> {
                 let ($($n,)*) = self;
                 vec![$(
@@ -1325,104 +1169,5 @@ impl IntoNode for &Node {
 impl IntoNode for NodeIndex {
     fn into_node(self, graph: &Graph) -> Node {
         Node::new(graph.clone(), self)
-    }
-}
-
-/// A trait for coercing a value into an output index of a node.
-pub trait IntoOutputIdx {
-    /// Converts the value into an output index of the given node.
-    fn into_output_idx(self, node: &Node) -> u32;
-}
-
-/// A trait for coercing a value into an input index of a node.
-pub trait IntoInputIdx {
-    /// Converts the value into an input index of the given node.
-    fn into_input_idx(self, node: &Node) -> u32;
-}
-
-impl IntoOutputIdx for u32 {
-    #[inline]
-    fn into_output_idx(self, node: &Node) -> u32 {
-        assert!(
-            self < node.num_outputs() as u32,
-            "output index out of bounds"
-        );
-        self
-    }
-}
-
-impl IntoInputIdx for u32 {
-    #[inline]
-    fn into_input_idx(self, node: &Node) -> u32 {
-        assert!(self < node.num_inputs() as u32, "input index out of bounds");
-        self
-    }
-}
-
-impl IntoOutputIdx for usize {
-    #[inline]
-    fn into_output_idx(self, node: &Node) -> u32 {
-        assert!(self < node.num_outputs(), "output index out of bounds");
-        self as u32
-    }
-}
-
-impl IntoInputIdx for usize {
-    #[inline]
-    fn into_input_idx(self, node: &Node) -> u32 {
-        assert!(self < node.num_inputs(), "input index out of bounds");
-        self as u32
-    }
-}
-
-impl IntoOutputIdx for i32 {
-    #[inline]
-    fn into_output_idx(self, node: &Node) -> u32 {
-        assert!(self >= 0, "output index must be non-negative");
-        let idx = self as usize;
-        assert!(idx < node.num_outputs(), "output index out of bounds");
-        idx as u32
-    }
-}
-
-impl IntoInputIdx for i32 {
-    #[inline]
-    fn into_input_idx(self, node: &Node) -> u32 {
-        assert!(self >= 0, "input index must be non-negative");
-        let idx = self as usize;
-        assert!(idx < node.num_inputs(), "input index out of bounds");
-        idx as u32
-    }
-}
-
-impl IntoInputIdx for &str {
-    #[track_caller]
-    #[inline]
-    fn into_input_idx(self, node: &Node) -> u32 {
-        let Some(idx) = node.graph().with_inner(|graph| {
-            graph.digraph[node.id()]
-                .input_spec()
-                .iter()
-                .position(|s| s.name == self)
-        }) else {
-            panic!("no input with name {self}")
-        };
-        idx as u32
-    }
-}
-
-impl IntoOutputIdx for &str {
-    #[track_caller]
-    #[inline]
-    fn into_output_idx(self, node: &Node) -> u32 {
-        let Some(idx) = node.graph().with_inner(|graph| {
-            graph.digraph[node.id()]
-                .output_spec()
-                .iter()
-                .position(|s| s.name == self)
-        }) else {
-            panic!("no output with name {self}")
-        };
-        idx as u32
     }
 }

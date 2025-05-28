@@ -1,8 +1,6 @@
 #![doc = include_str!("../README.md")]
 #![cfg_attr(doc, warn(missing_docs))]
 
-use std::sync::OnceLock;
-
 pub mod builtins;
 pub mod graph;
 pub mod processor;
@@ -18,7 +16,7 @@ pub mod prelude {
         builtins::*,
         graph::{
             Graph, RunningGraph,
-            node::{Input, IntoNode, IntoOutput, IntoOutputOpt, Node, Output},
+            node::{Input, IntoNode, IntoOutputExt, IntoOutputOpt, Node, Output},
             runtime::{AudioBackend, AudioDevice, AudioOut, CpalOut, WavFileOut},
             sub_graph::SubGraph,
         },
@@ -40,10 +38,4 @@ pub mod prelude {
 #[allow(unused)]
 pub mod __itertools {
     pub use itertools::*;
-}
-
-#[inline]
-pub(crate) fn interned_short_type_name<T: ?Sized>() -> &'static str {
-    static NAME: OnceLock<String> = OnceLock::new();
-    NAME.get_or_init(tynm::type_name::<T>)
 }
