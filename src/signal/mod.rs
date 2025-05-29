@@ -6,7 +6,7 @@ use std::{
     ops::{Deref, DerefMut},
 };
 
-use crate::{processor::io::SignalSpec, util::interned_short_type_name};
+use crate::processor::io::SignalSpec;
 use type_erased::AnyBuffer;
 
 pub mod type_erased;
@@ -205,7 +205,7 @@ impl SignalType {
     #[inline]
     pub fn of<T: Signal>() -> Self {
         Self {
-            name: interned_short_type_name::<T>(),
+            name: std::any::type_name::<T>(),
             id: TypeId::of::<T>(),
         }
     }

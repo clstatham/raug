@@ -478,6 +478,11 @@ fn build_output_stream<T: cpal::SizedSample + cpal::FromSample<f32> + Send + 'st
                     let new_block_size = data_len / channels;
                     let old_block_size = block_size.load(Ordering::Relaxed);
                     if new_block_size != old_block_size {
+                        log::debug!(
+                            "Changing block size from {} to {}",
+                            old_block_size,
+                            new_block_size
+                        );
                         block_size.store(new_block_size, Ordering::Relaxed);
                     }
 

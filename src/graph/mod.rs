@@ -629,12 +629,12 @@ impl Graph {
 
                     graph.with_inner(|graph| -> GraphRunResult<()> {
                         let block_size = output_stream.block_size();
-                        if block_size != graph.block_size {
-                            if block_size > graph.block_size {
-                                graph.allocate(output_stream.sample_rate(), block_size);
-                            } else {
-                                graph.resize_buffers(output_stream.sample_rate(), block_size);
-                            }
+                        if block_size > graph.max_block_size {
+                            log::debug!("Reallocating graph buffers to {} samples", block_size);
+                            graph.allocate(output_stream.sample_rate(), block_size);
+                        } else if block_size != graph.block_size {
+                            log::debug!("Resizing graph buffers to {} samples", block_size);
+                            graph.resize_buffers(output_stream.sample_rate(), block_size);
                         }
 
                         graph.process()?;
