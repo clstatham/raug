@@ -17,7 +17,7 @@ pub struct AnyBuffer {
 
 impl AnyBuffer {
     /// Creates a new empty buffer of the given type.
-    pub fn new<T: Signal>() -> Self {
+    pub fn new<T: Signal + Clone>() -> Self {
         Self {
             element_signal_type: T::signal_type(),
             buf: AnyVec::new::<T>(),
@@ -25,7 +25,7 @@ impl AnyBuffer {
     }
 
     /// Creates a new buffer of the given type with the specified length, initialized to the default value for `T`.
-    pub fn zeros<T: Signal>(len: usize) -> Self {
+    pub fn zeros<T: Signal + Clone + Default>(len: usize) -> Self {
         let mut buf = AnyVec::with_capacity::<T>(len);
         for _ in 0..len {
             buf.push(AnyValueWrapper::<T>::new(T::default()));

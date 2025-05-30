@@ -1032,7 +1032,7 @@ impl IntoOutputExt for &Node {
     }
 }
 
-impl<T: Signal> IntoOutputExt for T {
+impl<T: Signal + Clone + Default> IntoOutputExt for T {
     #[track_caller]
     fn into_output(self, graph: &Graph) -> Output {
         let node = graph.constant(self);
@@ -1040,7 +1040,7 @@ impl<T: Signal> IntoOutputExt for T {
     }
 }
 
-impl<T: Signal> IntoOutputExt for &[T] {
+impl<T: Signal + Clone> IntoOutputExt for &[T] {
     #[track_caller]
     fn into_output(self, graph: &Graph) -> Output {
         let node = graph.constant(List::from_slice(self));

@@ -12,22 +12,31 @@ use type_erased::AnyBuffer;
 pub mod type_erased;
 
 /// A type that can be stored in a [buffer](type_erased::AnyBuffer) and processed by a [`Processor`](crate::processor::Processor).
-pub trait Signal: Sized + Clone + Default + Send + Sync + 'static {
+pub trait Signal: Send + Sync + 'static {
     /// The type of the signal.
     #[inline]
-    fn signal_type() -> SignalType {
+    fn signal_type() -> SignalType
+    where
+        Self: Sized,
+    {
         SignalType::of::<Self>()
     }
 
     /// Creates a new buffer of the given size for this signal type.
     #[inline]
-    fn create_buffer(size: usize) -> AnyBuffer {
+    fn create_buffer(size: usize) -> AnyBuffer
+    where
+        Self: Sized + Clone + Default,
+    {
         AnyBuffer::zeros::<Self>(size)
     }
 
     /// Creates a [`SignalSpec`](crate::processor::io::SignalSpec) for this signal type with the given name.
     #[inline]
-    fn signal_spec(name: impl Into<String>) -> SignalSpec {
+    fn signal_spec(name: impl Into<String>) -> SignalSpec
+    where
+        Self: Sized,
+    {
         SignalSpec::of_type::<Self>(name)
     }
 }
@@ -52,7 +61,7 @@ impl<T: Signal> Default for List<T> {
     }
 }
 
-impl<T: Signal> Clone for List<T> {
+impl<T: Signal + Clone> Clone for List<T> {
     #[inline]
     fn clone(&self) -> Self {
         Self {
@@ -66,7 +75,7 @@ impl<T: Signal> Clone for List<T> {
     }
 }
 
-impl<T: Signal> List<T> {
+impl<T: Signal + Clone> List<T> {
     /// Creates a new list with the given capacity.
     #[inline]
     pub fn with_capacity(capacity: usize) -> Self {
@@ -120,7 +129,7 @@ impl<T: Signal> From<Vec<T>> for List<T> {
     }
 }
 
-impl<T: Signal> From<List<T>> for Vec<T> {
+impl<T: Signal + Clone> From<List<T>> for Vec<T> {
     #[inline]
     fn from(list: List<T>) -> Self {
         list.to_alloc_vec()
