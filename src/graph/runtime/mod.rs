@@ -175,7 +175,7 @@ impl<T> Channels<T> {
 }
 
 /// An audio stream interface for outputting audio data.
-pub trait AudioOut: Send + 'static {
+pub trait AudioOut: Send + Sync + 'static {
     /// Returns the sample rate of the audio stream.
     fn sample_rate(&self) -> f32;
     /// Returns the block size of the audio stream.
@@ -188,7 +188,29 @@ pub trait AudioOut: Send + 'static {
     fn output_samples_needed(&self) -> isize;
 
     /// Writes the given samples to the stream. On success, returns the number of samples written.
-    fn output(&mut self, samps: impl Iterator<Item = f32>) -> GraphRunResult<usize>;
+    fn output(&mut self, samps: &[f32]) -> GraphRunResult<usize>;
+}
+
+impl AudioOut for Box<dyn AudioOut> {
+    fn sample_rate(&self) -> f32 {
+        self.as_ref().sample_rate()
+    }
+
+    fn block_size(&self) -> usize {
+        self.as_ref().block_size()
+    }
+
+    fn output_channels(&self) -> usize {
+        self.as_ref().output_channels()
+    }
+
+    fn output_samples_needed(&self) -> isize {
+        self.as_ref().output_samples_needed()
+    }
+
+    fn output(&mut self, samps: &[f32]) -> GraphRunResult<usize> {
+        self.as_mut().output(samps)
+    }
 }
 
 pub struct ParallelOut<A: AudioOut, B: AudioOut> {
@@ -221,11 +243,11 @@ impl<A: AudioOut, B: AudioOut> AudioOut for ParallelOut<A, B> {
             .min(self.b.output_samples_needed())
     }
 
-    fn output(&mut self, samps: impl Iterator<Item = f32>) -> GraphRunResult<usize> {
+    fn output(&mut self, samps: &[f32]) -> GraphRunResult<usize> {
         let mut written = 0;
-        for samp in samps {
-            self.a.output(std::iter::once(samp))?;
-            self.b.output(std::iter::once(samp))?;
+        for &samp in samps {
+            self.a.output(&[samp])?;
+            self.b.output(&[samp])?;
             written += 1;
         }
         Ok(written)
@@ -308,9 +330,9 @@ impl AudioOut for WavFileOut {
         }
     }
 
-    fn output(&mut self, samps: impl Iterator<Item = f32>) -> GraphRunResult<usize> {
+    fn output(&mut self, samps: &[f32]) -> GraphRunResult<usize> {
         let mut written = 0;
-        for samp in samps {
+        for &samp in samps {
             self.file.write_sample(samp)?;
             written += 1;
         }
@@ -525,9 +547,9 @@ impl AudioOut for CpalOut {
         self.block_size() as isize - in_channel as isize
     }
 
-    fn output(&mut self, samps: impl Iterator<Item = f32>) -> GraphRunResult<usize> {
+    fn output(&mut self, samps: &[f32]) -> GraphRunResult<usize> {
         let mut written = 0;
-        for samp in samps {
+        for &samp in samps {
             self.samples.send_blocking(samp).unwrap();
             written += 1;
         }

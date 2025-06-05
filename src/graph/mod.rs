@@ -646,8 +646,7 @@ impl Graph {
                                     continue;
                                 };
 
-                                delta +=
-                                    output_stream.output(std::iter::once(buffer[sample_idx]))?;
+                                delta += output_stream.output(&[buffer[sample_idx]])?;
                             }
                         }
 
