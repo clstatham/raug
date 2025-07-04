@@ -62,7 +62,12 @@ impl Processor for SubGraph {
             graph
                 .output_indices()
                 .iter()
-                .flat_map(|&node_id| graph.graph[node_id].processor.create_output_buffers(size))
+                .flat_map(|&node_id| {
+                    graph.graph[node_id]
+                        .processor
+                        .lock()
+                        .create_output_buffers(size)
+                })
                 .collect()
         })
     }

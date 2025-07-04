@@ -34,6 +34,7 @@ atomic-time = "0.1.5"
 dot_graph = "0.2.3"
 tynm = "0.2.0"
 raug-graph = { path = "../raug-graph" }
+parking_lot = "0.12.4"
 
 
 [dev-dependencies]

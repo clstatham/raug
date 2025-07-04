@@ -1,7 +1,8 @@
 //! Contains the [`ProcessorNode`] and [`Node`] structs, which represent nodes in the audio graph that process signals.
 
-use std::{fmt::Debug, ops::Deref};
+use std::{fmt::Debug, ops::Deref, sync::Arc};
 
+use parking_lot::Mutex;
 use raug_graph::{
     builder::{IntoIndex, IntoInput, IntoOutput},
     node::AbstractNode,
@@ -36,7 +37,8 @@ impl ProcessNodeError {
 
 /// A node in the audio graph that processes signals.
 pub struct ProcessorNode {
-    pub(crate) processor: Box<dyn Processor>,
+    pub(crate) processor: Arc<Mutex<dyn Processor>>,
+    pub(crate) name: String,
     pub(crate) input_spec: Vec<SignalSpec>,
     pub(crate) output_spec: Vec<SignalSpec>,
     pub(crate) outputs: Vec<AnyBuffer>,
@@ -44,7 +46,7 @@ pub struct ProcessorNode {
 
 impl Debug for ProcessorNode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(self.processor.name())
+        f.write_str(&self.name)
     }
 }
 
@@ -83,16 +85,13 @@ impl AbstractNode for ProcessorNode {
 impl ProcessorNode {
     /// Creates a new `ProcessorNode` with the given processor.
     pub fn new(processor: impl Processor) -> Self {
-        Self::new_from_boxed(Box::new(processor))
-    }
-
-    /// Creates a new `ProcessorNode` with the given boxed processor.
-    pub fn new_from_boxed(processor: Box<dyn Processor>) -> Self {
+        let name = processor.name().to_string();
         let input_spec = processor.input_spec();
         let output_spec = processor.output_spec();
         let outputs = processor.create_output_buffers(0);
         Self {
-            processor,
+            processor: Arc::new(Mutex::new(processor)),
+            name,
             input_spec,
             output_spec,
             outputs,
@@ -102,7 +101,7 @@ impl ProcessorNode {
     /// Returns the name of the processor.
     #[inline]
     pub fn name(&self) -> &str {
-        self.processor.name()
+        &self.name
     }
 
     /// Returns information about the input signals of the processor.
@@ -129,23 +128,12 @@ impl ProcessorNode {
         self.output_spec.len()
     }
 
-    /// Returns a reference to the processor.
-    #[inline]
-    pub fn processor(&self) -> &dyn Processor {
-        &*self.processor
-    }
-
-    /// Returns a mutable reference to the processor.
-    #[inline]
-    pub fn processor_mut(&mut self) -> &mut dyn Processor {
-        &mut *self.processor
-    }
-
     /// Allocates memory for the processor.
     #[inline]
     pub fn allocate(&mut self, sample_rate: f32, max_block_size: usize) {
-        self.processor.allocate(sample_rate, max_block_size);
-        self.outputs = self.processor.create_output_buffers(max_block_size);
+        let mut processor = self.processor.lock();
+        processor.allocate(sample_rate, max_block_size);
+        self.outputs = processor.create_output_buffers(max_block_size);
     }
 
     /// Resizes the internal buffers of the processor and updates the sample rate and block size.
@@ -153,7 +141,9 @@ impl ProcessorNode {
     /// This function is NOT ALLOWED to allocate memory.
     #[inline]
     pub fn resize_buffers(&mut self, sample_rate: f32, block_size: usize) {
-        self.processor.resize_buffers(sample_rate, block_size);
+        self.processor
+            .lock()
+            .resize_buffers(sample_rate, block_size);
     }
 
     /// Processes the input signals and writes the output signals to the given buffers.
@@ -173,7 +163,7 @@ impl ProcessorNode {
             outputs: &mut self.outputs,
             mode: env.mode,
         };
-        if let Err(e) = self.processor.process(inputs, outputs) {
+        if let Err(e) = self.processor.lock().process(inputs, outputs) {
             return Err(ProcessNodeError {
                 error: e,
                 node_name: self.name().to_string(),
