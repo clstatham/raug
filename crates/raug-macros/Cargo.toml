@@ -1,0 +1,20 @@
+[package]
+name = "raug-macros"
+license = "MIT OR Apache-2.0"
+version = "0.0.5"
+edition = "2021"
+documentation = "https://docs.rs/raug"
+repository = "https://github.com/clstatham/raug"
+description = "Procedural macros for Raug, a Rusty Audio Graph crate"
+
+[lib]
+proc-macro = true
+
+[dependencies]
+syn = { version = "2", features = ["full"] }
+quote = "1"
+proc-macro2 = "1"
+convert_case = "0.8.0"
+
+[dev-dependencies]
+raug = { path = "../raug" }

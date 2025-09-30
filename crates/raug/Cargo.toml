@@ -1,0 +1,47 @@
+[package]
+name = "raug"
+description = "raug - Rusty Audio Graphs"
+license = "MIT OR Apache-2.0"
+version = "0.0.4"
+edition = "2024"
+documentation = "https://docs.rs/raug"
+repository = "https://github.com/clstatham/raug"
+
+[lib]
+name = "raug"
+
+[features]
+default = []
+jack = ["cpal/jack"]
+profiling = ["dep:allocation-counter"]
+
+[dependencies]
+cpal = { version = "0.15.3", features = [] }
+itertools = "0.14"
+log = "0.4.22"
+hound = "3.5"
+thiserror = "2.0"
+downcast-rs = "2.0"
+rustc-hash = "2"
+hashbrown = "0.15"
+crossbeam-channel = "0.5"
+smallvec = "1.15"
+raug-macros = { path = "../raug-macros" }
+allocation-counter = { version = "0.8", optional = true }
+any_vec = "0.14.0"
+smallstr = { git = "https://github.com/clstatham/smallstr" }
+atomic-time = "0.1.5"
+dot_graph = "0.2.3"
+tynm = "0.2.0"
+raug-graph = { path = "../raug-graph" }
+parking_lot = "0.12.4"
+
+
+[dev-dependencies]
+env_logger = "0.11"
+criterion = { version = "0.5", features = ["html_reports"] }
+raug-ext = { path = "../raug-ext" }
+
+[[bench]]
+name = "bench"
+harness = false

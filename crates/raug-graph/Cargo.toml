@@ -1,0 +1,11 @@
+[package]
+name = "raug-graph"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+fixedbitset = "0.5.7"
+parking_lot = { version = "0.12.3", features = ["arc_lock"] }
+petgraph = "0.8.1"
+rustc-hash = "2.1.1"
+thiserror = "2.0.12"
