@@ -1,20 +1,13 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
     fmt::Debug,
-    marker::PhantomData,
     ops::{Index, IndexMut},
 };
 
 use petgraph::prelude::*;
 use rustc_hash::FxHashSet;
 
-use crate::{Error, node::AbstractNode};
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DuplicateConnectionMode {
-    Disconnect,
-    Error,
-}
+use crate::{Error, node::Node};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VisitResult<T> {
@@ -23,33 +16,70 @@ pub enum VisitResult<T> {
     Done,
 }
 
-pub trait AbstractGraph {
-    type Node: AbstractNode;
-    type Edge;
-
-    fn duplicate_connection_mode() -> DuplicateConnectionMode {
-        DuplicateConnectionMode::Error
-    }
-
-    fn graph(&self) -> &Graph<Self>;
-    fn graph_mut(&mut self) -> &mut Graph<Self>;
-}
-
 pub type NodeIndex = petgraph::graph::NodeIndex;
 pub type EdgeIndex = petgraph::graph::EdgeIndex;
 
 #[derive(Debug, Clone, Copy)]
-pub struct Connection<G: AbstractGraph + ?Sized> {
+pub struct Connection {
     pub source: NodeIndex,
     pub source_output: u32,
     pub target: NodeIndex,
     pub target_input: u32,
-    _g: PhantomData<G>,
 }
 
-pub struct Graph<G: AbstractGraph + ?Sized> {
-    pub(crate) digraph: StableDiGraph<G::Node, Connection<G>>,
+pub struct AddConnections<'a, N: Node> {
+    target: NodeIndex,
+    connections: Vec<Connection>,
+    graph: &'a mut Graph<N>,
+}
 
+impl<'a, N: Node> AddConnections<'a, N> {
+    pub(crate) fn new(graph: &'a mut Graph<N>, target: NodeIndex) -> Self {
+        Self {
+            target,
+            connections: Vec::new(),
+            graph,
+        }
+    }
+
+    pub fn with_input(
+        &mut self,
+        target_input: u32,
+        source: NodeIndex,
+        source_output: u32,
+    ) -> &mut Self {
+        self.connections.push(Connection {
+            source,
+            source_output,
+            target: self.target,
+            target_input,
+        });
+        self
+    }
+
+    pub fn finish(&mut self) -> Result<NodeIndex, Error> {
+        for conn in self.connections.drain(..) {
+            self.graph.connect(
+                conn.source,
+                conn.source_output,
+                conn.target,
+                conn.target_input,
+            )?;
+        }
+        Ok(self.target)
+    }
+}
+
+impl<'a, N: Node> Drop for AddConnections<'a, N> {
+    fn drop(&mut self) {
+        if !self.connections.is_empty() {
+            self.finish().unwrap();
+        }
+    }
+}
+
+pub struct Graph<N: Node> {
+    pub(crate) digraph: StableDiGraph<N, Connection>,
     // cached input/output nodes
     inputs: Vec<NodeIndex>,
     outputs: Vec<NodeIndex>,
@@ -60,7 +90,7 @@ pub struct Graph<G: AbstractGraph + ?Sized> {
     pub needs_visitor_reset: bool,
 }
 
-impl<G: AbstractGraph> Default for Graph<G> {
+impl<N: Node> Default for Graph<N> {
     fn default() -> Self {
         Self {
             digraph: StableDiGraph::new(),
@@ -73,7 +103,7 @@ impl<G: AbstractGraph> Default for Graph<G> {
     }
 }
 
-impl<G: AbstractGraph> Graph<G> {
+impl<N: Node> Graph<N> {
     pub fn new() -> Self {
         Self::default()
     }
@@ -94,11 +124,11 @@ impl<G: AbstractGraph> Graph<G> {
         self.outputs.len()
     }
 
-    pub fn digraph(&self) -> &StableDiGraph<G::Node, Connection<G>> {
+    pub fn digraph(&self) -> &StableDiGraph<N, Connection> {
         &self.digraph
     }
 
-    pub fn digraph_mut(&mut self) -> &mut StableDiGraph<G::Node, Connection<G>> {
+    pub fn digraph_mut(&mut self) -> &mut StableDiGraph<N, Connection> {
         &mut self.digraph
     }
 
@@ -106,19 +136,24 @@ impl<G: AbstractGraph> Graph<G> {
         &self.visit_path
     }
 
-    pub fn add_input(&mut self, node: G::Node) -> NodeIndex {
+    pub fn add_input(&mut self, node: N) -> NodeIndex {
         let idx = self.digraph.add_node(node);
         self.inputs.push(idx);
         idx
     }
 
-    pub fn add_output(&mut self, node: G::Node) -> NodeIndex {
+    pub fn add_output(&mut self, node: N) -> NodeIndex {
         let idx = self.digraph.add_node(node);
         self.outputs.push(idx);
         idx
     }
 
-    pub fn add_node(&mut self, node: G::Node) -> NodeIndex {
+    pub fn add_node_and_connect(&mut self, node: N) -> AddConnections<'_, N> {
+        let idx = self.digraph.add_node(node);
+        AddConnections::new(self, idx)
+    }
+
+    pub fn add_node(&mut self, node: N) -> NodeIndex {
         self.digraph.add_node(node)
     }
 
@@ -129,27 +164,17 @@ impl<G: AbstractGraph> Graph<G> {
         target: NodeIndex,
         target_input: u32,
     ) -> Result<EdgeIndex, Error> {
-        let dupe_mode = G::duplicate_connection_mode();
         if let Some(dupe) = self
             .digraph
             .edges_directed(target, Direction::Incoming)
             .find(|edge| edge.weight().target_input == target_input)
         {
-            match dupe_mode {
-                DuplicateConnectionMode::Disconnect => {
-                    // disconnect the existing edge
-                    self.digraph.remove_edge(dupe.id());
-                }
-                DuplicateConnectionMode::Error => {
-                    // error, we cannot have duplicate connections
-                    return Err(Error::DuplicateConnection {
-                        src: dupe.weight().source,
-                        src_output: dupe.weight().source_output,
-                        target,
-                        target_input,
-                    });
-                }
-            }
+            return Err(Error::DuplicateConnection {
+                src: dupe.weight().source,
+                src_output: dupe.weight().source_output,
+                target,
+                target_input,
+            });
         }
 
         // type check
@@ -181,7 +206,6 @@ impl<G: AbstractGraph> Graph<G> {
             source_output,
             target,
             target_input,
-            _g: PhantomData,
         };
 
         self.needs_visitor_reset = true;
@@ -189,7 +213,7 @@ impl<G: AbstractGraph> Graph<G> {
         Ok(self.digraph.add_edge(source, target, connection))
     }
 
-    pub fn disconnect(&mut self, target: NodeIndex, target_input: u32) -> Option<Connection<G>> {
+    pub fn disconnect(&mut self, target: NodeIndex, target_input: u32) -> Option<Connection> {
         if let Some(edge) = self
             .digraph
             .edges_directed(target, Direction::Incoming)
@@ -203,7 +227,7 @@ impl<G: AbstractGraph> Graph<G> {
         }
     }
 
-    pub fn disconnect_all_inputs(&mut self, node: NodeIndex) -> Vec<Connection<G>> {
+    pub fn disconnect_all_inputs(&mut self, node: NodeIndex) -> Vec<Connection> {
         let mut disconnected = Vec::new();
         let inputs: Vec<_> = self
             .digraph
@@ -221,7 +245,7 @@ impl<G: AbstractGraph> Graph<G> {
         disconnected
     }
 
-    pub fn disconnect_all_outputs(&mut self, node: NodeIndex) -> Vec<Connection<G>> {
+    pub fn disconnect_all_outputs(&mut self, node: NodeIndex) -> Vec<Connection> {
         let mut disconnected = Vec::new();
         let outputs: Vec<_> = self
             .digraph
@@ -239,7 +263,7 @@ impl<G: AbstractGraph> Graph<G> {
         disconnected
     }
 
-    pub fn disconnect_all(&mut self, node: NodeIndex) -> Vec<Connection<G>> {
+    pub fn disconnect_all(&mut self, node: NodeIndex) -> Vec<Connection> {
         let mut disconnected = Vec::new();
         disconnected.extend(self.disconnect_all_inputs(node));
         disconnected.extend(self.disconnect_all_outputs(node));
@@ -247,7 +271,7 @@ impl<G: AbstractGraph> Graph<G> {
         disconnected
     }
 
-    pub fn garbage_collect(&mut self) -> Vec<G::Node> {
+    pub fn garbage_collect(&mut self) -> Vec<N> {
         let all_nodes: BTreeSet<NodeIndex> = self.digraph().node_indices().collect();
         let mut removed_nodes = BTreeMap::default();
         let mut again = false;
@@ -307,7 +331,7 @@ impl<G: AbstractGraph> Graph<G> {
 
     pub fn visit_mut<F, T>(&mut self, mut visit_node: F) -> VisitResult<T>
     where
-        F: FnMut(NodeIndex, &mut G::Node) -> VisitResult<T>,
+        F: FnMut(NodeIndex, &mut N) -> VisitResult<T>,
     {
         self.reset_visitor();
 
@@ -324,7 +348,7 @@ impl<G: AbstractGraph> Graph<G> {
 
     pub fn try_visit_mut<F, T, E>(&mut self, mut visit_node: F) -> Result<VisitResult<T>, E>
     where
-        F: FnMut(NodeIndex, &mut G::Node) -> Result<VisitResult<T>, E>,
+        F: FnMut(NodeIndex, &mut N) -> Result<VisitResult<T>, E>,
     {
         self.reset_visitor();
 
@@ -340,15 +364,15 @@ impl<G: AbstractGraph> Graph<G> {
     }
 }
 
-impl<G: AbstractGraph> Index<NodeIndex> for Graph<G> {
-    type Output = G::Node;
+impl<N: Node> Index<NodeIndex> for Graph<N> {
+    type Output = N;
 
     fn index(&self, index: NodeIndex) -> &Self::Output {
         &self.digraph[index]
     }
 }
 
-impl<G: AbstractGraph> IndexMut<NodeIndex> for Graph<G> {
+impl<N: Node> IndexMut<NodeIndex> for Graph<N> {
     fn index_mut(&mut self, index: NodeIndex) -> &mut Self::Output {
         &mut self.digraph[index]
     }

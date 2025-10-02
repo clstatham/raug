@@ -1,7 +1,6 @@
-//! A directed graph of [`Processor`]s connected by [`Edge`]s.
+//! A directed graph of [`Processor`]s connected by [`Connection`]s.
 
 use std::{
-    ops::Deref,
     sync::{
         Arc,
         atomic::{AtomicUsize, Ordering},
@@ -12,12 +11,10 @@ use std::{
 
 use atomic_time::AtomicDuration;
 use crossbeam_channel::Sender;
-use node::{IntoNode, IntoOutputs, Node, ProcessNodeError, ProcessorNode};
+use node::{ProcessNodeError, ProcessorNode};
 use raug_graph::{
-    builder::IntoIndex,
-    graph::{AbstractGraph, Connection, EdgeIndex, NodeIndex},
+    graph::{AddConnections, Connection, NodeIndex},
     petgraph::{self, Direction, visit::EdgeRef},
-    prelude::GraphBuilder,
 };
 use runtime::{AudioDevice, AudioOut};
 use rustc_hash::FxHashMap;
@@ -130,8 +127,8 @@ pub type GraphRunResult<T> = Result<T, GraphRunError>;
 pub type GraphConstructionResult<T> = Result<T, GraphConstructionError>;
 
 #[derive(Default)]
-pub struct GraphInner {
-    pub(crate) graph: raug_graph::graph::Graph<Self>,
+pub struct Graph {
+    pub(crate) graph: raug_graph::graph::Graph<ProcessorNode>,
 
     // cached strongly connected components (feedback loops)
     sccs: Vec<Vec<NodeIndex>>,
@@ -141,35 +138,10 @@ pub struct GraphInner {
     pub(crate) max_block_size: usize,
 }
 
-pub type Edge = Connection<GraphInner>;
-
-impl AbstractGraph for GraphInner {
-    type Node = ProcessorNode;
-    type Edge = ();
-
-    fn duplicate_connection_mode() -> raug_graph::prelude::DuplicateConnectionMode {
-        raug_graph::graph::DuplicateConnectionMode::Disconnect
-    }
-
-    fn graph(&self) -> &raug_graph::prelude::Graph<Self> {
-        &self.graph
-    }
-
-    fn graph_mut(&mut self) -> &mut raug_graph::prelude::Graph<Self> {
-        &mut self.graph
-    }
-}
-
-impl GraphInner {
-    pub fn new(inputs: usize, outputs: usize) -> Self {
-        let mut this = Self::default();
-        for _ in 0..inputs {
-            this.add_audio_input();
-        }
-        for _ in 0..outputs {
-            this.add_audio_output();
-        }
-        this
+impl Graph {
+    /// Creates a new empty `Graph`.
+    pub fn new() -> Self {
+        Self::default()
     }
 
     /// Adds an audio input node to the graph.
@@ -178,25 +150,34 @@ impl GraphInner {
     }
 
     /// Adds an audio output node to the graph.
-    pub(crate) fn add_audio_output(&mut self) -> NodeIndex {
+    pub fn add_audio_output(&mut self) -> NodeIndex {
         let mut node = ProcessorNode::new(Passthrough::<f32>::default());
         node.allocate(self.sample_rate, self.max_block_size);
         node.resize_buffers(self.sample_rate, self.max_block_size);
         self.graph.add_output(node)
     }
 
-    pub fn add_node(&mut self, mut node: ProcessorNode) -> NodeIndex {
+    pub fn add_node_and_connect(
+        &'_ mut self,
+        node: impl Processor,
+    ) -> AddConnections<'_, ProcessorNode> {
+        let mut node = ProcessorNode::new(node);
+        // allocate for the node on-the-fly with the current sample rate and
+        // block size, so that it can immediately be used
+        node.allocate(self.sample_rate, self.max_block_size);
+        node.resize_buffers(self.sample_rate, self.max_block_size);
+
+        self.graph.add_node_and_connect(node)
+    }
+
+    pub fn add_node(&mut self, node: impl Processor) -> NodeIndex {
+        let mut node = ProcessorNode::new(node);
         // allocate for the node on-the-fly with the current sample rate and
         // block size, so that it can immediately be used
         node.allocate(self.sample_rate, self.max_block_size);
         node.resize_buffers(self.sample_rate, self.max_block_size);
 
         self.graph.add_node(node)
-    }
-
-    /// Adds a processor node to the graph.
-    pub fn add_processor(&mut self, processor: impl Processor) -> NodeIndex {
-        self.add_node(ProcessorNode::new(processor))
     }
 
     /// Connects two nodes in the graph.
@@ -210,10 +191,20 @@ impl GraphInner {
         source_output: u32,
         target: NodeIndex,
         target_input: u32,
-    ) -> EdgeIndex {
+    ) {
         self.graph
             .connect(source, source_output, target, target_input)
-            .unwrap()
+            .unwrap();
+    }
+
+    pub fn connect_constant(&mut self, value: f32, target: NodeIndex, target_input: u32) {
+        let constant = self.constant(value);
+        self.connect(constant, 0, target, target_input);
+    }
+
+    pub fn connect_audio_output(&mut self, source: NodeIndex, source_output: u32) {
+        let output = self.add_audio_output();
+        self.connect(source, source_output, output, 0);
     }
 
     /// Disconnects two nodes in the graph at the specified input and output indices.
@@ -224,17 +215,17 @@ impl GraphInner {
     }
 
     /// Disconnects all inputs to the specified node.
-    pub fn disconnect_all_inputs(&mut self, node: NodeIndex) -> Vec<Edge> {
+    pub fn disconnect_all_inputs(&mut self, node: NodeIndex) -> Vec<Connection> {
         self.graph.disconnect_all_inputs(node)
     }
 
     /// Disconnects all outputs from the specified node.
-    pub fn disconnect_all_outputs(&mut self, node: NodeIndex) -> Vec<Edge> {
+    pub fn disconnect_all_outputs(&mut self, node: NodeIndex) -> Vec<Connection> {
         self.graph.disconnect_all_outputs(node)
     }
 
     /// Disconnects all inputs and outputs from the specified node.
-    pub fn disconnect_all(&mut self, node: NodeIndex) -> Vec<Edge> {
+    pub fn disconnect_all(&mut self, node: NodeIndex) -> Vec<Connection> {
         self.graph.disconnect_all(node)
     }
 
@@ -246,7 +237,7 @@ impl GraphInner {
         let replaced_outputs = self.disconnect_all_outputs(replaced);
 
         for edge in replaced_outputs {
-            let Edge {
+            let Connection {
                 target,
                 source_output,
                 target_input,
@@ -430,186 +421,13 @@ impl GraphInner {
 
         Ok(())
     }
-}
-
-/// A directed graph of [`Processor`]s connected by [`Edge`]s.
-#[derive(Clone, Default)]
-pub struct Graph {
-    pub(crate) inner: GraphBuilder<GraphInner>,
-}
-
-impl Deref for Graph {
-    type Target = GraphBuilder<GraphInner>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.inner
-    }
-}
-
-impl Graph {
-    /// Creates a new empty `Graph`.
-    pub fn new(inputs: usize, outputs: usize) -> Self {
-        Self {
-            inner: GraphBuilder::from_inner(GraphInner::new(inputs, outputs)),
-        }
-    }
-
-    /// Allocates internal buffers for the graph with the given sample rate and block size.
-    pub fn allocate(&self, sample_rate: f32, block_size: usize) {
-        self.with_inner(|graph| graph.allocate(sample_rate, block_size));
-    }
-
-    /// Resizes the buffers of the graph for the given sample rate and block size.
-    pub fn resize_buffers(&self, sample_rate: f32, block_size: usize) {
-        self.with_inner(|graph| graph.resize_buffers(sample_rate, block_size));
-    }
-
-    /// Returns the sample rate of the graph.
-    pub fn sample_rate(&self) -> f32 {
-        self.with_inner(|graph| graph.sample_rate)
-    }
-
-    /// Returns the block size of the graph.
-    pub fn block_size(&self) -> usize {
-        self.with_inner(|graph| graph.block_size)
-    }
-
-    /// Returns the maximum block size of the graph.
-    pub fn max_block_size(&self) -> usize {
-        self.with_inner(|graph| graph.max_block_size)
-    }
-
-    /// Processes the graph for one block of samples.
-    pub fn process(&self) -> GraphRunResult<()> {
-        self.with_inner(|graph| graph.process())
-    }
-
-    /// Returns the number of audio inputs in the graph.
-    pub fn num_audio_inputs(&self) -> usize {
-        self.with_inner(|graph| graph.num_audio_inputs())
-    }
-
-    /// Returns the number of audio outputs in the graph.
-    pub fn num_audio_outputs(&self) -> usize {
-        self.with_inner(|graph| graph.num_audio_outputs())
-    }
-
-    /// Runs the specified closure on the input buffer at the given index. This can be used to fill the buffer manually, for instance.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the index is out of range for the number of inputs in the graph.
-    pub fn map_input<F, R>(&mut self, input_index: usize, f: F) -> R
-    where
-        F: FnOnce(&mut [f32]) -> R,
-    {
-        self.with_inner(|graph| f(graph.get_input_mut(input_index).unwrap()))
-    }
-
-    /// Runs the specified closure on the output buffer at the given index. This can be used to copy the buffer to something else, for instance.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the index is out of range for the number of outputs in the graph.
-    pub fn map_output<F, R>(&mut self, output_index: usize, f: F) -> R
-    where
-        F: FnOnce(&[f32]) -> R,
-    {
-        self.with_inner(|graph| f(graph.get_output(output_index).unwrap()))
-    }
-
-    /// Adds an audio input node to the graph.
-    pub fn adc(&self) -> Node {
-        let id = self.with_inner(|graph| graph.add_audio_input());
-        Node::new(self.clone(), id)
-    }
-
-    /// Adds an audio output node to the graph.
-    pub fn dac(&self, inputs: impl IntoOutputs) {
-        let inputs = inputs.into_outputs(self);
-        self.with_inner(|graph| {
-            let outputs = graph.output_indices().to_vec();
-            for (o, i) in outputs.into_iter().zip(inputs) {
-                graph.connect(i.node_id(), i.output_index, o, 0);
-            }
-        });
-    }
-
-    /// Adds a processor node to the graph.
-    pub fn node(&self, processor: impl Processor) -> Node {
-        let id = self.with_inner(|graph| graph.add_processor(processor));
-        Node::new(self.clone(), id)
-    }
-
-    /// Returns the number of nodes in the graph.
-    pub fn node_count(&self) -> usize {
-        self.with_inner(|graph| graph.graph.digraph().node_count())
-    }
-
-    /// Returns the number of edges in the graph.
-    pub fn edge_count(&self) -> usize {
-        self.with_inner(|graph| graph.graph.digraph().edge_count())
-    }
-
-    /// Disconnects the given output of one node from the given input of another node.
-    #[track_caller]
-    #[inline]
-    pub fn disconnect(&self, to: impl IntoNode, to_input: impl IntoIndex) {
-        let to = to.into_node(self);
-        let to_input = to_input.into_input_idx(&to).expect("Invalid input index");
-        self.with_inner(|graph| graph.disconnect(to.id(), to_input));
-    }
-
-    /// Disconnects all inputs to the given node.
-    #[track_caller]
-    #[inline]
-    pub fn disconnect_all_inputs(&self, node: impl IntoNode) {
-        let node = node.into_node(self);
-        self.with_inner(|graph| graph.disconnect_all_inputs(node.id()));
-    }
-
-    /// Disconnects all outputs from the given node.
-    #[track_caller]
-    #[inline]
-    pub fn disconnect_all_outputs(&self, node: impl IntoNode) {
-        let node = node.into_node(self);
-        self.with_inner(|graph| graph.disconnect_all_outputs(node.id()));
-    }
-
-    /// Disconnects all inputs and outputs from the given node.
-    #[track_caller]
-    #[inline]
-    pub fn disconnect_all(&self, node: impl IntoNode) {
-        let node = node.into_node(self);
-        self.with_inner(|graph| graph.disconnect_all(node.id()));
-    }
-
-    #[track_caller]
-    #[inline]
-    pub fn replace_node_gracefully(
-        &self,
-        replaced: impl IntoNode,
-        replacement: impl IntoNode,
-    ) -> Node {
-        let target = replaced.into_node(self);
-        let replacement = replacement.into_node(self);
-        let idx =
-            self.with_inner(|graph| graph.replace_node_gracefully(target.id(), replacement.id()));
-        Node::new(self.clone(), idx)
-    }
-
-    /// Writes a DOT representation of the graph to the provided writer, suitable for rendering with Graphviz.
-    pub fn write_dot<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
-        self.with_inner(|graph| graph.write_dot(writer))
-    }
 
     /// Creates a new [`Node`] that outputs a constant value.
-    pub fn constant<T: Signal + Default + Clone>(&self, value: T) -> Node {
-        self.node(Constant::new(value))
+    pub fn constant<T: Signal + Default + Clone>(&mut self, value: T) -> NodeIndex {
+        self.add_node(Constant::new(value))
     }
 
-    pub fn play(&self, mut output_stream: impl AudioOut) -> GraphRunResult<RunningGraph> {
-        let graph = self.clone();
+    pub fn play(mut self, mut output_stream: impl AudioOut) -> GraphRunResult<RunningGraph> {
         let samples_written = Arc::new(AtomicUsize::new(0));
         let samples_written_clone = samples_written.clone();
         let duration_written = Arc::new(AtomicDuration::new(Duration::ZERO));
@@ -627,42 +445,38 @@ impl Graph {
                         return Ok(());
                     }
 
-                    graph.with_inner(|graph| -> GraphRunResult<()> {
-                        let block_size = output_stream.block_size();
-                        if block_size > graph.max_block_size {
-                            log::debug!("Reallocating graph buffers to {} samples", block_size);
-                            graph.allocate(output_stream.sample_rate(), block_size);
-                        } else if block_size != graph.block_size {
-                            log::debug!("Resizing graph buffers to {} samples", block_size);
-                            graph.resize_buffers(output_stream.sample_rate(), block_size);
+                    let block_size = output_stream.block_size();
+                    if block_size > self.max_block_size {
+                        log::debug!("Reallocating graph buffers to {} samples", block_size);
+                        self.allocate(output_stream.sample_rate(), block_size);
+                    } else if block_size != self.block_size {
+                        log::debug!("Resizing graph buffers to {} samples", block_size);
+                        self.resize_buffers(output_stream.sample_rate(), block_size);
+                    }
+
+                    self.process()?;
+
+                    let mut delta = 0;
+                    for sample_idx in 0..self.block_size {
+                        for channel_idx in 0..output_stream.output_channels() {
+                            let Some(buffer) = self.get_output(channel_idx) else {
+                                continue;
+                            };
+
+                            delta += output_stream.output(&[buffer[sample_idx]])?;
                         }
+                    }
 
-                        graph.process()?;
+                    samples_written_clone.fetch_add(delta, Ordering::Relaxed);
 
-                        let mut delta = 0;
-                        for sample_idx in 0..graph.block_size {
-                            for channel_idx in 0..output_stream.output_channels() {
-                                let Some(buffer) = graph.get_output(channel_idx) else {
-                                    continue;
-                                };
-
-                                delta += output_stream.output(&[buffer[sample_idx]])?;
-                            }
-                        }
-
-                        samples_written_clone.fetch_add(delta, Ordering::Relaxed);
-
-                        let duration_secs = delta as f32
-                            / output_stream.output_channels() as f32
-                            / output_stream.sample_rate();
-                        duration_written_clone
-                            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |dur| {
-                                Some(dur + Duration::from_secs_f32(duration_secs))
-                            })
-                            .unwrap();
-
-                        Ok(())
-                    })?;
+                    let duration_secs = delta as f32
+                        / output_stream.output_channels() as f32
+                        / output_stream.sample_rate();
+                    duration_written_clone
+                        .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |dur| {
+                            Some(dur + Duration::from_secs_f32(duration_secs))
+                        })
+                        .unwrap();
                 }
             }
         });
@@ -675,7 +489,7 @@ impl Graph {
         })
     }
 
-    pub fn play_for(&self, output_stream: impl AudioOut, duration: Duration) -> GraphRunResult<()> {
+    pub fn play_for(self, output_stream: impl AudioOut, duration: Duration) -> GraphRunResult<()> {
         let handle = self.play(output_stream)?;
         handle.run_for(duration)?;
         Ok(())

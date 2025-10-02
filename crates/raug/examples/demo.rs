@@ -31,13 +31,19 @@ fn main() {
     env_logger::init();
 
     // create a new graph
-    let graph = Graph::new(0, 2);
+    let mut graph = Graph::new();
 
     // add a sine oscillator
-    let sine = SineOscillator::new().node(&graph, 440.0);
+    // let sine = SineOscillator::new().node(&graph, 440.0);
+    let sine = graph.add_node(SineOscillator::new());
+    let c440 = graph.constant(440.0);
+    graph.connect(c440, 0, sine, 0);
 
     // add some outputs (2 for stereo)
-    graph.dac((&sine, &sine));
+    let out_l = graph.add_audio_output();
+    let out_r = graph.add_audio_output();
+    graph.connect(sine, 0, out_l, 0);
+    graph.connect(sine, 0, out_r, 0);
 
     // open the audio stream
     graph

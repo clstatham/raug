@@ -10,15 +10,13 @@ pub use petgraph;
 
 use graph::NodeIndex;
 
-pub mod builder;
 pub mod graph;
 pub mod node;
 
 pub mod prelude {
     pub use crate::{
-        builder::{GraphBuilder, NodeBuilder},
-        graph::{AbstractGraph, Connection, DuplicateConnectionMode, Graph, NodeIndex},
-        node::AbstractNode,
+        graph::{Connection, Graph, NodeIndex},
+        node::{Node, NodeIndexExt},
     };
 }
 

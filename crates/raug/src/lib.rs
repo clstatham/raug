@@ -16,9 +16,8 @@ pub mod prelude {
         builtins::*,
         graph::{
             Graph, RunningGraph,
-            node::{Input, IntoNode, IntoOutputExt, IntoOutputOpt, Node, Output},
+            node::{ProcessNodeError, ProcessorNode},
             runtime::{AudioBackend, AudioDevice, AudioOut, CpalOut, WavFileOut},
-            sub_graph::SubGraph,
         },
         processor::{
             ProcResult, Processor, ProcessorError,
