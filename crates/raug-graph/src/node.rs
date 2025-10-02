@@ -1,6 +1,6 @@
 use crate::{
     TypeInfo,
-    graph::{AddConnections, Graph},
+    graph::{Graph, NodeIndex},
 };
 
 pub trait Node {
@@ -15,14 +15,56 @@ pub trait Node {
     fn output_name(&self, index: u32) -> Option<&str>;
 }
 
-pub trait NodeIndexExt<N: Node>: Copy {
-    fn and_connect(self, graph: &mut Graph<N>) -> AddConnections<'_, N>
-    where
-        Self: Sized;
+pub trait AsNodeInputIndex<N: Node>: ToString {
+    fn as_node_input_index(&self, graph: &Graph<N>, node: NodeIndex) -> Option<u32>;
 }
 
-impl<N: Node> NodeIndexExt<N> for crate::graph::NodeIndex {
-    fn and_connect(self, graph: &mut Graph<N>) -> AddConnections<'_, N> {
-        AddConnections::new(graph, self)
+impl<N: Node> AsNodeInputIndex<N> for u32 {
+    fn as_node_input_index(&self, graph: &Graph<N>, node: NodeIndex) -> Option<u32> {
+        if *self < graph[node].num_inputs() as u32 {
+            Some(*self)
+        } else {
+            None
+        }
+    }
+}
+
+impl<N: Node> AsNodeInputIndex<N> for &str {
+    fn as_node_input_index(&self, graph: &Graph<N>, node: NodeIndex) -> Option<u32> {
+        for i in 0..graph[node].num_inputs() {
+            if let Some(name) = graph[node].input_name(i as u32)
+                && &name == self
+            {
+                return Some(i as u32);
+            }
+        }
+        None
+    }
+}
+
+pub trait AsNodeOutputIndex<N: Node>: ToString {
+    fn as_node_output_index(&self, graph: &Graph<N>, node: NodeIndex) -> Option<u32>;
+}
+
+impl<N: Node> AsNodeOutputIndex<N> for u32 {
+    fn as_node_output_index(&self, graph: &Graph<N>, node: NodeIndex) -> Option<u32> {
+        if *self < graph[node].num_outputs() as u32 {
+            Some(*self)
+        } else {
+            None
+        }
+    }
+}
+
+impl<N: Node> AsNodeOutputIndex<N> for &str {
+    fn as_node_output_index(&self, graph: &Graph<N>, node: NodeIndex) -> Option<u32> {
+        for i in 0..graph[node].num_outputs() {
+            if let Some(name) = graph[node].output_name(i as u32)
+                && &name == self
+            {
+                return Some(i as u32);
+            }
+        }
+        None
     }
 }

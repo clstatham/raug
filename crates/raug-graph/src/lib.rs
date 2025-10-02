@@ -16,7 +16,7 @@ pub mod node;
 pub mod prelude {
     pub use crate::{
         graph::{Connection, Graph, NodeIndex},
-        node::{Node, NodeIndexExt},
+        node::Node,
     };
 }
 

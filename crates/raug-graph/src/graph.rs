@@ -7,7 +7,10 @@ use std::{
 use petgraph::prelude::*;
 use rustc_hash::FxHashSet;
 
-use crate::{Error, node::Node};
+use crate::{
+    Error,
+    node::{AsNodeInputIndex, AsNodeOutputIndex, Node},
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VisitResult<T> {
@@ -25,57 +28,6 @@ pub struct Connection {
     pub source_output: u32,
     pub target: NodeIndex,
     pub target_input: u32,
-}
-
-pub struct AddConnections<'a, N: Node> {
-    target: NodeIndex,
-    connections: Vec<Connection>,
-    graph: &'a mut Graph<N>,
-}
-
-impl<'a, N: Node> AddConnections<'a, N> {
-    pub(crate) fn new(graph: &'a mut Graph<N>, target: NodeIndex) -> Self {
-        Self {
-            target,
-            connections: Vec::new(),
-            graph,
-        }
-    }
-
-    pub fn with_input(
-        &mut self,
-        target_input: u32,
-        source: NodeIndex,
-        source_output: u32,
-    ) -> &mut Self {
-        self.connections.push(Connection {
-            source,
-            source_output,
-            target: self.target,
-            target_input,
-        });
-        self
-    }
-
-    pub fn finish(&mut self) -> Result<NodeIndex, Error> {
-        for conn in self.connections.drain(..) {
-            self.graph.connect(
-                conn.source,
-                conn.source_output,
-                conn.target,
-                conn.target_input,
-            )?;
-        }
-        Ok(self.target)
-    }
-}
-
-impl<'a, N: Node> Drop for AddConnections<'a, N> {
-    fn drop(&mut self) {
-        if !self.connections.is_empty() {
-            self.finish().unwrap();
-        }
-    }
 }
 
 pub struct Graph<N: Node> {
@@ -148,11 +100,6 @@ impl<N: Node> Graph<N> {
         idx
     }
 
-    pub fn add_node_and_connect(&mut self, node: N) -> AddConnections<'_, N> {
-        let idx = self.digraph.add_node(node);
-        AddConnections::new(self, idx)
-    }
-
     pub fn add_node(&mut self, node: N) -> NodeIndex {
         self.digraph.add_node(node)
     }
@@ -160,10 +107,27 @@ impl<N: Node> Graph<N> {
     pub fn connect(
         &mut self,
         source: NodeIndex,
-        source_output: u32,
+        source_output: impl AsNodeOutputIndex<N>,
         target: NodeIndex,
-        target_input: u32,
+        target_input: impl AsNodeInputIndex<N>,
     ) -> Result<EdgeIndex, Error> {
+        let source_output = source_output.as_node_output_index(self, source).ok_or(
+            Error::OutputIndexOutOfBounds {
+                node: source,
+                index: source_output.to_string(),
+                num_outputs: self.digraph[source].num_outputs(),
+            },
+        )?;
+
+        let target_input =
+            target_input
+                .as_node_input_index(self, target)
+                .ok_or(Error::InputIndexOutOfBounds {
+                    node: target,
+                    index: target_input.to_string(),
+                    num_inputs: self.digraph[target].num_inputs(),
+                })?;
+
         if let Some(dupe) = self
             .digraph
             .edges_directed(target, Direction::Incoming)
@@ -213,7 +177,13 @@ impl<N: Node> Graph<N> {
         Ok(self.digraph.add_edge(source, target, connection))
     }
 
-    pub fn disconnect(&mut self, target: NodeIndex, target_input: u32) -> Option<Connection> {
+    pub fn disconnect(
+        &mut self,
+        target: NodeIndex,
+        target_input: impl AsNodeInputIndex<N>,
+    ) -> Option<Connection> {
+        let target_input = target_input.as_node_input_index(self, target)?;
+
         if let Some(edge) = self
             .digraph
             .edges_directed(target, Direction::Incoming)

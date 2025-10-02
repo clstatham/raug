@@ -13,7 +13,7 @@ use atomic_time::AtomicDuration;
 use crossbeam_channel::Sender;
 use node::{ProcessNodeError, ProcessorNode};
 use raug_graph::{
-    graph::{AddConnections, Connection, NodeIndex},
+    graph::{Connection, NodeIndex},
     petgraph::{self, Direction, visit::EdgeRef},
 };
 use runtime::{AudioDevice, AudioOut};
@@ -155,19 +155,6 @@ impl Graph {
         node.allocate(self.sample_rate, self.max_block_size);
         node.resize_buffers(self.sample_rate, self.max_block_size);
         self.graph.add_output(node)
-    }
-
-    pub fn add_node_and_connect(
-        &'_ mut self,
-        node: impl Processor,
-    ) -> AddConnections<'_, ProcessorNode> {
-        let mut node = ProcessorNode::new(node);
-        // allocate for the node on-the-fly with the current sample rate and
-        // block size, so that it can immediately be used
-        node.allocate(self.sample_rate, self.max_block_size);
-        node.resize_buffers(self.sample_rate, self.max_block_size);
-
-        self.graph.add_node_and_connect(node)
     }
 
     pub fn add_node(&mut self, node: impl Processor) -> NodeIndex {
