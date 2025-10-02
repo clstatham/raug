@@ -15,7 +15,7 @@ pub trait Node {
     fn output_name(&self, index: u32) -> Option<&str>;
 }
 
-pub trait AsNodeInputIndex<N: Node>: ToString {
+pub trait AsNodeInputIndex<N: Node>: ToString + Copy {
     fn as_node_input_index(&self, graph: &Graph<N>, node: NodeIndex) -> Option<u32>;
 }
 
@@ -42,7 +42,7 @@ impl<N: Node> AsNodeInputIndex<N> for &str {
     }
 }
 
-pub trait AsNodeOutputIndex<N: Node>: ToString {
+pub trait AsNodeOutputIndex<N: Node>: ToString + Copy {
     fn as_node_output_index(&self, graph: &Graph<N>, node: NodeIndex) -> Option<u32>;
 }
 
@@ -66,5 +66,81 @@ impl<N: Node> AsNodeOutputIndex<N> for &str {
             }
         }
         None
+    }
+}
+
+pub struct NodeInput<N: Node, I: AsNodeInputIndex<N>> {
+    pub node: NodeIndex,
+    pub index: I,
+    _phantom: std::marker::PhantomData<N>,
+}
+
+impl<N: Node, I: AsNodeInputIndex<N>> Clone for NodeInput<N, I> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<N: Node, I: AsNodeInputIndex<N>> Copy for NodeInput<N, I> {}
+
+impl<N: Node, I: AsNodeInputIndex<N>> NodeInput<N, I> {
+    pub fn new(node: NodeIndex, index: I) -> Self {
+        Self {
+            node,
+            index,
+            _phantom: std::marker::PhantomData,
+        }
+    }
+}
+
+impl<N: Node> From<NodeIndex> for NodeInput<N, u32> {
+    fn from(node: NodeIndex) -> Self {
+        Self::new(node, 0)
+    }
+}
+
+pub struct NodeOutput<N: Node, I: AsNodeOutputIndex<N>> {
+    pub node: NodeIndex,
+    pub index: I,
+    _phantom: std::marker::PhantomData<N>,
+}
+
+impl<N: Node, I: AsNodeOutputIndex<N>> Clone for NodeOutput<N, I> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<N: Node, I: AsNodeOutputIndex<N>> Copy for NodeOutput<N, I> {}
+
+impl<N: Node, I: AsNodeOutputIndex<N>> NodeOutput<N, I> {
+    pub fn new(node: NodeIndex, index: I) -> Self {
+        Self {
+            node,
+            index,
+            _phantom: std::marker::PhantomData,
+        }
+    }
+}
+
+impl<N: Node> From<NodeIndex> for NodeOutput<N, u32> {
+    fn from(node: NodeIndex) -> Self {
+        Self::new(node, 0)
+    }
+}
+
+pub trait NodeIndexExt<N: Node> {
+    fn input<I: AsNodeInputIndex<N>>(&self, index: I) -> NodeInput<N, I>;
+
+    fn output<I: AsNodeOutputIndex<N>>(&self, index: I) -> NodeOutput<N, I>;
+}
+
+impl<N: Node> NodeIndexExt<N> for NodeIndex {
+    fn input<I: AsNodeInputIndex<N>>(&self, index: I) -> NodeInput<N, I> {
+        NodeInput::new(*self, index)
+    }
+
+    fn output<I: AsNodeOutputIndex<N>>(&self, index: I) -> NodeOutput<N, I> {
+        NodeOutput::new(*self, index)
     }
 }

@@ -14,6 +14,7 @@ use crossbeam_channel::Sender;
 use node::{ProcessNodeError, ProcessorNode};
 use raug_graph::{
     graph::{Connection, NodeIndex},
+    node::{AsNodeInputIndex, AsNodeOutputIndex, NodeIndexExt, NodeInput, NodeOutput},
     petgraph::{self, Direction, visit::EdgeRef},
 };
 use runtime::{AudioDevice, AudioOut};
@@ -172,33 +173,43 @@ impl Graph {
     /// If the edge already exists, this function does nothing.
     ///
     /// If the target node already has an incoming edge at the target input, the existing edge is removed.
-    pub fn connect(
-        &mut self,
-        source: NodeIndex,
-        source_output: u32,
-        target: NodeIndex,
-        target_input: u32,
-    ) {
-        self.graph
-            .connect(source, source_output, target, target_input)
-            .unwrap();
+    pub fn connect<O, Src, I, Tgt>(&mut self, source: Src, target: Tgt)
+    where
+        O: AsNodeOutputIndex<ProcessorNode>,
+        I: AsNodeInputIndex<ProcessorNode>,
+        Src: Into<NodeOutput<ProcessorNode, O>> + Copy,
+        Tgt: Into<NodeInput<ProcessorNode, I>> + Copy,
+    {
+        self.graph.connect(source, target).unwrap();
     }
 
-    pub fn connect_constant(&mut self, value: f32, target: NodeIndex, target_input: u32) {
+    pub fn connect_constant<I, Tgt>(&mut self, value: f32, target: Tgt)
+    where
+        I: AsNodeInputIndex<ProcessorNode>,
+        Tgt: Into<NodeInput<ProcessorNode, I>> + Copy,
+    {
         let constant = self.constant(value);
-        self.connect(constant, 0, target, target_input);
+        self.connect(constant, target);
     }
 
-    pub fn connect_audio_output(&mut self, source: NodeIndex, source_output: u32) {
+    pub fn connect_audio_output<O, Src>(&mut self, source: Src)
+    where
+        O: AsNodeOutputIndex<ProcessorNode>,
+        Src: Into<NodeOutput<ProcessorNode, O>> + Copy,
+    {
         let output = self.add_audio_output();
-        self.connect(source, source_output, output, 0);
+        self.connect(source, output);
     }
 
     /// Disconnects two nodes in the graph at the specified input and output indices.
     ///
     /// Does nothing if the edge does not exist.
-    pub fn disconnect(&mut self, target: NodeIndex, target_input: u32) {
-        self.graph.disconnect(target, target_input);
+    pub fn disconnect<I, Tgt>(&mut self, target: Tgt) -> Option<Connection>
+    where
+        I: AsNodeInputIndex<ProcessorNode>,
+        Tgt: Into<NodeInput<ProcessorNode, I>> + Copy,
+    {
+        self.graph.disconnect(target)
     }
 
     /// Disconnects all inputs to the specified node.
@@ -232,7 +243,10 @@ impl Graph {
             } = edge;
 
             if source_output < self.graph[replacement].num_outputs() as u32 {
-                self.connect(replacement, source_output, target, target_input);
+                self.connect(
+                    replacement.output(source_output),
+                    target.input(target_input),
+                );
             } else {
                 // leave it disconnected
             }

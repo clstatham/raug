@@ -2,6 +2,7 @@ use std::f32::consts::PI;
 
 use raug::prelude::*;
 use raug_ext::prelude::*;
+use raug_graph::node::NodeIndexExt;
 
 /// A processor that generates Brownian noise.
 #[processor(derive(Default))]
@@ -72,22 +73,25 @@ fn main() {
     let mut graph = Graph::new();
 
     let mod1 = graph.add_node(Brownian::default());
-    graph.connect_constant(200.0, mod1, 0);
+    graph.connect_constant(200.0, mod1.input("speed"));
 
     let mod2 = graph.add_node(Brownian::default());
-    graph.connect_constant(20.0, mod2, 0);
+    graph.connect_constant(20.0, mod2.input("speed"));
 
     let osc = graph.add_node(PlayingAround::default());
-    graph.connect(mod1, 0, osc, 1);
-    graph.connect(mod2, 0, osc, 2);
+    graph.connect(mod1, osc.input("mod1"));
+    graph.connect(mod2, osc.input("mod2"));
 
     let hpf = graph.add_node(Biquad::highpass());
-    graph.connect_constant(20.0, hpf, 1); // Frequency (20 Hz)
-    graph.connect_constant(1.0, hpf, 2); // Q
-    graph.connect(osc, 0, hpf, 0);
+    // graph.connect_constant(20.0, hpf, "cutoff");
+    // graph.connect_constant(1.0, hpf, "q");
+    // graph.connect(osc, 0, hpf, 0);
+    graph.connect_constant(20.0, hpf.input("cutoff"));
+    graph.connect_constant(1.0, hpf.input("q"));
+    graph.connect(osc, hpf.input(0));
 
-    graph.connect_audio_output(hpf, 0);
-    graph.connect_audio_output(hpf, 0);
+    graph.connect_audio_output(hpf);
+    graph.connect_audio_output(hpf);
 
     let running_graph = graph
         .play(

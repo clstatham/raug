@@ -29,6 +29,7 @@ pub mod prelude {
         },
         util::*,
     };
+    pub use raug_graph::node::{AsNodeInputIndex, AsNodeOutputIndex, NodeIndexExt};
     pub use raug_macros::{note, note_array, processor};
     pub use std::time::Duration;
 }

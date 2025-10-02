@@ -1,4 +1,5 @@
 use raug::prelude::*;
+use raug_graph::node::NodeIndexExt;
 
 // this macro generates a processor struct and implements the Processor trait for it based on the function signature and body
 // the generated struct will have the name of the function converted to UpperCamelCase
@@ -34,16 +35,13 @@ fn main() {
     let mut graph = Graph::new();
 
     // add a sine oscillator
-    // let sine = SineOscillator::new().node(&graph, 440.0);
     let sine = graph.add_node(SineOscillator::new());
     let c440 = graph.constant(440.0);
-    graph.connect(c440, 0, sine, 0);
+    graph.connect(c440, sine.input("freq"));
 
     // add some outputs (2 for stereo)
-    let out_l = graph.add_audio_output();
-    let out_r = graph.add_audio_output();
-    graph.connect(sine, 0, out_l, 0);
-    graph.connect(sine, 0, out_r, 0);
+    graph.connect_audio_output(sine);
+    graph.connect_audio_output(sine);
 
     // open the audio stream
     graph

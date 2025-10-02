@@ -9,7 +9,7 @@ use rustc_hash::FxHashSet;
 
 use crate::{
     Error,
-    node::{AsNodeInputIndex, AsNodeOutputIndex, Node},
+    node::{AsNodeInputIndex, AsNodeOutputIndex, Node, NodeInput, NodeOutput},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -104,29 +104,39 @@ impl<N: Node> Graph<N> {
         self.digraph.add_node(node)
     }
 
-    pub fn connect(
-        &mut self,
-        source: NodeIndex,
-        source_output: impl AsNodeOutputIndex<N>,
-        target: NodeIndex,
-        target_input: impl AsNodeInputIndex<N>,
-    ) -> Result<EdgeIndex, Error> {
-        let source_output = source_output.as_node_output_index(self, source).ok_or(
-            Error::OutputIndexOutOfBounds {
+    pub fn connect<O, Src, I, Tgt>(&mut self, source: Src, target: Tgt) -> Result<EdgeIndex, Error>
+    where
+        O: AsNodeOutputIndex<N>,
+        I: AsNodeInputIndex<N>,
+        Src: Into<NodeOutput<N, O>> + Copy,
+        Tgt: Into<NodeInput<N, I>> + Copy,
+    {
+        let NodeOutput {
+            node: source,
+            index: source_output,
+            ..
+        } = source.into();
+        let NodeInput {
+            node: target,
+            index: target_input,
+            ..
+        } = target.into();
+
+        let Some(source_output) = source_output.as_node_output_index(self, source) else {
+            return Err(Error::OutputIndexOutOfBounds {
                 node: source,
                 index: source_output.to_string(),
-                num_outputs: self.digraph[source].num_outputs(),
-            },
-        )?;
+                num_outputs: self[source].num_outputs(),
+            });
+        };
 
-        let target_input =
-            target_input
-                .as_node_input_index(self, target)
-                .ok_or(Error::InputIndexOutOfBounds {
-                    node: target,
-                    index: target_input.to_string(),
-                    num_inputs: self.digraph[target].num_inputs(),
-                })?;
+        let Some(target_input) = target_input.as_node_input_index(self, target) else {
+            return Err(Error::InputIndexOutOfBounds {
+                node: target,
+                index: target_input.to_string(),
+                num_inputs: self[target].num_inputs(),
+            });
+        };
 
         if let Some(dupe) = self
             .digraph
@@ -177,11 +187,16 @@ impl<N: Node> Graph<N> {
         Ok(self.digraph.add_edge(source, target, connection))
     }
 
-    pub fn disconnect(
-        &mut self,
-        target: NodeIndex,
-        target_input: impl AsNodeInputIndex<N>,
-    ) -> Option<Connection> {
+    pub fn disconnect<I, Tgt>(&mut self, target: Tgt) -> Option<Connection>
+    where
+        I: AsNodeInputIndex<N>,
+        Tgt: Into<NodeInput<N, I>> + Copy,
+    {
+        let NodeInput {
+            node: target,
+            index: target_input,
+            ..
+        } = target.into();
         let target_input = target_input.as_node_input_index(self, target)?;
 
         if let Some(edge) = self

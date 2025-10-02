@@ -27,11 +27,10 @@ pub fn bench_demo(c: &mut Criterion) {
     // add a sine oscillator
     let sine = graph.add_node(SineOscillator::default());
     let c440 = graph.constant(440.0);
-    graph.connect(c440, 0, sine, 0);
+    graph.connect(c440, sine.input("freq"));
 
     // add an output (mono)
-    let out_l = graph.add_audio_output();
-    graph.connect(sine, 0, out_l, 0);
+    graph.connect_audio_output(sine);
 
     let mut group = c.benchmark_group(name("demo"));
 
@@ -55,20 +54,19 @@ pub fn bench_big_graph(c: &mut Criterion) {
 
     // add a sine oscillator
     let mut last_node = graph.add_node(SineOscillator::default());
-    let c440 = graph.constant(440.0);
-    graph.connect(c440, 0, last_node, 0);
+    graph.connect_constant(440.0, last_node.input("freq"));
 
     // add a lot of adders in series
     for _ in 0..1000 {
         let add = graph.add_node(Add::default());
-        graph.connect(last_node, 0, add, 0);
-        graph.connect(last_node, 0, add, 1);
+        graph.connect(last_node, add.input(0));
+        graph.connect(last_node, add.input(1));
         last_node = add;
     }
 
     // add some outputs (2 for stereo)
-    let out_l = graph.add_audio_output();
-    graph.connect(last_node, 0, out_l, 0);
+    graph.connect_audio_output(last_node);
+    graph.connect_audio_output(last_node);
 
     let mut group = c.benchmark_group(name("big_graph"));
 
