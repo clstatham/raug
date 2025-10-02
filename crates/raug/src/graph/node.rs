@@ -3,7 +3,7 @@
 use std::{fmt::Debug, sync::Arc};
 
 use parking_lot::Mutex;
-use raug_graph::node::Node as AbstractNode;
+use raug_graph::node::{Node as AbstractNode, NodeIndexExt};
 use thiserror::Error;
 
 use crate::{prelude::*, signal::type_erased::AnyBuffer};
@@ -162,5 +162,28 @@ impl ProcessorNode {
         }
 
         Ok(())
+    }
+}
+
+pub trait AsNodeOutput<I: AsNodeOutputIndex<ProcessorNode>> {
+    fn as_node_output(&self, graph: &mut Graph) -> NodeOutput<ProcessorNode, I>;
+}
+
+impl<O: AsNodeOutputIndex<ProcessorNode>> AsNodeOutput<O> for NodeOutput<ProcessorNode, O> {
+    fn as_node_output(&self, _graph: &mut Graph) -> NodeOutput<ProcessorNode, O> {
+        *self
+    }
+}
+
+impl<S: Signal + Default + Clone> AsNodeOutput<u32> for S {
+    fn as_node_output(&self, graph: &mut Graph) -> NodeOutput<ProcessorNode, u32> {
+        let node = graph.constant(self.clone());
+        node.output(0)
+    }
+}
+
+impl AsNodeOutput<u32> for NodeIndex {
+    fn as_node_output(&self, _graph: &mut Graph) -> NodeOutput<ProcessorNode, u32> {
+        NodeOutput::new(*self, 0)
     }
 }

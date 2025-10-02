@@ -254,6 +254,44 @@ impl<A: AudioOut, B: AudioOut> AudioOut for ParallelOut<A, B> {
     }
 }
 
+pub struct NullOut {
+    sample_rate: f32,
+    block_size: usize,
+    output_channels: usize,
+}
+
+impl NullOut {
+    pub fn new(sample_rate: f32, block_size: usize, output_channels: usize) -> Self {
+        Self {
+            sample_rate,
+            block_size,
+            output_channels,
+        }
+    }
+}
+
+impl AudioOut for NullOut {
+    fn sample_rate(&self) -> f32 {
+        self.sample_rate
+    }
+
+    fn block_size(&self) -> usize {
+        self.block_size
+    }
+
+    fn output_channels(&self) -> usize {
+        self.output_channels
+    }
+
+    fn output_samples_needed(&self) -> isize {
+        self.block_size as isize * self.output_channels as isize
+    }
+
+    fn output(&mut self, samps: &[f32]) -> GraphRunResult<usize> {
+        Ok(samps.len())
+    }
+}
+
 /// An [`AudioOut`] implementation that writes audio data to a WAV file.
 pub struct WavFileOut {
     file: hound::WavWriter<BufWriter<File>>,

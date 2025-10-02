@@ -25,7 +25,7 @@ pub fn bench_demo(c: &mut Criterion) {
     let mut graph = Graph::new();
 
     // add a sine oscillator
-    let sine = graph.add_node(SineOscillator::default());
+    let sine = graph.node(SineOscillator::default());
     let c440 = graph.constant(440.0);
     graph.connect(c440, sine.input("freq"));
 
@@ -53,14 +53,15 @@ pub fn bench_big_graph(c: &mut Criterion) {
     let mut graph = Graph::new();
 
     // add a sine oscillator
-    let mut last_node = graph.add_node(SineOscillator::default());
+    let mut last_node = graph.node(SineOscillator::default());
     graph.connect_constant(440.0, last_node.input("freq"));
 
     // add a lot of adders in series
     for _ in 0..1000 {
-        let add = graph.add_node(Add::default());
-        graph.connect(last_node, add.input(0));
-        graph.connect(last_node, add.input(1));
+        // let add = graph.node(Add::default());
+        // graph.connect(last_node, add.input(0));
+        // graph.connect(last_node, add.input(1));
+        let add = graph.bin_op(last_node.output(0), Add::default(), last_node.output(0));
         last_node = add;
     }
 

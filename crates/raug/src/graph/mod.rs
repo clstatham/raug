@@ -14,13 +14,14 @@ use crossbeam_channel::Sender;
 use node::{ProcessNodeError, ProcessorNode};
 use raug_graph::{
     graph::{Connection, NodeIndex},
-    node::{AsNodeInputIndex, AsNodeOutputIndex, NodeIndexExt, NodeInput, NodeOutput},
+    node::{AsNodeInputIndex, AsNodeOutputIndex, NodeIndexExt, NodeInput},
     petgraph::{self, Direction, visit::EdgeRef},
 };
 use runtime::{AudioDevice, AudioOut};
 use rustc_hash::FxHashMap;
 
 use crate::{
+    graph::node::AsNodeOutput,
     prelude::{Constant, Null, Passthrough, ProcEnv},
     processor::{Processor, io::ProcessMode},
     signal::{Signal, type_erased::AnyBuffer},
@@ -145,20 +146,28 @@ impl Graph {
         Self::default()
     }
 
+    pub fn node_count(&self) -> usize {
+        self.graph.digraph().node_count()
+    }
+
+    pub fn edge_count(&self) -> usize {
+        self.graph.digraph().edge_count()
+    }
+
     /// Adds an audio input node to the graph.
-    pub fn add_audio_input(&mut self) -> NodeIndex {
+    pub fn audio_input(&mut self) -> NodeIndex {
         self.graph.add_input(ProcessorNode::new(Null::default()))
     }
 
     /// Adds an audio output node to the graph.
-    pub fn add_audio_output(&mut self) -> NodeIndex {
+    pub fn audio_output(&mut self) -> NodeIndex {
         let mut node = ProcessorNode::new(Passthrough::<f32>::default());
         node.allocate(self.sample_rate, self.max_block_size);
         node.resize_buffers(self.sample_rate, self.max_block_size);
         self.graph.add_output(node)
     }
 
-    pub fn add_node(&mut self, node: impl Processor) -> NodeIndex {
+    pub fn node(&mut self, node: impl Processor) -> NodeIndex {
         let mut node = ProcessorNode::new(node);
         // allocate for the node on-the-fly with the current sample rate and
         // block size, so that it can immediately be used
@@ -177,9 +186,10 @@ impl Graph {
     where
         O: AsNodeOutputIndex<ProcessorNode>,
         I: AsNodeInputIndex<ProcessorNode>,
-        Src: Into<NodeOutput<ProcessorNode, O>> + Copy,
+        Src: AsNodeOutput<O> + Copy,
         Tgt: Into<NodeInput<ProcessorNode, I>> + Copy,
     {
+        let source = source.as_node_output(self);
         self.graph.connect(source, target).unwrap();
     }
 
@@ -195,10 +205,85 @@ impl Graph {
     pub fn connect_audio_output<O, Src>(&mut self, source: Src)
     where
         O: AsNodeOutputIndex<ProcessorNode>,
-        Src: Into<NodeOutput<ProcessorNode, O>> + Copy,
+        Src: AsNodeOutput<O> + Copy,
     {
-        let output = self.add_audio_output();
+        let output = self.audio_output();
         self.connect(source, output);
+    }
+
+    pub fn bin_op<A, B, Op, O1, O2>(&mut self, a: A, op: Op, b: B) -> NodeIndex
+    where
+        Op: Processor + Default,
+        O1: AsNodeOutputIndex<ProcessorNode>,
+        O2: AsNodeOutputIndex<ProcessorNode>,
+        A: AsNodeOutput<O1> + Copy,
+        B: AsNodeOutput<O2> + Copy,
+    {
+        let node = self.node(op);
+        self.connect(a, node.input(0));
+        self.connect(b, node.input(1));
+        node
+    }
+
+    pub fn un_op<A, Op, O>(&mut self, op: Op, a: A) -> NodeIndex
+    where
+        Op: Processor + Default,
+        O: AsNodeOutputIndex<ProcessorNode>,
+        A: AsNodeOutput<O> + Copy,
+    {
+        let node = self.node(op);
+        self.connect(a, node.input(0));
+        node
+    }
+
+    pub fn add<A, AO, B, BO>(&mut self, a: A, b: B) -> NodeIndex
+    where
+        AO: AsNodeOutputIndex<ProcessorNode>,
+        BO: AsNodeOutputIndex<ProcessorNode>,
+        A: AsNodeOutput<AO> + Copy,
+        B: AsNodeOutput<BO> + Copy,
+    {
+        self.bin_op(a, crate::builtins::Add::default(), b)
+    }
+
+    pub fn sub<A, AO, B, BO>(&mut self, a: A, b: B) -> NodeIndex
+    where
+        AO: AsNodeOutputIndex<ProcessorNode>,
+        BO: AsNodeOutputIndex<ProcessorNode>,
+        A: AsNodeOutput<AO> + Copy,
+        B: AsNodeOutput<BO> + Copy,
+    {
+        self.bin_op(a, crate::builtins::Sub::default(), b)
+    }
+
+    pub fn mul<A, AO, B, BO>(&mut self, a: A, b: B) -> NodeIndex
+    where
+        AO: AsNodeOutputIndex<ProcessorNode>,
+        BO: AsNodeOutputIndex<ProcessorNode>,
+        A: AsNodeOutput<AO> + Copy,
+        B: AsNodeOutput<BO> + Copy,
+    {
+        self.bin_op(a, crate::builtins::Mul::default(), b)
+    }
+
+    pub fn div<A, AO, B, BO>(&mut self, a: A, b: B) -> NodeIndex
+    where
+        AO: AsNodeOutputIndex<ProcessorNode>,
+        BO: AsNodeOutputIndex<ProcessorNode>,
+        A: AsNodeOutput<AO> + Copy,
+        B: AsNodeOutput<BO> + Copy,
+    {
+        self.bin_op(a, crate::builtins::Div::default(), b)
+    }
+
+    pub fn rem<A, AO, B, BO>(&mut self, a: A, b: B) -> NodeIndex
+    where
+        AO: AsNodeOutputIndex<ProcessorNode>,
+        BO: AsNodeOutputIndex<ProcessorNode>,
+        A: AsNodeOutput<AO> + Copy,
+        B: AsNodeOutput<BO> + Copy,
+    {
+        self.bin_op(a, crate::builtins::Rem::default(), b)
     }
 
     /// Disconnects two nodes in the graph at the specified input and output indices.
@@ -425,7 +510,7 @@ impl Graph {
 
     /// Creates a new [`Node`] that outputs a constant value.
     pub fn constant<T: Signal + Default + Clone>(&mut self, value: T) -> NodeIndex {
-        self.add_node(Constant::new(value))
+        self.node(Constant::new(value))
     }
 
     pub fn play(mut self, mut output_stream: impl AudioOut) -> GraphRunResult<RunningGraph> {
@@ -494,6 +579,20 @@ impl Graph {
         let handle = self.play(output_stream)?;
         handle.run_for(duration)?;
         Ok(())
+    }
+}
+
+impl std::ops::Index<NodeIndex> for Graph {
+    type Output = ProcessorNode;
+
+    fn index(&self, index: NodeIndex) -> &Self::Output {
+        &self.graph[index]
+    }
+}
+
+impl std::ops::IndexMut<NodeIndex> for Graph {
+    fn index_mut(&mut self, index: NodeIndex) -> &mut Self::Output {
+        &mut self.graph[index]
     }
 }
 

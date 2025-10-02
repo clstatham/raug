@@ -17,7 +17,7 @@ pub mod prelude {
         graph::{
             Graph, RunningGraph,
             node::{ProcessNodeError, ProcessorNode},
-            runtime::{AudioBackend, AudioDevice, AudioOut, CpalOut, WavFileOut},
+            runtime::{AudioBackend, AudioDevice, AudioOut, CpalOut, NullOut, WavFileOut},
         },
         processor::{
             ProcResult, Processor, ProcessorError,
@@ -29,7 +29,9 @@ pub mod prelude {
         },
         util::*,
     };
-    pub use raug_graph::node::{AsNodeInputIndex, AsNodeOutputIndex, NodeIndexExt};
+    pub use raug_graph::prelude::{
+        AsNodeInputIndex, AsNodeOutputIndex, NodeIndex, NodeIndexExt, NodeInput, NodeOutput,
+    };
     pub use raug_macros::{note, note_array, processor};
     pub use std::time::Duration;
 }

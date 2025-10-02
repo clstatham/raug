@@ -5,23 +5,51 @@ use std::marker::PhantomData;
 use crate::prelude::*;
 
 /// A processor that outputs a constant value.
-#[processor(derive(Default))]
-pub fn constant<T>(#[state] value: &mut T, #[output] out: &mut T) -> ProcResult<()>
-where
-    T: Signal + Default + Clone,
-{
-    out.clone_from(value);
+pub struct Constant<T: Signal + Default + Clone> {
+    value: T,
+}
 
-    Ok(())
+impl<T: Signal + Default + Clone> Default for Constant<T> {
+    fn default() -> Self {
+        Self {
+            value: T::default(),
+        }
+    }
 }
 
 impl<T: Signal + Default + Clone> Constant<T> {
     /// Creates a new constant processor with the given value.
     pub fn new(value: T) -> Self {
-        Self {
-            value,
-            _t: PhantomData,
-        }
+        Self { value }
+    }
+}
+
+impl<T: Signal + Default + Clone> Processor for Constant<T> {
+    fn name(&self) -> &str {
+        "Constant"
+    }
+
+    fn input_spec(&self) -> Vec<SignalSpec> {
+        vec![]
+    }
+
+    fn output_spec(&self) -> Vec<SignalSpec> {
+        vec![SignalSpec::new("out", T::signal_type())]
+    }
+
+    fn create_output_buffers(&self, size: usize) -> Vec<AnyBuffer> {
+        let mut buffer = AnyBuffer::zeros::<T>(size);
+        buffer.as_mut_slice::<T>().unwrap().fill(self.value.clone());
+        vec![buffer]
+    }
+
+    fn process(
+        &mut self,
+        _inputs: ProcessorInputs,
+        _outputs: ProcessorOutputs,
+    ) -> Result<(), ProcessorError> {
+        // constants never change, and the buffer is already pre-filled with the constant value
+        Ok(())
     }
 }
 

@@ -72,17 +72,17 @@ impl Default for PlayingAround {
 fn main() {
     let mut graph = Graph::new();
 
-    let mod1 = graph.add_node(Brownian::default());
+    let mod1 = graph.node(Brownian::default());
     graph.connect_constant(200.0, mod1.input("speed"));
 
-    let mod2 = graph.add_node(Brownian::default());
+    let mod2 = graph.node(Brownian::default());
     graph.connect_constant(20.0, mod2.input("speed"));
 
-    let osc = graph.add_node(PlayingAround::default());
+    let osc = graph.node(PlayingAround::default());
     graph.connect(mod1, osc.input("mod1"));
     graph.connect(mod2, osc.input("mod2"));
 
-    let hpf = graph.add_node(Biquad::highpass());
+    let hpf = graph.node(Biquad::highpass());
     // graph.connect_constant(20.0, hpf, "cutoff");
     // graph.connect_constant(1.0, hpf, "q");
     // graph.connect(osc, 0, hpf, 0);

@@ -105,6 +105,10 @@ pub struct NodeOutput<N: Node, I: AsNodeOutputIndex<N>> {
     _phantom: std::marker::PhantomData<N>,
 }
 
+pub trait AsNodeOutput<N: Node, I: AsNodeOutputIndex<N>> {
+    fn as_node_output(&self, graph: &Graph<N>) -> NodeOutput<N, I>;
+}
+
 impl<N: Node, I: AsNodeOutputIndex<N>> Clone for NodeOutput<N, I> {
     fn clone(&self) -> Self {
         *self

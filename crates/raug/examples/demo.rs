@@ -35,7 +35,7 @@ fn main() {
     let mut graph = Graph::new();
 
     // add a sine oscillator
-    let sine = graph.add_node(SineOscillator::new());
+    let sine = graph.node(SineOscillator::new());
     let c440 = graph.constant(440.0);
     graph.connect(c440, sine.input("freq"));
 
