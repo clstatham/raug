@@ -5,7 +5,7 @@ use std::marker::PhantomData;
 use crate::prelude::*;
 
 /// A processor that outputs a constant value.
-pub struct Constant<T: Signal + Default + Clone> {
+pub struct Constant<T: Signal + Clone> {
     value: T,
 }
 
@@ -17,14 +17,14 @@ impl<T: Signal + Default + Clone> Default for Constant<T> {
     }
 }
 
-impl<T: Signal + Default + Clone> Constant<T> {
+impl<T: Signal + Clone> Constant<T> {
     /// Creates a new constant processor with the given value.
     pub fn new(value: T) -> Self {
         Self { value }
     }
 }
 
-impl<T: Signal + Default + Clone> Processor for Constant<T> {
+impl<T: Signal + Clone> Processor for Constant<T> {
     fn name(&self) -> &str {
         "Constant"
     }
@@ -38,9 +38,7 @@ impl<T: Signal + Default + Clone> Processor for Constant<T> {
     }
 
     fn create_output_buffers(&self, size: usize) -> Vec<AnyBuffer> {
-        let mut buffer = AnyBuffer::zeros::<T>(size);
-        buffer.as_mut_slice::<T>().unwrap().fill(self.value.clone());
-        vec![buffer]
+        vec![AnyBuffer::full::<T>(size, self.value.clone())]
     }
 
     fn process(

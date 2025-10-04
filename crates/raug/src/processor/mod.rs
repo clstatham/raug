@@ -6,7 +6,8 @@ use io::{ProcessorInputs, ProcessorOutputs, SignalSpec};
 use thiserror::Error;
 
 use crate::{
-    graph::GraphRunError, prelude::AnyBuffer, signal::SignalType,
+    prelude::{AnyBuffer, ProcessNodeError},
+    signal::SignalType,
     util::interned_strings::interned_short_type_name,
 };
 
@@ -43,7 +44,7 @@ pub enum ProcessorError {
 
     /// Error during sub-graph processing.
     #[error("Sub-graph processing error: {0}")]
-    SubGraphError(#[from] Box<GraphRunError>),
+    SubGraphError(#[from] Box<ProcessNodeError>),
 }
 
 impl ProcessorError {

@@ -1,12 +1,18 @@
 //! Utility functions.
 
+#[cfg(feature = "playback")]
 use cpal::traits::{DeviceTrait, HostTrait};
 
-use crate::{graph::runtime::AudioBackend, signal::SignalType};
+#[cfg(feature = "playback")]
+use crate::graph::playback::AudioBackend;
+
+// use crate::{graph::playback::AudioBackend, signal::SignalType};
+use crate::signal::SignalType;
 
 pub(crate) mod interned_strings;
 
 /// Returns a list of available audio backends, as exposed by the `cpal` crate.
+#[cfg(feature = "playback")]
 pub fn available_audio_backends() -> Vec<AudioBackend> {
     let mut backends = vec![];
     for host in cpal::available_hosts() {
@@ -32,6 +38,7 @@ pub fn available_audio_backends() -> Vec<AudioBackend> {
 }
 
 /// Prints a list of available audio backends to the console.
+#[cfg(feature = "playback")]
 pub fn list_audio_backends() {
     println!("Listing available backends:");
     for (i, backend) in available_audio_backends().into_iter().enumerate() {
@@ -40,6 +47,7 @@ pub fn list_audio_backends() {
 }
 
 /// Prints a list of available audio devices for the given backend to the console.
+#[cfg(feature = "playback")]
 pub fn list_audio_devices(backend: AudioBackend) {
     println!("Listing devices for backend: {:?}", backend);
     let host = match backend {

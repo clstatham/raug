@@ -37,6 +37,18 @@ impl AnyBuffer {
         }
     }
 
+    pub fn full<T: Signal + Clone>(len: usize, value: T) -> Self {
+        let mut buf = AnyVec::with_capacity::<T>(len);
+        for _ in 0..len {
+            buf.push(AnyValueWrapper::<T>::new(value.clone()));
+        }
+
+        Self {
+            element_signal_type: T::signal_type(),
+            buf,
+        }
+    }
+
     /// Returns a view of the buffer as a slice of the given type, if the type matches.
     #[inline]
     pub fn as_slice<T: Signal>(&self) -> Option<&[T]> {

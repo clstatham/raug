@@ -2,7 +2,7 @@
 name = "raug"
 description = "raug - Rusty Audio Graphs"
 license = "MIT OR Apache-2.0"
-version = "0.0.4"
+version = "0.2.0"
 edition = "2024"
 documentation = "https://docs.rs/raug"
 repository = "https://github.com/clstatham/raug"
@@ -11,33 +11,33 @@ repository = "https://github.com/clstatham/raug"
 name = "raug"
 
 [features]
-default = []
+default = ["playback"]
+playback = ["cpal", "hound"]
 jack = ["cpal/jack"]
 
 [dependencies]
-cpal = { version = "0.15.3", features = [] }
+cpal = { version = "0.16.0", features = [], optional = true }
 itertools = "0.14"
 log = "0.4.22"
-hound = "3.5"
-thiserror = "2.0"
-downcast-rs = "2.0"
-rustc-hash = "2"
-hashbrown = "0.15"
-crossbeam-channel = "0.5"
-smallvec = "1.15"
+hound = { version = "3.5.0", optional = true }
+thiserror = "2.0.17"
+downcast-rs = "2.0.2"
+rustc-hash = "2.1.1"
+hashbrown = "0.16.0"
+crossbeam-channel = "0.5.15"
+smallvec = "1.15.1"
 raug-macros = { path = "../raug-macros" }
-allocation-counter = { version = "0.8", optional = true }
-any_vec = "0.14.0"
+any_vec = "0.15.0"
 smallstr = { git = "https://github.com/clstatham/smallstr" }
 atomic-time = "0.1.5"
 dot_graph = "0.2.3"
 tynm = "0.2.0"
 raug-graph = { path = "../raug-graph" }
-parking_lot = "0.12.4"
+parking_lot = "0.12.5"
 
 [dev-dependencies]
-env_logger = "0.11"
-criterion = { version = "0.5", features = ["html_reports"] }
+env_logger = "0.11.8"
+criterion = { version = "0.7.0", features = ["html_reports"] }
 raug-ext = { path = "../raug-ext" }
 ctrlc = "3.5.0"
 rand = "0.9.2"

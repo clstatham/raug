@@ -58,11 +58,7 @@ pub fn bench_big_graph(c: &mut Criterion) {
 
     // add a lot of adders in series
     for _ in 0..1000 {
-        // let add = graph.node(Add::default());
-        // graph.connect(last_node, add.input(0));
-        // graph.connect(last_node, add.input(1));
-        let add = graph.bin_op(last_node.output(0), Add::default(), last_node.output(0));
-        last_node = add;
+        last_node = graph.node(last_node + last_node);
     }
 
     // add some outputs (2 for stereo)

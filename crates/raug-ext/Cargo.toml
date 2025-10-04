@@ -12,3 +12,4 @@ thiserror = "2.0"
 
 [dev-dependencies]
 env_logger = "*"
+raug = { path = "../raug", features = ["playback"] }

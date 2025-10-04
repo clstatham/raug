@@ -226,8 +226,8 @@ pub trait BuildOnGraph: Send + 'static {
 }
 
 impl BuildOnGraph for Node {
-    fn build_on_graph(self, _graph: &mut Graph) -> Node {
-        // todo: check if node exists in graph
+    fn build_on_graph(self, graph: &mut Graph) -> Node {
+        debug_assert!(graph.has_node(self), "Node does not belong to graph");
         self
     }
 }

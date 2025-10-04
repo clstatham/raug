@@ -12,12 +12,15 @@ extern crate self as raug;
 
 /// Re-exports of commonly used types and traits from the crate.
 pub mod prelude {
+    #[cfg(feature = "playback")]
+    pub use crate::graph::playback::{
+        AudioBackend, AudioDevice, AudioOut, CpalOut, NullOut, WavFileOut,
+    };
     pub use crate::{
         builtins::*,
         graph::{
-            Graph, Node, RunningGraph,
+            Graph, Node,
             node::{ProcessNodeError, ProcessorNode, RaugNodeIndexExt},
-            runtime::{AudioBackend, AudioDevice, AudioOut, CpalOut, NullOut, WavFileOut},
         },
         processor::{
             ProcResult, Processor, ProcessorError,
