@@ -5,7 +5,6 @@ use cpal::traits::{DeviceTrait, HostTrait};
 use crate::{graph::runtime::AudioBackend, signal::SignalType};
 
 pub(crate) mod interned_strings;
-pub(crate) mod sync;
 
 /// Returns a list of available audio backends, as exposed by the `cpal` crate.
 pub fn available_audio_backends() -> Vec<AudioBackend> {

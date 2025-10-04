@@ -11,7 +11,7 @@ use std::{
 };
 
 use atomic_time::AtomicDuration;
-use crossbeam_channel::Sender;
+use crossbeam_channel::{Receiver, Sender};
 use node::{ProcessNodeError, ProcessorNode};
 use raug_graph::{
     graph::Connection,
@@ -22,7 +22,7 @@ use runtime::{AudioDevice, AudioOut};
 use rustc_hash::FxHashMap;
 
 use crate::{
-    graph::node::{BuildOnGraph, Input, IntoNodeOutput, RaugNodeIndexExt},
+    graph::node::{BuildOnGraph, Input, IntoNodeOutput, Output, RaugNodeIndexExt},
     prelude::{Constant, Null, Passthrough, ProcEnv},
     processor::{Processor, io::ProcessMode},
     signal::Signal,
@@ -572,16 +572,58 @@ impl Graph {
     }
 
     pub fn play(mut self, mut output_stream: impl AudioOut) -> GraphRunResult<RunningGraph> {
-        let samples_written = Arc::new(AtomicUsize::new(0));
-        let samples_written_clone = samples_written.clone();
-        let duration_written = Arc::new(AtomicDuration::new(Duration::ZERO));
-        let duration_written_clone = duration_written.clone();
+        let status = Arc::new(GraphStatus::new(self.sample_rate as usize, self.block_size));
+        let status_clone = status.clone();
 
         let (kill_tx, kill_rx) = crossbeam_channel::bounded(1);
+        let (request_tx, request_rx) = crossbeam_channel::unbounded();
+        let (response_tx, response_rx) = crossbeam_channel::unbounded();
         let handle = std::thread::spawn(move || -> GraphRunResult<Graph> {
             loop {
                 if kill_rx.try_recv().is_ok() {
                     return Ok(self);
+                }
+
+                while let Ok(request) = request_rx.try_recv() {
+                    match request {
+                        GraphRequest::AddNode(node) => {
+                            let node = self.graph.add_node(node);
+                            response_tx
+                                .send(GraphResponse::NodeAdded(Node(node)))
+                                .map_err(|_| GraphRunError::StreamSendError)?;
+                        }
+                        GraphRequest::RemoveNode(node) => {
+                            self.disconnect_all(node);
+                            response_tx
+                                .send(GraphResponse::NodeRemoved(node))
+                                .map_err(|_| GraphRunError::StreamSendError)?;
+                        }
+                        GraphRequest::ConnectU32U32 {
+                            source,
+                            source_output,
+                            target,
+                            target_input,
+                        } => {
+                            if source_output < self.graph[source.0].num_outputs() as u32
+                                && target_input < self.graph[target.0].num_inputs() as u32
+                            {
+                                self.connect(
+                                    source.output(source_output),
+                                    target.input(target_input),
+                                );
+                                response_tx
+                                    .send(GraphResponse::Connected)
+                                    .map_err(|_| GraphRunError::StreamSendError)?;
+                            } else {
+                                return Err(GraphRunError::GraphModificationError(
+                                    GraphConstructionError::InputIndexOutOfBounds {
+                                        index: target_input as usize,
+                                        num_inputs: self.graph[target.0].num_inputs(),
+                                    },
+                                ));
+                            }
+                        }
+                    }
                 }
 
                 while output_stream.output_samples_needed() > 0 {
@@ -593,10 +635,16 @@ impl Graph {
                     if block_size > self.max_block_size {
                         log::debug!("Reallocating graph buffers to {} samples", block_size);
                         self.allocate(output_stream.sample_rate(), block_size);
+                        status_clone.block_size.store(block_size, Ordering::Relaxed);
                     } else if block_size != self.block_size {
                         log::debug!("Resizing graph buffers to {} samples", block_size);
                         self.resize_buffers(output_stream.sample_rate(), block_size);
+                        status_clone.block_size.store(block_size, Ordering::Relaxed);
                     }
+
+                    status_clone
+                        .sample_rate
+                        .store(output_stream.sample_rate() as usize, Ordering::Relaxed);
 
                     self.process()?;
 
@@ -611,12 +659,15 @@ impl Graph {
                         }
                     }
 
-                    samples_written_clone.fetch_add(delta, Ordering::Relaxed);
+                    status_clone
+                        .samples_written
+                        .fetch_add(delta, Ordering::Relaxed);
 
                     let duration_secs = delta as f32
                         / output_stream.output_channels() as f32
                         / output_stream.sample_rate();
-                    duration_written_clone
+                    status_clone
+                        .duration_written
                         .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |dur| {
                             Some(dur + Duration::from_secs_f32(duration_secs))
                         })
@@ -628,8 +679,9 @@ impl Graph {
         Ok(RunningGraph {
             handle,
             kill_tx,
-            samples_written,
-            duration_written,
+            request_tx,
+            response_rx,
+            status,
         })
     }
 
@@ -658,11 +710,48 @@ impl std::ops::IndexMut<Node> for Graph {
     }
 }
 
+pub struct GraphStatus {
+    samples_written: AtomicUsize,
+    duration_written: AtomicDuration,
+    sample_rate: AtomicUsize,
+    block_size: AtomicUsize,
+}
+
+impl GraphStatus {
+    fn new(sample_rate: usize, block_size: usize) -> Self {
+        Self {
+            samples_written: AtomicUsize::new(0),
+            duration_written: AtomicDuration::new(Duration::ZERO),
+            sample_rate: AtomicUsize::new(sample_rate),
+            block_size: AtomicUsize::new(block_size),
+        }
+    }
+}
+
+pub enum GraphRequest {
+    AddNode(ProcessorNode),
+    RemoveNode(Node),
+    ConnectU32U32 {
+        source: Node,
+        source_output: u32,
+        target: Node,
+        target_input: u32,
+    },
+}
+
+#[derive(Debug)]
+pub enum GraphResponse {
+    NodeAdded(Node),
+    NodeRemoved(Node),
+    Connected,
+}
+
 pub struct RunningGraph {
     handle: JoinHandle<GraphRunResult<Graph>>,
     kill_tx: Sender<()>,
-    samples_written: Arc<AtomicUsize>,
-    duration_written: Arc<AtomicDuration>,
+    request_tx: Sender<GraphRequest>,
+    response_rx: Receiver<GraphResponse>,
+    status: Arc<GraphStatus>,
 }
 
 impl RunningGraph {
@@ -672,17 +761,72 @@ impl RunningGraph {
     }
 
     pub fn samples_written(&self) -> usize {
-        self.samples_written.load(Ordering::Relaxed)
+        self.status.samples_written.load(Ordering::Relaxed)
     }
 
     pub fn duration_written(&self) -> Duration {
-        self.duration_written.load(Ordering::Relaxed)
+        self.status.duration_written.load(Ordering::Relaxed)
+    }
+
+    pub fn sample_rate(&self) -> usize {
+        self.status.sample_rate.load(Ordering::Relaxed)
+    }
+
+    pub fn block_size(&self) -> usize {
+        self.status.block_size.load(Ordering::Relaxed)
     }
 
     pub fn run_for(self, duration: Duration) -> GraphRunResult<Graph> {
         while self.duration_written() < duration {
-            std::hint::spin_loop();
+            std::thread::sleep(Duration::from_millis(10));
         }
         self.stop()
+    }
+
+    pub fn node(&self, node: impl Processor) -> GraphRunResult<Node> {
+        let mut node = ProcessorNode::new(node);
+        node.allocate(self.sample_rate() as f32, self.block_size());
+        node.resize_buffers(self.sample_rate() as f32, self.block_size());
+        match self.request_tx.send(GraphRequest::AddNode(node)) {
+            Ok(()) => {}
+            Err(_) => return Err(GraphRunError::StreamNotSpawned),
+        };
+
+        match self.response_rx.recv() {
+            Ok(GraphResponse::NodeAdded(node)) => Ok(node),
+            Ok(_) => Err(GraphRunError::StreamReceiveError),
+            Err(_) => Err(GraphRunError::StreamReceiveError),
+        }
+    }
+
+    pub fn remove_node(&self, node: Node) -> GraphRunResult<Node> {
+        match self.request_tx.send(GraphRequest::RemoveNode(node)) {
+            Ok(()) => {}
+            Err(_) => return Err(GraphRunError::StreamNotSpawned),
+        };
+
+        match self.response_rx.recv() {
+            Ok(GraphResponse::NodeRemoved(node)) => Ok(node),
+            Ok(_) => Err(GraphRunError::StreamReceiveError),
+            Err(_) => Err(GraphRunError::StreamReceiveError),
+        }
+    }
+
+    pub fn connect(&self, source: Output<u32>, target: Input<u32>) -> GraphRunResult<()> {
+        match self.request_tx.send(GraphRequest::ConnectU32U32 {
+            source: source.node.into(),
+            source_output: source.index,
+            target: target.node.into(),
+            target_input: target.index,
+        }) {
+            Ok(()) => {}
+            Err(_) => return Err(GraphRunError::StreamNotSpawned),
+        };
+
+        match self.response_rx.recv() {
+            Ok(GraphResponse::Connected) => Ok(()),
+            Ok(_) => Err(GraphRunError::StreamReceiveError),
+            Err(_) => Err(GraphRunError::StreamReceiveError),
+        }
     }
 }

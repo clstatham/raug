@@ -183,7 +183,7 @@ impl<I: AsNodeInputIndex<ProcessorNode>> Deref for Input<I> {
     }
 }
 
-pub trait IntoNodeOutput<O: AsNodeOutputIndex<ProcessorNode>> {
+pub trait IntoNodeOutput<O: AsNodeOutputIndex<ProcessorNode>>: Send + 'static {
     fn into_node_output(self, graph: &mut Graph) -> Output<O>;
 }
 
@@ -221,7 +221,7 @@ impl RaugNodeIndexExt for Node {
     }
 }
 
-pub trait BuildOnGraph {
+pub trait BuildOnGraph: Send + 'static {
     fn build_on_graph(self, graph: &mut Graph) -> Node;
 }
 
@@ -238,7 +238,7 @@ impl<P: Processor> BuildOnGraph for P {
     }
 }
 
-impl BuildOnGraph for &str {
+impl BuildOnGraph for &'static str {
     fn build_on_graph(self, graph: &mut Graph) -> Node {
         graph.constant(Str::from(self))
     }
@@ -323,17 +323,17 @@ macro_rules! impl_node_binary_op {
         }
 
         // output<&str> op output<u32>
-        impl<'a> std::ops::$op<Output<&'a str>> for Output<u32> {
-            type Output = NodeBinaryOp<Self, Output<&'a str>, $op, u32, &'a str>;
+        impl std::ops::$op<Output<&'static str>> for Output<u32> {
+            type Output = NodeBinaryOp<Self, Output<&'static str>, $op, u32, &'static str>;
 
-            fn $func(self, rhs: Output<&'a str>) -> Self::Output {
+            fn $func(self, rhs: Output<&'static str>) -> Self::Output {
                 NodeBinaryOp::new(self, $op::default(), rhs)
             }
         }
 
         // output<u32> op output<&str>
-        impl<'a> std::ops::$op<Output<u32>> for Output<&'a str> {
-            type Output = NodeBinaryOp<Self, Output<u32>, $op, &'a str, u32>;
+        impl std::ops::$op<Output<u32>> for Output<&'static str> {
+            type Output = NodeBinaryOp<Self, Output<u32>, $op, &'static str, u32>;
 
             fn $func(self, rhs: Output<u32>) -> Self::Output {
                 NodeBinaryOp::new(self, $op::default(), rhs)
@@ -341,10 +341,10 @@ macro_rules! impl_node_binary_op {
         }
 
         // output<&str> op output<&str>
-        impl<'a, 'b> std::ops::$op<Output<&'b str>> for Output<&'a str> {
-            type Output = NodeBinaryOp<Self, Output<&'b str>, $op, &'a str, &'b str>;
+        impl std::ops::$op<Output<&'static str>> for Output<&'static str> {
+            type Output = NodeBinaryOp<Self, Output<&'static str>, $op, &'static str, &'static str>;
 
-            fn $func(self, rhs: Output<&'b str>) -> Self::Output {
+            fn $func(self, rhs: Output<&'static str>) -> Self::Output {
                 NodeBinaryOp::new(self, $op::default(), rhs)
             }
         }

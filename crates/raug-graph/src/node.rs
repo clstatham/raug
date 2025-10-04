@@ -42,7 +42,7 @@ impl<N: Node> AsNodeInputIndex<N> for &str {
     }
 }
 
-pub trait AsNodeOutputIndex<N: Node>: ToString + Copy {
+pub trait AsNodeOutputIndex<N: Node>: Send + ToString + Copy + 'static {
     fn as_node_output_index(&self, graph: &Graph<N>, node: NodeIndex) -> Option<u32>;
 }
 
@@ -56,7 +56,7 @@ impl<N: Node> AsNodeOutputIndex<N> for u32 {
     }
 }
 
-impl<N: Node> AsNodeOutputIndex<N> for &str {
+impl<N: Node> AsNodeOutputIndex<N> for &'static str {
     fn as_node_output_index(&self, graph: &Graph<N>, node: NodeIndex) -> Option<u32> {
         for i in 0..graph[node].num_outputs() {
             if let Some(name) = graph[node].output_name(i as u32)
