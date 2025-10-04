@@ -12,11 +12,12 @@
 
 ## Examples
 
-See [examples/demo.rs](https://github.com/clstatham/raug/blob/master/examples/demo.rs) for a simple example of building a signal flow graph.
+See [examples/demo.rs](https://github.com/clstatham/raug/blob/main/crates/raug/examples/demo.rs) for a simple example of building a signal flow graph.
 
 ## Optional Cargo Feature Flags
 
-- `jack`: Enable JACK support for realtime audio processing on Linux.
+- `playback`: Enable audio playback using `cpal`.
+- `jack`: Enable JACK support for `cpal` on Linux.
 
 ## Contributing
 

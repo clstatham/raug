@@ -37,6 +37,7 @@ impl AnyBuffer {
         }
     }
 
+    /// Creates a new buffer of the given type with the specified length, initialized to the given value.
     pub fn full<T: Signal + Clone>(len: usize, value: T) -> Self {
         let mut buf = AnyVec::with_capacity::<T>(len);
         for _ in 0..len {

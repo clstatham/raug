@@ -75,7 +75,7 @@ impl SampleStorage {
 #[processor(allocate = sample_allocate)]
 #[allow(unused)]
 pub fn sample(
-    env: ProcEnv,
+    _env: ProcEnv,
     #[state] storage: &mut SampleStorage,
     #[input] index: &f32,
     #[input] wrap: &bool,

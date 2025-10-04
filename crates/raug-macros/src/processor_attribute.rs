@@ -385,6 +385,18 @@ pub fn processor_attribute(attr: TokenStream, item: TokenStream) -> TokenStream 
         }
     };
 
+    let func_name = syn::Ident::new(&func_name, item.sig.ident.span());
+    let function = quote! {
+        #[allow(clippy::too_many_arguments)]
+        #[allow(clippy::ptr_arg)]
+        #(#attrs)*
+        #[track_caller]
+        #vis fn #func_name #tg (env: raug::processor::io::ProcEnv, #(#update_args)*) -> raug::processor::ProcResult<()> #wc {
+            #proc_env_decl
+            #body
+        }
+    };
+
     let mut node_inputs = vec![];
     let mut node_fn_args = vec![];
 
@@ -461,6 +473,7 @@ pub fn processor_attribute(attr: TokenStream, item: TokenStream) -> TokenStream 
         #struct_def
         #struct_update_impl
         #processor_impl
+        #function
     }
     .into()
 }

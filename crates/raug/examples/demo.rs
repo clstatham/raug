@@ -35,8 +35,7 @@ fn main() {
 
     // add a sine oscillator
     let sine = graph.node(SineOscillator::new());
-    let c440 = graph.constant(440.0);
-    graph.connect(c440, sine.input("freq"));
+    graph.connect_constant(440.0, sine.input("freq"));
 
     // add some outputs (2 for stereo)
     graph.connect_audio_output(sine);
