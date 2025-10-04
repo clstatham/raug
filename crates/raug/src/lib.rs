@@ -15,8 +15,8 @@ pub mod prelude {
     pub use crate::{
         builtins::*,
         graph::{
-            Graph, RunningGraph,
-            node::{ProcessNodeError, ProcessorNode},
+            Graph, Node, RunningGraph,
+            node::{ProcessNodeError, ProcessorNode, RaugNodeIndexExt},
             runtime::{AudioBackend, AudioDevice, AudioOut, CpalOut, NullOut, WavFileOut},
         },
         processor::{
@@ -29,9 +29,7 @@ pub mod prelude {
         },
         util::*,
     };
-    pub use raug_graph::prelude::{
-        AsNodeInputIndex, AsNodeOutputIndex, NodeIndex, NodeIndexExt, NodeInput, NodeOutput,
-    };
+    pub use raug_graph::prelude::{AsNodeInputIndex, AsNodeOutputIndex, NodeInput, NodeOutput};
     pub use raug_macros::{note, note_array, processor};
     pub use std::time::Duration;
 }

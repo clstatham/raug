@@ -11,29 +11,21 @@ impl Processor for Graph {
 
     fn input_spec(&self) -> Vec<SignalSpec> {
         self.input_indices()
-            .iter()
-            .flat_map(|&node_id| self.graph[node_id].input_spec())
+            .flat_map(|node_id| self.graph[node_id.0].input_spec())
             .cloned()
             .collect()
     }
 
     fn output_spec(&self) -> Vec<SignalSpec> {
         self.output_indices()
-            .iter()
-            .flat_map(|&node_id| self.graph[node_id].output_spec())
+            .flat_map(|node_id| self.graph[node_id.0].output_spec())
             .cloned()
             .collect()
     }
 
     fn create_output_buffers(&self, size: usize) -> Vec<AnyBuffer> {
         self.output_indices()
-            .iter()
-            .flat_map(|&node_id| {
-                self.graph[node_id]
-                    .processor
-                    .lock()
-                    .create_output_buffers(size)
-            })
+            .flat_map(|node_id| self.graph[node_id.0].processor.create_output_buffers(size))
             .collect()
     }
 
@@ -54,7 +46,7 @@ impl Processor for Graph {
             let input = inputs.input(input_idx);
 
             if let Some(input) = input {
-                let node_id = self.input_indices()[input_idx];
+                let node_id = self.graph.inputs()[input_idx];
                 self.graph[node_id].outputs[0].clone_from(input);
             }
         }
@@ -65,7 +57,7 @@ impl Processor for Graph {
         for output_idx in 0..outputs.num_outputs() {
             let mut output = outputs.output(output_idx);
 
-            let node_id = self.output_indices()[output_idx];
+            let node_id = self.graph.outputs()[output_idx];
             let output_buffer = &self.graph[node_id].outputs[0];
             output.clone_from(output_buffer);
         }

@@ -1,194 +1,153 @@
-use raug::{graph::node::AsNodeOutput, prelude::*};
+use raug::{
+    graph::node::{IntoNodeOutput, RaugNodeIndexExt},
+    prelude::*,
+};
 
 use crate::prelude::*;
 
-// pub trait OutputExt {
-//     fn channel<T: Signal + Default + Clone>(&self) -> OutputChannel<T>;
-
-//     fn powf(&self, b: impl IntoOutputExt) -> Node;
-//     fn sqrt(&self) -> Node;
-//     fn sin(&self) -> Node;
-//     fn cos(&self) -> Node;
-//     fn tan(&self) -> Node;
-//     fn asin(&self) -> Node;
-//     fn acos(&self) -> Node;
-//     fn atan(&self) -> Node;
-//     fn sinh(&self) -> Node;
-//     fn cosh(&self) -> Node;
-//     fn tanh(&self) -> Node;
-//     fn atan2(&self, b: impl IntoOutputExt) -> Node;
-//     fn hypot(&self, b: impl IntoOutputExt) -> Node;
-//     fn abs(&self) -> Node;
-//     fn ceil(&self) -> Node;
-//     fn floor(&self) -> Node;
-//     fn round(&self) -> Node;
-//     fn trunc(&self) -> Node;
-//     fn fract(&self) -> Node;
-//     fn recip(&self) -> Node;
-//     fn signum(&self) -> Node;
-//     fn max(&self, b: impl IntoOutputExt) -> Node;
-//     fn min(&self, b: impl IntoOutputExt) -> Node;
-//     fn clamp(&self, min: impl IntoOutputExt, max: impl IntoOutputExt) -> Node;
-
-//     fn some(&self) -> Node;
-//     fn unwrap_or(&self, b: impl IntoOutputExt) -> Node;
-
-//     fn lt<T: Signal + PartialOrd>(&self, b: impl IntoOutputExt) -> Node;
-//     fn gt<T: Signal + PartialOrd>(&self, b: impl IntoOutputExt) -> Node;
-//     fn le<T: Signal + PartialOrd>(&self, b: impl IntoOutputExt) -> Node;
-//     fn ge<T: Signal + PartialOrd>(&self, b: impl IntoOutputExt) -> Node;
-//     fn eq<T: Signal + PartialOrd>(&self, b: impl IntoOutputExt) -> Node;
-//     fn ne<T: Signal + PartialOrd>(&self, b: impl IntoOutputExt) -> Node;
-
-//     fn toggle(&self) -> Node;
-//     fn trig_to_gate(&self, length: impl IntoOutputExt) -> Node;
-//     fn smooth(&self, factor: impl IntoOutputExt) -> Node;
-//     fn scale(&self, min: impl IntoOutputExt, max: impl IntoOutputExt) -> Node;
-// }
-
 pub trait GraphExt {
-    fn powf<A, AO, B, BO>(&mut self, a: A, b: B) -> NodeIndex
+    fn powf<A, AO, B, BO>(&mut self, a: A, b: B) -> Node
     where
         AO: AsNodeOutputIndex<ProcessorNode>,
         BO: AsNodeOutputIndex<ProcessorNode>,
-        A: AsNodeOutput<AO> + Copy,
-        B: AsNodeOutput<BO> + Copy;
+        A: IntoNodeOutput<AO>,
+        B: IntoNodeOutput<BO>;
 
-    fn sqrt<A, AO>(&mut self, a: A) -> NodeIndex
+    fn sqrt<A, AO>(&mut self, a: A) -> Node
     where
         AO: AsNodeOutputIndex<ProcessorNode>,
-        A: AsNodeOutput<AO> + Copy;
+        A: IntoNodeOutput<AO>;
 
-    fn sin<A, AO>(&mut self, a: A) -> NodeIndex
+    fn sin<A, AO>(&mut self, a: A) -> Node
     where
         AO: AsNodeOutputIndex<ProcessorNode>,
-        A: AsNodeOutput<AO> + Copy;
+        A: IntoNodeOutput<AO>;
 
-    fn cos<A, AO>(&mut self, a: A) -> NodeIndex
+    fn cos<A, AO>(&mut self, a: A) -> Node
     where
         AO: AsNodeOutputIndex<ProcessorNode>,
-        A: AsNodeOutput<AO> + Copy;
+        A: IntoNodeOutput<AO>;
 
-    fn tan<A, AO>(&mut self, a: A) -> NodeIndex
+    fn tan<A, AO>(&mut self, a: A) -> Node
     where
         AO: AsNodeOutputIndex<ProcessorNode>,
-        A: AsNodeOutput<AO> + Copy;
+        A: IntoNodeOutput<AO>;
 
-    fn asin<A, AO>(&mut self, a: A) -> NodeIndex
+    fn asin<A, AO>(&mut self, a: A) -> Node
     where
         AO: AsNodeOutputIndex<ProcessorNode>,
-        A: AsNodeOutput<AO> + Copy;
+        A: IntoNodeOutput<AO>;
 
-    fn acos<A, AO>(&mut self, a: A) -> NodeIndex
+    fn acos<A, AO>(&mut self, a: A) -> Node
     where
         AO: AsNodeOutputIndex<ProcessorNode>,
-        A: AsNodeOutput<AO> + Copy;
+        A: IntoNodeOutput<AO>;
 
-    fn atan<A, AO>(&mut self, a: A) -> NodeIndex
+    fn atan<A, AO>(&mut self, a: A) -> Node
     where
         AO: AsNodeOutputIndex<ProcessorNode>,
-        A: AsNodeOutput<AO> + Copy;
+        A: IntoNodeOutput<AO>;
 
-    fn sinh<A, AO>(&mut self, a: A) -> NodeIndex
+    fn sinh<A, AO>(&mut self, a: A) -> Node
     where
         AO: AsNodeOutputIndex<ProcessorNode>,
-        A: AsNodeOutput<AO> + Copy;
+        A: IntoNodeOutput<AO>;
 
-    fn cosh<A, AO>(&mut self, a: A) -> NodeIndex
+    fn cosh<A, AO>(&mut self, a: A) -> Node
     where
         AO: AsNodeOutputIndex<ProcessorNode>,
-        A: AsNodeOutput<AO> + Copy;
+        A: IntoNodeOutput<AO>;
 
-    fn tanh<A, AO>(&mut self, a: A) -> NodeIndex
+    fn tanh<A, AO>(&mut self, a: A) -> Node
     where
         AO: AsNodeOutputIndex<ProcessorNode>,
-        A: AsNodeOutput<AO> + Copy;
+        A: IntoNodeOutput<AO>;
 
-    fn atan2<A, AO, B, BO>(&mut self, a: A, b: B) -> NodeIndex
-    where
-        AO: AsNodeOutputIndex<ProcessorNode>,
-        BO: AsNodeOutputIndex<ProcessorNode>,
-        A: AsNodeOutput<AO> + Copy,
-        B: AsNodeOutput<BO> + Copy;
-
-    fn hypot<A, AO, B, BO>(&mut self, a: A, b: B) -> NodeIndex
+    fn atan2<A, AO, B, BO>(&mut self, a: A, b: B) -> Node
     where
         AO: AsNodeOutputIndex<ProcessorNode>,
         BO: AsNodeOutputIndex<ProcessorNode>,
-        A: AsNodeOutput<AO> + Copy,
-        B: AsNodeOutput<BO> + Copy;
+        A: IntoNodeOutput<AO>,
+        B: IntoNodeOutput<BO>;
 
-    fn abs<A, AO>(&mut self, a: A) -> NodeIndex
-    where
-        AO: AsNodeOutputIndex<ProcessorNode>,
-        A: AsNodeOutput<AO> + Copy;
-
-    fn ceil<A, AO>(&mut self, a: A) -> NodeIndex
-    where
-        AO: AsNodeOutputIndex<ProcessorNode>,
-        A: AsNodeOutput<AO> + Copy;
-
-    fn floor<A, AO>(&mut self, a: A) -> NodeIndex
-    where
-        AO: AsNodeOutputIndex<ProcessorNode>,
-        A: AsNodeOutput<AO> + Copy;
-
-    fn round<A, AO>(&mut self, a: A) -> NodeIndex
-    where
-        AO: AsNodeOutputIndex<ProcessorNode>,
-        A: AsNodeOutput<AO> + Copy;
-
-    fn trunc<A, AO>(&mut self, a: A) -> NodeIndex
-    where
-        AO: AsNodeOutputIndex<ProcessorNode>,
-        A: AsNodeOutput<AO> + Copy;
-
-    fn fract<A, AO>(&mut self, a: A) -> NodeIndex
-    where
-        AO: AsNodeOutputIndex<ProcessorNode>,
-        A: AsNodeOutput<AO> + Copy;
-
-    fn recip<A, AO>(&mut self, a: A) -> NodeIndex
-    where
-        AO: AsNodeOutputIndex<ProcessorNode>,
-        A: AsNodeOutput<AO> + Copy;
-
-    fn signum<A, AO>(&mut self, a: A) -> NodeIndex
-    where
-        AO: AsNodeOutputIndex<ProcessorNode>,
-        A: AsNodeOutput<AO> + Copy;
-
-    fn max<A, AO, B, BO>(&mut self, a: A, b: B) -> NodeIndex
+    fn hypot<A, AO, B, BO>(&mut self, a: A, b: B) -> Node
     where
         AO: AsNodeOutputIndex<ProcessorNode>,
         BO: AsNodeOutputIndex<ProcessorNode>,
-        A: AsNodeOutput<AO> + Copy,
-        B: AsNodeOutput<BO> + Copy;
+        A: IntoNodeOutput<AO>,
+        B: IntoNodeOutput<BO>;
 
-    fn min<A, AO, B, BO>(&mut self, a: A, b: B) -> NodeIndex
+    fn abs<A, AO>(&mut self, a: A) -> Node
+    where
+        AO: AsNodeOutputIndex<ProcessorNode>,
+        A: IntoNodeOutput<AO>;
+
+    fn ceil<A, AO>(&mut self, a: A) -> Node
+    where
+        AO: AsNodeOutputIndex<ProcessorNode>,
+        A: IntoNodeOutput<AO>;
+
+    fn floor<A, AO>(&mut self, a: A) -> Node
+    where
+        AO: AsNodeOutputIndex<ProcessorNode>,
+        A: IntoNodeOutput<AO>;
+
+    fn round<A, AO>(&mut self, a: A) -> Node
+    where
+        AO: AsNodeOutputIndex<ProcessorNode>,
+        A: IntoNodeOutput<AO>;
+
+    fn trunc<A, AO>(&mut self, a: A) -> Node
+    where
+        AO: AsNodeOutputIndex<ProcessorNode>,
+        A: IntoNodeOutput<AO>;
+
+    fn fract<A, AO>(&mut self, a: A) -> Node
+    where
+        AO: AsNodeOutputIndex<ProcessorNode>,
+        A: IntoNodeOutput<AO>;
+
+    fn recip<A, AO>(&mut self, a: A) -> Node
+    where
+        AO: AsNodeOutputIndex<ProcessorNode>,
+        A: IntoNodeOutput<AO>;
+
+    fn signum<A, AO>(&mut self, a: A) -> Node
+    where
+        AO: AsNodeOutputIndex<ProcessorNode>,
+        A: IntoNodeOutput<AO>;
+
+    fn max<A, AO, B, BO>(&mut self, a: A, b: B) -> Node
     where
         AO: AsNodeOutputIndex<ProcessorNode>,
         BO: AsNodeOutputIndex<ProcessorNode>,
-        A: AsNodeOutput<AO> + Copy,
-        B: AsNodeOutput<BO> + Copy;
+        A: IntoNodeOutput<AO>,
+        B: IntoNodeOutput<BO>;
 
-    fn clamp<A, AO, B, BO, C, CO>(&mut self, a: A, min: B, max: C) -> NodeIndex
+    fn min<A, AO, B, BO>(&mut self, a: A, b: B) -> Node
+    where
+        AO: AsNodeOutputIndex<ProcessorNode>,
+        BO: AsNodeOutputIndex<ProcessorNode>,
+        A: IntoNodeOutput<AO>,
+        B: IntoNodeOutput<BO>;
+
+    fn clamp<A, AO, B, BO, C, CO>(&mut self, a: A, min: B, max: C) -> Node
     where
         AO: AsNodeOutputIndex<ProcessorNode>,
         BO: AsNodeOutputIndex<ProcessorNode>,
         CO: AsNodeOutputIndex<ProcessorNode>,
-        A: AsNodeOutput<AO> + Copy,
-        B: AsNodeOutput<BO> + Copy,
-        C: AsNodeOutput<CO> + Copy;
+        A: IntoNodeOutput<AO>,
+        B: IntoNodeOutput<BO>,
+        C: IntoNodeOutput<CO>;
 }
 
 impl GraphExt for Graph {
-    fn powf<A, AO, B, BO>(&mut self, a: A, b: B) -> NodeIndex
+    fn powf<A, AO, B, BO>(&mut self, a: A, b: B) -> Node
     where
         AO: AsNodeOutputIndex<ProcessorNode>,
         BO: AsNodeOutputIndex<ProcessorNode>,
-        A: AsNodeOutput<AO> + Copy,
-        B: AsNodeOutput<BO> + Copy,
+        A: IntoNodeOutput<AO>,
+        B: IntoNodeOutput<BO>,
     {
         let node = self.node(Powf::default());
         self.connect(a, node.input(0));
@@ -196,112 +155,112 @@ impl GraphExt for Graph {
         node
     }
 
-    fn sqrt<A, AO>(&mut self, a: A) -> NodeIndex
+    fn sqrt<A, AO>(&mut self, a: A) -> Node
     where
         AO: AsNodeOutputIndex<ProcessorNode>,
-        A: AsNodeOutput<AO> + Copy,
+        A: IntoNodeOutput<AO>,
     {
         let node = self.node(Sqrt::default());
         self.connect(a, node.input(0));
         node
     }
 
-    fn sin<A, AO>(&mut self, a: A) -> NodeIndex
+    fn sin<A, AO>(&mut self, a: A) -> Node
     where
         AO: AsNodeOutputIndex<ProcessorNode>,
-        A: AsNodeOutput<AO> + Copy,
+        A: IntoNodeOutput<AO>,
     {
         let node = self.node(Sin::default());
         self.connect(a, node.input(0));
         node
     }
 
-    fn cos<A, AO>(&mut self, a: A) -> NodeIndex
+    fn cos<A, AO>(&mut self, a: A) -> Node
     where
         AO: AsNodeOutputIndex<ProcessorNode>,
-        A: AsNodeOutput<AO> + Copy,
+        A: IntoNodeOutput<AO>,
     {
         let node = self.node(Cos::default());
         self.connect(a, node.input(0));
         node
     }
 
-    fn tan<A, AO>(&mut self, a: A) -> NodeIndex
+    fn tan<A, AO>(&mut self, a: A) -> Node
     where
         AO: AsNodeOutputIndex<ProcessorNode>,
-        A: AsNodeOutput<AO> + Copy,
+        A: IntoNodeOutput<AO>,
     {
         let node = self.node(Tan::default());
         self.connect(a, node.input(0));
         node
     }
 
-    fn asin<A, AO>(&mut self, a: A) -> NodeIndex
+    fn asin<A, AO>(&mut self, a: A) -> Node
     where
         AO: AsNodeOutputIndex<ProcessorNode>,
-        A: AsNodeOutput<AO> + Copy,
+        A: IntoNodeOutput<AO>,
     {
         let node = self.node(Asin::default());
         self.connect(a, node.input(0));
         node
     }
 
-    fn acos<A, AO>(&mut self, a: A) -> NodeIndex
+    fn acos<A, AO>(&mut self, a: A) -> Node
     where
         AO: AsNodeOutputIndex<ProcessorNode>,
-        A: AsNodeOutput<AO> + Copy,
+        A: IntoNodeOutput<AO>,
     {
         let node = self.node(Acos::default());
         self.connect(a, node.input(0));
         node
     }
 
-    fn atan<A, AO>(&mut self, a: A) -> NodeIndex
+    fn atan<A, AO>(&mut self, a: A) -> Node
     where
         AO: AsNodeOutputIndex<ProcessorNode>,
-        A: AsNodeOutput<AO> + Copy,
+        A: IntoNodeOutput<AO>,
     {
         let node = self.node(Atan::default());
         self.connect(a, node.input(0));
         node
     }
 
-    fn sinh<A, AO>(&mut self, a: A) -> NodeIndex
+    fn sinh<A, AO>(&mut self, a: A) -> Node
     where
         AO: AsNodeOutputIndex<ProcessorNode>,
-        A: AsNodeOutput<AO> + Copy,
+        A: IntoNodeOutput<AO>,
     {
         let node = self.node(Sinh::default());
         self.connect(a, node.input(0));
         node
     }
 
-    fn cosh<A, AO>(&mut self, a: A) -> NodeIndex
+    fn cosh<A, AO>(&mut self, a: A) -> Node
     where
         AO: AsNodeOutputIndex<ProcessorNode>,
-        A: AsNodeOutput<AO> + Copy,
+        A: IntoNodeOutput<AO>,
     {
         let node = self.node(Cosh::default());
         self.connect(a, node.input(0));
         node
     }
 
-    fn tanh<A, AO>(&mut self, a: A) -> NodeIndex
+    fn tanh<A, AO>(&mut self, a: A) -> Node
     where
         AO: AsNodeOutputIndex<ProcessorNode>,
-        A: AsNodeOutput<AO> + Copy,
+        A: IntoNodeOutput<AO>,
     {
         let node = self.node(Tanh::default());
         self.connect(a, node.input(0));
         node
     }
 
-    fn atan2<A, AO, B, BO>(&mut self, a: A, b: B) -> NodeIndex
+    fn atan2<A, AO, B, BO>(&mut self, a: A, b: B) -> Node
     where
         AO: AsNodeOutputIndex<ProcessorNode>,
         BO: AsNodeOutputIndex<ProcessorNode>,
-        A: AsNodeOutput<AO> + Copy,
-        B: AsNodeOutput<BO> + Copy,
+        A: IntoNodeOutput<AO>,
+        B: IntoNodeOutput<BO>,
     {
         let node = self.node(Atan2::default());
         self.connect(a, node.input(0));
@@ -309,12 +268,12 @@ impl GraphExt for Graph {
         node
     }
 
-    fn hypot<A, AO, B, BO>(&mut self, a: A, b: B) -> NodeIndex
+    fn hypot<A, AO, B, BO>(&mut self, a: A, b: B) -> Node
     where
         AO: AsNodeOutputIndex<ProcessorNode>,
         BO: AsNodeOutputIndex<ProcessorNode>,
-        A: AsNodeOutput<AO> + Copy,
-        B: AsNodeOutput<BO> + Copy,
+        A: IntoNodeOutput<AO>,
+        B: IntoNodeOutput<BO>,
     {
         let node = self.node(Hypot::default());
         self.connect(a, node.input(0));
@@ -322,92 +281,92 @@ impl GraphExt for Graph {
         node
     }
 
-    fn abs<A, AO>(&mut self, a: A) -> NodeIndex
+    fn abs<A, AO>(&mut self, a: A) -> Node
     where
         AO: AsNodeOutputIndex<ProcessorNode>,
-        A: AsNodeOutput<AO> + Copy,
+        A: IntoNodeOutput<AO>,
     {
         let node = self.node(Abs::default());
         self.connect(a, node.input(0));
         node
     }
 
-    fn ceil<A, AO>(&mut self, a: A) -> NodeIndex
+    fn ceil<A, AO>(&mut self, a: A) -> Node
     where
         AO: AsNodeOutputIndex<ProcessorNode>,
-        A: AsNodeOutput<AO> + Copy,
+        A: IntoNodeOutput<AO>,
     {
         let node = self.node(Ceil::default());
         self.connect(a, node.input(0));
         node
     }
 
-    fn floor<A, AO>(&mut self, a: A) -> NodeIndex
+    fn floor<A, AO>(&mut self, a: A) -> Node
     where
         AO: AsNodeOutputIndex<ProcessorNode>,
-        A: AsNodeOutput<AO> + Copy,
+        A: IntoNodeOutput<AO>,
     {
         let node = self.node(Floor::default());
         self.connect(a, node.input(0));
         node
     }
 
-    fn round<A, AO>(&mut self, a: A) -> NodeIndex
+    fn round<A, AO>(&mut self, a: A) -> Node
     where
         AO: AsNodeOutputIndex<ProcessorNode>,
-        A: AsNodeOutput<AO> + Copy,
+        A: IntoNodeOutput<AO>,
     {
         let node = self.node(Round::default());
         self.connect(a, node.input(0));
         node
     }
 
-    fn trunc<A, AO>(&mut self, a: A) -> NodeIndex
+    fn trunc<A, AO>(&mut self, a: A) -> Node
     where
         AO: AsNodeOutputIndex<ProcessorNode>,
-        A: AsNodeOutput<AO> + Copy,
+        A: IntoNodeOutput<AO>,
     {
         let node = self.node(Trunc::default());
         self.connect(a, node.input(0));
         node
     }
 
-    fn fract<A, AO>(&mut self, a: A) -> NodeIndex
+    fn fract<A, AO>(&mut self, a: A) -> Node
     where
         AO: AsNodeOutputIndex<ProcessorNode>,
-        A: AsNodeOutput<AO> + Copy,
+        A: IntoNodeOutput<AO>,
     {
         let node = self.node(Fract::default());
         self.connect(a, node.input(0));
         node
     }
 
-    fn recip<A, AO>(&mut self, a: A) -> NodeIndex
+    fn recip<A, AO>(&mut self, a: A) -> Node
     where
         AO: AsNodeOutputIndex<ProcessorNode>,
-        A: AsNodeOutput<AO> + Copy,
+        A: IntoNodeOutput<AO>,
     {
         let node = self.node(Recip::default());
         self.connect(a, node.input(0));
         node
     }
 
-    fn signum<A, AO>(&mut self, a: A) -> NodeIndex
+    fn signum<A, AO>(&mut self, a: A) -> Node
     where
         AO: AsNodeOutputIndex<ProcessorNode>,
-        A: AsNodeOutput<AO> + Copy,
+        A: IntoNodeOutput<AO>,
     {
         let node = self.node(Signum::default());
         self.connect(a, node.input(0));
         node
     }
 
-    fn max<A, AO, B, BO>(&mut self, a: A, b: B) -> NodeIndex
+    fn max<A, AO, B, BO>(&mut self, a: A, b: B) -> Node
     where
         AO: AsNodeOutputIndex<ProcessorNode>,
         BO: AsNodeOutputIndex<ProcessorNode>,
-        A: AsNodeOutput<AO> + Copy,
-        B: AsNodeOutput<BO> + Copy,
+        A: IntoNodeOutput<AO>,
+        B: IntoNodeOutput<BO>,
     {
         let node = self.node(Max::<f32>::default());
         self.connect(a, node.input(0));
@@ -415,12 +374,12 @@ impl GraphExt for Graph {
         node
     }
 
-    fn min<A, AO, B, BO>(&mut self, a: A, b: B) -> NodeIndex
+    fn min<A, AO, B, BO>(&mut self, a: A, b: B) -> Node
     where
         AO: AsNodeOutputIndex<ProcessorNode>,
         BO: AsNodeOutputIndex<ProcessorNode>,
-        A: AsNodeOutput<AO> + Copy,
-        B: AsNodeOutput<BO> + Copy,
+        A: IntoNodeOutput<AO>,
+        B: IntoNodeOutput<BO>,
     {
         let node = self.node(Min::<f32>::default());
         self.connect(a, node.input(0));
@@ -428,14 +387,14 @@ impl GraphExt for Graph {
         node
     }
 
-    fn clamp<A, AO, B, BO, C, CO>(&mut self, a: A, min: B, max: C) -> NodeIndex
+    fn clamp<A, AO, B, BO, C, CO>(&mut self, a: A, min: B, max: C) -> Node
     where
         AO: AsNodeOutputIndex<ProcessorNode>,
         BO: AsNodeOutputIndex<ProcessorNode>,
         CO: AsNodeOutputIndex<ProcessorNode>,
-        A: AsNodeOutput<AO> + Copy,
-        B: AsNodeOutput<BO> + Copy,
-        C: AsNodeOutput<CO> + Copy,
+        A: IntoNodeOutput<AO>,
+        B: IntoNodeOutput<BO>,
+        C: IntoNodeOutput<CO>,
     {
         let node = self.node(Clamp::<f32>::default());
         self.connect(a, node.input(0));

@@ -6,7 +6,8 @@ use io::{ProcessorInputs, ProcessorOutputs, SignalSpec};
 use thiserror::Error;
 
 use crate::{
-    graph::GraphRunError, prelude::AnyBuffer, signal::SignalType, util::interned_short_type_name,
+    graph::GraphRunError, prelude::AnyBuffer, signal::SignalType,
+    util::interned_strings::interned_short_type_name,
 };
 
 pub mod io;

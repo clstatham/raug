@@ -13,7 +13,6 @@ name = "raug"
 [features]
 default = []
 jack = ["cpal/jack"]
-profiling = ["dep:allocation-counter"]
 
 [dependencies]
 cpal = { version = "0.15.3", features = [] }

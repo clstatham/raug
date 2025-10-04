@@ -1,10 +1,11 @@
 //! Utility functions.
 
-use std::sync::OnceLock;
-
 use cpal::traits::{DeviceTrait, HostTrait};
 
 use crate::{graph::runtime::AudioBackend, signal::SignalType};
+
+pub(crate) mod interned_strings;
+pub(crate) mod sync;
 
 /// Returns a list of available audio backends, as exposed by the `cpal` crate.
 pub fn available_audio_backends() -> Vec<AudioBackend> {
@@ -54,12 +55,6 @@ pub fn list_audio_devices(backend: AudioBackend) {
     for (i, device) in host.output_devices().unwrap().enumerate() {
         println!("  {}: {:?}", i, device.name());
     }
-}
-
-#[inline]
-pub fn interned_short_type_name<T: ?Sized>() -> &'static str {
-    static NAME: OnceLock<String> = OnceLock::new();
-    NAME.get_or_init(tynm::type_name::<T>)
 }
 
 #[inline]

@@ -1,5 +1,4 @@
 use raug::prelude::*;
-use raug_graph::node::NodeIndexExt;
 
 // this macro generates a processor struct and implements the Processor trait for it based on the function signature and body
 // the generated struct will have the name of the function converted to UpperCamelCase
@@ -49,6 +48,7 @@ fn main() {
             &AudioBackend::Default,
             &AudioDevice::Default,
         ))
+        // .play(NullOut::new(48_000.0, 512, 2))
         .unwrap()
         .run_for(Duration::from_secs(10))
         .unwrap();

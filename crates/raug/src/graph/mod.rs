@@ -1,6 +1,7 @@
 //! A directed graph of [`Processor`]s connected by [`Connection`]s.
 
 use std::{
+    ops::Deref,
     sync::{
         Arc,
         atomic::{AtomicUsize, Ordering},
@@ -13,18 +14,18 @@ use atomic_time::AtomicDuration;
 use crossbeam_channel::Sender;
 use node::{ProcessNodeError, ProcessorNode};
 use raug_graph::{
-    graph::{Connection, NodeIndex},
-    node::{AsNodeInputIndex, AsNodeOutputIndex, NodeIndexExt, NodeInput},
+    graph::Connection,
+    node::{AsNodeInputIndex, AsNodeOutputIndex, NodeInput},
     petgraph::{self, Direction, visit::EdgeRef},
 };
 use runtime::{AudioDevice, AudioOut};
 use rustc_hash::FxHashMap;
 
 use crate::{
-    graph::node::AsNodeOutput,
+    graph::node::{BuildOnGraph, Input, IntoNodeOutput, RaugNodeIndexExt},
     prelude::{Constant, Null, Passthrough, ProcEnv},
     processor::{Processor, io::ProcessMode},
-    signal::{Signal, type_erased::AnyBuffer},
+    signal::Signal,
 };
 
 pub mod node;
@@ -128,12 +129,42 @@ pub type GraphRunResult<T> = Result<T, GraphRunError>;
 /// A result type for graph construction operations.
 pub type GraphConstructionResult<T> = Result<T, GraphConstructionError>;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(transparent)]
+pub struct Node(raug_graph::graph::NodeIndex);
+
+impl Node {
+    pub fn new(index: usize) -> Self {
+        Node(raug_graph::graph::NodeIndex::new(index))
+    }
+}
+
+impl Deref for Node {
+    type Target = raug_graph::graph::NodeIndex;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl From<raug_graph::graph::NodeIndex> for Node {
+    fn from(value: raug_graph::graph::NodeIndex) -> Self {
+        Node(value)
+    }
+}
+
+impl From<Node> for raug_graph::graph::NodeIndex {
+    fn from(value: Node) -> raug_graph::graph::NodeIndex {
+        value.0
+    }
+}
+
 #[derive(Default)]
 pub struct Graph {
     pub(crate) graph: raug_graph::graph::Graph<ProcessorNode>,
 
     // cached strongly connected components (feedback loops)
-    sccs: Vec<Vec<NodeIndex>>,
+    sccs: Vec<Vec<Node>>,
 
     pub(crate) sample_rate: f32,
     pub(crate) block_size: usize,
@@ -154,27 +185,41 @@ impl Graph {
         self.graph.digraph().edge_count()
     }
 
+    pub fn estimate_ram_usage(&self) -> usize {
+        let mut total = 0;
+        for node in self.graph.digraph().node_weights() {
+            for output in &node.outputs {
+                total += output.len() * std::mem::size_of::<f32>();
+            }
+        }
+        total
+    }
+
     /// Adds an audio input node to the graph.
-    pub fn audio_input(&mut self) -> NodeIndex {
-        self.graph.add_input(ProcessorNode::new(Null::default()))
+    pub fn audio_input(&mut self) -> Node {
+        Node(self.graph.add_input(ProcessorNode::new(Null::default())))
     }
 
     /// Adds an audio output node to the graph.
-    pub fn audio_output(&mut self) -> NodeIndex {
+    pub fn audio_output(&mut self) -> Node {
         let mut node = ProcessorNode::new(Passthrough::<f32>::default());
         node.allocate(self.sample_rate, self.max_block_size);
         node.resize_buffers(self.sample_rate, self.max_block_size);
-        self.graph.add_output(node)
+        Node(self.graph.add_output(node))
     }
 
-    pub fn node(&mut self, node: impl Processor) -> NodeIndex {
+    pub fn processor(&mut self, node: impl Processor) -> Node {
         let mut node = ProcessorNode::new(node);
         // allocate for the node on-the-fly with the current sample rate and
         // block size, so that it can immediately be used
         node.allocate(self.sample_rate, self.max_block_size);
         node.resize_buffers(self.sample_rate, self.max_block_size);
 
-        self.graph.add_node(node)
+        Node(self.graph.add_node(node))
+    }
+
+    pub fn node(&mut self, node: impl BuildOnGraph) -> Node {
+        node.build_on_graph(self)
     }
 
     /// Connects two nodes in the graph.
@@ -186,17 +231,17 @@ impl Graph {
     where
         O: AsNodeOutputIndex<ProcessorNode>,
         I: AsNodeInputIndex<ProcessorNode>,
-        Src: AsNodeOutput<O> + Copy,
-        Tgt: Into<NodeInput<ProcessorNode, I>> + Copy,
+        Src: IntoNodeOutput<O>,
+        Tgt: Into<Input<I>> + Copy,
     {
-        let source = source.as_node_output(self);
-        self.graph.connect(source, target).unwrap();
+        let source = source.into_node_output(self);
+        self.graph.connect(*source, *target.into()).unwrap();
     }
 
     pub fn connect_constant<I, Tgt>(&mut self, value: f32, target: Tgt)
     where
         I: AsNodeInputIndex<ProcessorNode>,
-        Tgt: Into<NodeInput<ProcessorNode, I>> + Copy,
+        Tgt: Into<Input<I>> + Copy,
     {
         let constant = self.constant(value);
         self.connect(constant, target);
@@ -205,19 +250,19 @@ impl Graph {
     pub fn connect_audio_output<O, Src>(&mut self, source: Src)
     where
         O: AsNodeOutputIndex<ProcessorNode>,
-        Src: AsNodeOutput<O> + Copy,
+        Src: IntoNodeOutput<O>,
     {
         let output = self.audio_output();
-        self.connect(source, output);
+        self.connect(source, output.input(0));
     }
 
-    pub fn bin_op<A, B, Op, O1, O2>(&mut self, a: A, op: Op, b: B) -> NodeIndex
+    pub fn bin_op<A, B, Op, O1, O2>(&mut self, a: A, op: Op, b: B) -> Node
     where
         Op: Processor + Default,
         O1: AsNodeOutputIndex<ProcessorNode>,
         O2: AsNodeOutputIndex<ProcessorNode>,
-        A: AsNodeOutput<O1> + Copy,
-        B: AsNodeOutput<O2> + Copy,
+        A: IntoNodeOutput<O1>,
+        B: IntoNodeOutput<O2>,
     {
         let node = self.node(op);
         self.connect(a, node.input(0));
@@ -225,63 +270,63 @@ impl Graph {
         node
     }
 
-    pub fn un_op<A, Op, O>(&mut self, op: Op, a: A) -> NodeIndex
+    pub fn un_op<A, Op, O>(&mut self, op: Op, a: A) -> Node
     where
         Op: Processor + Default,
         O: AsNodeOutputIndex<ProcessorNode>,
-        A: AsNodeOutput<O> + Copy,
+        A: IntoNodeOutput<O>,
     {
         let node = self.node(op);
         self.connect(a, node.input(0));
         node
     }
 
-    pub fn add<A, AO, B, BO>(&mut self, a: A, b: B) -> NodeIndex
+    pub fn add<A, AO, B, BO>(&mut self, a: A, b: B) -> Node
     where
         AO: AsNodeOutputIndex<ProcessorNode>,
         BO: AsNodeOutputIndex<ProcessorNode>,
-        A: AsNodeOutput<AO> + Copy,
-        B: AsNodeOutput<BO> + Copy,
+        A: IntoNodeOutput<AO>,
+        B: IntoNodeOutput<BO>,
     {
         self.bin_op(a, crate::builtins::Add::default(), b)
     }
 
-    pub fn sub<A, AO, B, BO>(&mut self, a: A, b: B) -> NodeIndex
+    pub fn sub<A, AO, B, BO>(&mut self, a: A, b: B) -> Node
     where
         AO: AsNodeOutputIndex<ProcessorNode>,
         BO: AsNodeOutputIndex<ProcessorNode>,
-        A: AsNodeOutput<AO> + Copy,
-        B: AsNodeOutput<BO> + Copy,
+        A: IntoNodeOutput<AO>,
+        B: IntoNodeOutput<BO>,
     {
         self.bin_op(a, crate::builtins::Sub::default(), b)
     }
 
-    pub fn mul<A, AO, B, BO>(&mut self, a: A, b: B) -> NodeIndex
+    pub fn mul<A, AO, B, BO>(&mut self, a: A, b: B) -> Node
     where
         AO: AsNodeOutputIndex<ProcessorNode>,
         BO: AsNodeOutputIndex<ProcessorNode>,
-        A: AsNodeOutput<AO> + Copy,
-        B: AsNodeOutput<BO> + Copy,
+        A: IntoNodeOutput<AO>,
+        B: IntoNodeOutput<BO>,
     {
         self.bin_op(a, crate::builtins::Mul::default(), b)
     }
 
-    pub fn div<A, AO, B, BO>(&mut self, a: A, b: B) -> NodeIndex
+    pub fn div<A, AO, B, BO>(&mut self, a: A, b: B) -> Node
     where
         AO: AsNodeOutputIndex<ProcessorNode>,
         BO: AsNodeOutputIndex<ProcessorNode>,
-        A: AsNodeOutput<AO> + Copy,
-        B: AsNodeOutput<BO> + Copy,
+        A: IntoNodeOutput<AO>,
+        B: IntoNodeOutput<BO>,
     {
         self.bin_op(a, crate::builtins::Div::default(), b)
     }
 
-    pub fn rem<A, AO, B, BO>(&mut self, a: A, b: B) -> NodeIndex
+    pub fn rem<A, AO, B, BO>(&mut self, a: A, b: B) -> Node
     where
         AO: AsNodeOutputIndex<ProcessorNode>,
         BO: AsNodeOutputIndex<ProcessorNode>,
-        A: AsNodeOutput<AO> + Copy,
-        B: AsNodeOutput<BO> + Copy,
+        A: IntoNodeOutput<AO>,
+        B: IntoNodeOutput<BO>,
     {
         self.bin_op(a, crate::builtins::Rem::default(), b)
     }
@@ -298,25 +343,21 @@ impl Graph {
     }
 
     /// Disconnects all inputs to the specified node.
-    pub fn disconnect_all_inputs(&mut self, node: NodeIndex) -> Vec<Connection> {
-        self.graph.disconnect_all_inputs(node)
+    pub fn disconnect_all_inputs(&mut self, node: Node) -> Vec<Connection> {
+        self.graph.disconnect_all_inputs(node.into())
     }
 
     /// Disconnects all outputs from the specified node.
-    pub fn disconnect_all_outputs(&mut self, node: NodeIndex) -> Vec<Connection> {
-        self.graph.disconnect_all_outputs(node)
+    pub fn disconnect_all_outputs(&mut self, node: Node) -> Vec<Connection> {
+        self.graph.disconnect_all_outputs(node.into())
     }
 
     /// Disconnects all inputs and outputs from the specified node.
-    pub fn disconnect_all(&mut self, node: NodeIndex) -> Vec<Connection> {
-        self.graph.disconnect_all(node)
+    pub fn disconnect_all(&mut self, node: Node) -> Vec<Connection> {
+        self.graph.disconnect_all(node.into())
     }
 
-    pub fn replace_node_gracefully(
-        &mut self,
-        replaced: NodeIndex,
-        replacement: NodeIndex,
-    ) -> NodeIndex {
+    pub fn replace_node_gracefully(&mut self, replaced: Node, replacement: Node) -> Node {
         let replaced_outputs = self.disconnect_all_outputs(replaced);
 
         for edge in replaced_outputs {
@@ -327,7 +368,9 @@ impl Graph {
                 ..
             } = edge;
 
-            if source_output < self.graph[replacement].num_outputs() as u32 {
+            let target = Node(target);
+
+            if source_output < self.graph[replacement.0].num_outputs() as u32 {
                 self.connect(
                     replacement.output(source_output),
                     target.input(target_input),
@@ -356,20 +399,20 @@ impl Graph {
 
     /// Returns the indices of the audio inputs in the graph.
     #[inline]
-    pub fn input_indices(&self) -> &[NodeIndex] {
-        self.graph.inputs()
+    pub fn input_indices(&self) -> impl Iterator<Item = Node> + '_ {
+        self.graph.inputs().iter().copied().map(Node)
     }
 
     /// Returns the indices of the audio outputs in the graph.
     #[inline]
-    pub fn output_indices(&self) -> &[NodeIndex] {
-        self.graph.outputs()
+    pub fn output_indices(&self) -> impl Iterator<Item = Node> + '_ {
+        self.graph.outputs().iter().copied().map(Node)
     }
 
     /// Returns a mutable reference to the graph's input buffer for the given input index.
     #[inline]
     pub fn get_input_mut(&mut self, input_index: usize) -> Option<&mut [f32]> {
-        let input_index = *self.input_indices().get(input_index)?;
+        let input_index = *self.input_indices().nth(input_index)?;
         self.graph
             .digraph_mut()
             .node_weight_mut(input_index)
@@ -379,7 +422,7 @@ impl Graph {
     /// Returns a reference to the graph's output buffer for the given output index.
     #[inline]
     pub fn get_output(&self, output_index: usize) -> Option<&[f32]> {
-        let output_index = *self.output_indices().get(output_index)?;
+        let output_index = *self.output_indices().nth(output_index)?;
         self.graph
             .digraph()
             .node_weight(output_index)
@@ -387,13 +430,19 @@ impl Graph {
     }
 
     #[inline]
-    pub(crate) fn sccs(&self) -> &[Vec<NodeIndex>] {
+    pub(crate) fn sccs(&self) -> &[Vec<Node>] {
         &self.sccs
     }
 
     #[inline]
     pub(crate) fn detect_sccs(&mut self) {
-        self.sccs = petgraph::algo::kosaraju_scc(&self.graph.digraph());
+        let sccs = petgraph::algo::kosaraju_scc(&self.graph.digraph());
+        self.sccs.clear();
+        for scc in sccs {
+            if !scc.is_empty() {
+                self.sccs.push(scc.into_iter().map(Node).collect());
+            }
+        }
         self.sccs.reverse();
     }
 
@@ -457,7 +506,6 @@ impl Graph {
     }
 
     /// Runs the audio graph for one block of samples.
-    #[cfg_attr(feature = "profiling", inline(never))]
     pub fn process(&mut self) -> GraphRunResult<()> {
         self.reset_visitor();
 
@@ -478,23 +526,34 @@ impl Graph {
         Ok(())
     }
 
-    #[cfg_attr(feature = "profiling", inline(never))]
-    fn process_node(&mut self, node_id: NodeIndex, mode: ProcessMode) -> GraphRunResult<()> {
-        let mut inputs: [_; 32] = [None; 32];
+    fn process_node(&mut self, node_id: Node, mode: ProcessMode) -> GraphRunResult<()> {
+        let num_inputs = self.graph[node_id.0].num_inputs();
+        let mut inputs: smallvec::SmallVec<[_; 32]> = smallvec::smallvec![None; num_inputs];
 
         for (source_id, edge) in self
             .graph
             .digraph()
-            .edges_directed(node_id, Direction::Incoming)
-            .map(|edge| (edge.source(), edge.weight()))
+            .edges_directed(node_id.0, Direction::Incoming)
+            .map(|edge| (edge.source(), *edge.weight()))
         {
-            let source_buffers = &self.graph[source_id].outputs;
-            let buffer = &source_buffers[edge.source_output as usize] as *const AnyBuffer;
+            if source_id == node_id.0 {
+                log::warn!(
+                    "Self-loops are not supported, skipping edge from node {:?} ({}) to itself",
+                    node_id,
+                    self.graph[node_id.0].name()
+                );
+                continue;
+            }
+            // SAFETY: We've validated that the source node and the node we're processing do not overlap,
+            // so no mutable aliasing can occur.
+            let graph = &raw const self.graph;
+            let source_buffers = unsafe { &(&*graph)[source_id].outputs };
+            let buffer = &source_buffers[edge.source_output as usize];
 
             inputs[edge.target_input as usize] = Some(buffer);
         }
 
-        let node = &mut self.graph[node_id];
+        let node = &mut self.graph[node_id.0];
 
         node.process(
             &inputs[..],
@@ -504,12 +563,11 @@ impl Graph {
                 mode,
             },
         )?;
-
         Ok(())
     }
 
     /// Creates a new [`Node`] that outputs a constant value.
-    pub fn constant<T: Signal + Default + Clone>(&mut self, value: T) -> NodeIndex {
+    pub fn constant<T: Signal + Default + Clone>(&mut self, value: T) -> Node {
         self.node(Constant::new(value))
     }
 
@@ -520,15 +578,15 @@ impl Graph {
         let duration_written_clone = duration_written.clone();
 
         let (kill_tx, kill_rx) = crossbeam_channel::bounded(1);
-        let handle = std::thread::spawn(move || -> GraphRunResult<()> {
+        let handle = std::thread::spawn(move || -> GraphRunResult<Graph> {
             loop {
                 if kill_rx.try_recv().is_ok() {
-                    return Ok(());
+                    return Ok(self);
                 }
 
                 while output_stream.output_samples_needed() > 0 {
                     if kill_rx.try_recv().is_ok() {
-                        return Ok(());
+                        return Ok(self);
                     }
 
                     let block_size = output_stream.block_size();
@@ -549,7 +607,7 @@ impl Graph {
                                 continue;
                             };
 
-                            delta += output_stream.output(&[buffer[sample_idx]])?;
+                            delta += output_stream.write(&[buffer[sample_idx]])?;
                         }
                     }
 
@@ -575,36 +633,40 @@ impl Graph {
         })
     }
 
-    pub fn play_for(self, output_stream: impl AudioOut, duration: Duration) -> GraphRunResult<()> {
+    pub fn play_for(
+        self,
+        output_stream: impl AudioOut,
+        duration: Duration,
+    ) -> GraphRunResult<Graph> {
         let handle = self.play(output_stream)?;
-        handle.run_for(duration)?;
-        Ok(())
+        let graph = handle.run_for(duration)?;
+        Ok(graph)
     }
 }
 
-impl std::ops::Index<NodeIndex> for Graph {
+impl std::ops::Index<Node> for Graph {
     type Output = ProcessorNode;
 
-    fn index(&self, index: NodeIndex) -> &Self::Output {
-        &self.graph[index]
+    fn index(&self, index: Node) -> &Self::Output {
+        &self.graph[index.0]
     }
 }
 
-impl std::ops::IndexMut<NodeIndex> for Graph {
-    fn index_mut(&mut self, index: NodeIndex) -> &mut Self::Output {
-        &mut self.graph[index]
+impl std::ops::IndexMut<Node> for Graph {
+    fn index_mut(&mut self, index: Node) -> &mut Self::Output {
+        &mut self.graph[index.0]
     }
 }
 
 pub struct RunningGraph {
-    handle: JoinHandle<GraphRunResult<()>>,
+    handle: JoinHandle<GraphRunResult<Graph>>,
     kill_tx: Sender<()>,
     samples_written: Arc<AtomicUsize>,
     duration_written: Arc<AtomicDuration>,
 }
 
 impl RunningGraph {
-    pub fn stop(self) -> GraphRunResult<()> {
+    pub fn stop(self) -> GraphRunResult<Graph> {
         self.kill_tx.send(()).unwrap();
         self.handle.join().unwrap()
     }
@@ -617,7 +679,7 @@ impl RunningGraph {
         self.duration_written.load(Ordering::Relaxed)
     }
 
-    pub fn run_for(self, duration: Duration) -> GraphRunResult<()> {
+    pub fn run_for(self, duration: Duration) -> GraphRunResult<Graph> {
         while self.duration_written() < duration {
             std::hint::spin_loop();
         }

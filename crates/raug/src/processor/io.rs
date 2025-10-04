@@ -67,7 +67,7 @@ pub struct ProcessorInputs<'a> {
     pub input_specs: &'a [SignalSpec],
 
     /// The input signals.
-    pub inputs: &'a [Option<*const AnyBuffer>],
+    pub inputs: &'a [Option<&'a AnyBuffer>],
 
     /// Environment information for the processor.
     pub env: ProcEnv,
@@ -78,7 +78,7 @@ impl<'a> ProcessorInputs<'a> {
     #[inline]
     pub fn new(
         input_specs: &'a [SignalSpec],
-        inputs: &'a [Option<*const AnyBuffer>],
+        inputs: &'a [Option<&'a AnyBuffer>],
         env: ProcEnv,
     ) -> Self {
         Self {
@@ -116,15 +116,9 @@ impl<'a> ProcessorInputs<'a> {
     /// Unconnected inputs are represented as `None`.
     #[inline]
     pub fn input(&self, index: usize) -> Option<&AnyBuffer> {
-        let ptr = self
-            .inputs
+        self.inputs
             .get(index)
-            .and_then(|input| input.as_ref().copied())?;
-        // SAFETY: The pointer is valid because ProcessorInputs is only created
-        // during `Graph::process_node` which limits the lifetime of the inputs to the
-        // lifetime of that call.
-        let buffer = unsafe { &*ptr };
-        Some(buffer)
+            .and_then(|input| input.as_ref().copied())
     }
 
     /// Returns the input signal at the given index, if it is of the given type.

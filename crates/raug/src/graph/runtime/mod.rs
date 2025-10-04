@@ -188,7 +188,7 @@ pub trait AudioOut: Send + Sync + 'static {
     fn output_samples_needed(&self) -> isize;
 
     /// Writes the given samples to the stream. On success, returns the number of samples written.
-    fn output(&mut self, samps: &[f32]) -> GraphRunResult<usize>;
+    fn write(&mut self, samps: &[f32]) -> GraphRunResult<usize>;
 }
 
 impl AudioOut for Box<dyn AudioOut> {
@@ -208,8 +208,8 @@ impl AudioOut for Box<dyn AudioOut> {
         self.as_ref().output_samples_needed()
     }
 
-    fn output(&mut self, samps: &[f32]) -> GraphRunResult<usize> {
-        self.as_mut().output(samps)
+    fn write(&mut self, samps: &[f32]) -> GraphRunResult<usize> {
+        self.as_mut().write(samps)
     }
 }
 
@@ -243,17 +243,17 @@ impl<A: AudioOut, B: AudioOut> AudioOut for ParallelOut<A, B> {
             .min(self.b.output_samples_needed())
     }
 
-    fn output(&mut self, samps: &[f32]) -> GraphRunResult<usize> {
-        let mut written = 0;
+    fn write(&mut self, samps: &[f32]) -> GraphRunResult<usize> {
         for &samp in samps {
-            self.a.output(&[samp])?;
-            self.b.output(&[samp])?;
-            written += 1;
+            self.a.write(&[samp])?;
+            self.b.write(&[samp])?;
         }
-        Ok(written)
+        Ok(samps.len())
     }
 }
 
+/// An [`AudioOut`] implementation that discards all audio data, while still behaving like a real audio output.
+/// Useful for testing and benchmarking.
 pub struct NullOut {
     sample_rate: f32,
     block_size: usize,
@@ -287,7 +287,7 @@ impl AudioOut for NullOut {
         self.block_size as isize * self.output_channels as isize
     }
 
-    fn output(&mut self, samps: &[f32]) -> GraphRunResult<usize> {
+    fn write(&mut self, samps: &[f32]) -> GraphRunResult<usize> {
         Ok(samps.len())
     }
 }
@@ -368,7 +368,7 @@ impl AudioOut for WavFileOut {
         }
     }
 
-    fn output(&mut self, samps: &[f32]) -> GraphRunResult<usize> {
+    fn write(&mut self, samps: &[f32]) -> GraphRunResult<usize> {
         let mut written = 0;
         for &samp in samps {
             self.file.write_sample(samp)?;
@@ -585,7 +585,7 @@ impl AudioOut for CpalOut {
         self.block_size() as isize - in_channel as isize
     }
 
-    fn output(&mut self, samps: &[f32]) -> GraphRunResult<usize> {
+    fn write(&mut self, samps: &[f32]) -> GraphRunResult<usize> {
         let mut written = 0;
         for &samp in samps {
             self.samples.send_blocking(samp).unwrap();

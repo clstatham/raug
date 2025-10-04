@@ -3,7 +3,7 @@ use raug_ext::prelude::*;
 
 use std::f32::consts::PI;
 
-pub fn pick_randomly(graph: &mut Graph, trig: NodeIndex, options: &[f32]) -> NodeIndex {
+pub fn pick_randomly(graph: &mut Graph, trig: Node, options: &[f32]) -> Node {
     let node = graph.node(RandomChoice::<f32>::default());
     graph.connect(trig, node.input("trig"));
     let options = graph.constant(List::from_slice(options));
@@ -11,15 +11,13 @@ pub fn pick_randomly(graph: &mut Graph, trig: NodeIndex, options: &[f32]) -> Nod
     node
 }
 
-pub fn fm_sine_osc(graph: &mut Graph, freq: NodeIndex, modulator: NodeIndex) -> NodeIndex {
+pub fn fm_sine_osc(graph: &mut Graph, freq: Node, modulator: Node) -> Node {
     let sr = graph.node(SampleRate::default());
     let phase = graph.node(PhaseAccumulator::default());
-    let freq_over_sr = graph.div(freq, sr);
-    graph.connect(freq_over_sr, phase.input("increment"));
-    let phase_times_2pi = graph.mul(phase, 2.0 * PI);
-    let mod_phase_times_2pi = graph.mul(modulator, 2.0 * PI);
-    let modulated_phase = graph.add(phase_times_2pi, mod_phase_times_2pi);
-    graph.sin(modulated_phase)
+    graph.connect(freq / sr, phase.input("increment"));
+    let phase = phase * (2.0 * PI);
+    let modulator = modulator * (2.0 * PI);
+    graph.sin(modulator + phase)
 }
 
 pub fn midi_to_freq(midi: f32) -> f32 {
@@ -52,7 +50,7 @@ pub fn random_tones(
     freqs: &[f32],
     decays: &[f32],
     amps: &[f32],
-) -> NodeIndex {
+) -> Node {
     // let mast = Metro::default().node(graph, rates[0], ());
     let mast = graph.node(Metro::default());
     graph.connect_constant(rates[0], mast.input("period"));
@@ -117,11 +115,9 @@ pub fn caterpillar(num_tones: usize) -> Graph {
 
     let mut mix = tones[0];
     for tone in tones.iter().skip(1) {
-        // mix = mix.clone() + tone.clone();
         mix = graph.add(mix, *tone);
     }
 
-    // let mix = mix * 0.1f32;
     mix = graph.mul(mix, 0.1f32);
 
     let verb = graph.node(StereoReverb::default());
@@ -144,7 +140,7 @@ pub fn caterpillar(num_tones: usize) -> Graph {
 }
 
 fn main() {
-    let graph = caterpillar(250);
+    let graph = caterpillar(1);
 
     graph
         .write_dot(&mut std::fs::File::create("caterpillar.dot").unwrap())
@@ -154,11 +150,11 @@ fn main() {
     println!("edges: {}", graph.edge_count());
 
     graph
-        // .play(CpalOut::spawn(
-        //     &AudioBackend::Default,
-        //     &AudioDevice::Default,
-        // ))
-        .play(NullOut::new(48_000.0, 512, 2))
+        .play(CpalOut::spawn(
+            &AudioBackend::Default,
+            &AudioDevice::Default,
+        ))
+        // .play(NullOut::new(48_000.0, 512, 2))
         .unwrap()
         .run_for(Duration::from_secs(100))
         .unwrap();

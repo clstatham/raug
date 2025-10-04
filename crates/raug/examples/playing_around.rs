@@ -2,7 +2,6 @@ use std::f32::consts::PI;
 
 use raug::prelude::*;
 use raug_ext::prelude::*;
-use raug_graph::node::NodeIndexExt;
 
 /// A processor that generates Brownian noise.
 #[processor(derive(Default))]
