@@ -4,9 +4,6 @@ use crate::{
 };
 
 pub trait Node {
-    fn name(&self) -> Option<String> {
-        None
-    }
     fn num_inputs(&self) -> usize;
     fn num_outputs(&self) -> usize;
     fn input_type(&self, index: u32) -> Option<TypeInfo>;
@@ -15,7 +12,7 @@ pub trait Node {
     fn output_name(&self, index: u32) -> Option<&str>;
 }
 
-pub trait AsNodeInputIndex<N: Node>: ToString + Copy {
+pub trait AsNodeInputIndex<N: Node>: Send + ToString + Copy + 'static {
     fn as_node_input_index(&self, graph: &Graph<N>, node: NodeIndex) -> Option<u32>;
 }
 
@@ -29,7 +26,7 @@ impl<N: Node> AsNodeInputIndex<N> for u32 {
     }
 }
 
-impl<N: Node> AsNodeInputIndex<N> for &str {
+impl<N: Node> AsNodeInputIndex<N> for &'static str {
     fn as_node_input_index(&self, graph: &Graph<N>, node: NodeIndex) -> Option<u32> {
         for i in 0..graph[node].num_inputs() {
             if let Some(name) = graph[node].input_name(i as u32)

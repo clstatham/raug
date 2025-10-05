@@ -5,13 +5,13 @@ use std::ops::Deref;
 use node::{ProcessNodeError, ProcessorNode};
 use raug_graph::{
     graph::Connection,
-    node::{AsNodeInputIndex, AsNodeOutputIndex, NodeInput},
+    node::{AsNodeInputIndex, AsNodeOutputIndex},
     petgraph::{self, Direction, visit::EdgeRef},
 };
 use rustc_hash::FxHashMap;
 
 use crate::{
-    graph::node::{BuildOnGraph, Input, IntoNodeOutput, RaugNodeIndexExt},
+    graph::node::{BuildOnGraph, IntoNodeInput, IntoNodeOutput, RaugNodeIndexExt},
     prelude::{Constant, Null, Passthrough, ProcEnv},
     processor::{Processor, io::ProcessMode},
     signal::Signal,
@@ -112,6 +112,14 @@ impl Graph {
         self.graph.digraph().edge_count()
     }
 
+    pub fn block_size(&self) -> usize {
+        self.block_size
+    }
+
+    pub fn sample_rate(&self) -> f32 {
+        self.sample_rate
+    }
+
     pub fn has_node(&self, node: Node) -> bool {
         self.graph.digraph().node_weight(node.0).is_some()
     }
@@ -153,16 +161,17 @@ impl Graph {
         O: AsNodeOutputIndex<ProcessorNode>,
         I: AsNodeInputIndex<ProcessorNode>,
         Src: IntoNodeOutput<O>,
-        Tgt: Into<Input<I>> + Copy,
+        Tgt: IntoNodeInput<I>,
     {
         let source = source.into_node_output(self);
-        self.graph.connect(*source, *target.into()).unwrap();
+        let target = target.into_node_input(self);
+        self.graph.connect(*source, *target).unwrap();
     }
 
     pub fn connect_constant<I, Tgt>(&mut self, value: f32, target: Tgt)
     where
         I: AsNodeInputIndex<ProcessorNode>,
-        Tgt: Into<Input<I>> + Copy,
+        Tgt: IntoNodeInput<I>,
     {
         let constant = self.constant(value);
         self.connect(constant, target);
@@ -258,9 +267,10 @@ impl Graph {
     pub fn disconnect<I, Tgt>(&mut self, target: Tgt) -> Option<Connection>
     where
         I: AsNodeInputIndex<ProcessorNode>,
-        Tgt: Into<NodeInput<ProcessorNode, I>> + Copy,
+        Tgt: IntoNodeInput<I>,
     {
-        self.graph.disconnect(target)
+        let target = target.into_node_input(self);
+        self.graph.disconnect(target.0)
     }
 
     /// Disconnects all inputs to the specified node.
@@ -390,6 +400,16 @@ impl Graph {
 
     /// Calls [`Processor::resize_buffers()`] on each node in the graph.
     pub fn resize_buffers(&mut self, sample_rate: f32, block_size: usize) {
+        let block_size = if block_size > self.max_block_size {
+            log::warn!(
+                "Requested block size {} exceeds max block size {}, resizing to max block size",
+                block_size,
+                self.max_block_size
+            );
+            self.max_block_size
+        } else {
+            block_size
+        };
         self.reset_visitor();
         self.graph.visit_mut(|_id, node| {
             node.resize_buffers(sample_rate, block_size);

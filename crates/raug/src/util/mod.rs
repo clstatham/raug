@@ -14,6 +14,7 @@ pub(crate) mod interned_strings;
 /// Returns a list of available audio backends, as exposed by the `cpal` crate.
 #[cfg(feature = "playback")]
 pub fn available_audio_backends() -> Vec<AudioBackend> {
+    #[allow(unused_mut)]
     let mut backends = vec![];
     for host in cpal::available_hosts() {
         match host {
@@ -58,6 +59,7 @@ pub fn list_audio_devices(backend: AudioBackend) {
         AudioBackend::Alsa => cpal::host_from_id(cpal::HostId::Alsa).unwrap(),
         #[cfg(target_os = "windows")]
         AudioBackend::Wasapi => cpal::host_from_id(cpal::HostId::Wasapi).unwrap(),
+        AudioBackend::Custom(id) => cpal::host_from_id(id).unwrap(),
     };
     for (i, device) in host.output_devices().unwrap().enumerate() {
         println!("  {}: {:?}", i, device.name());

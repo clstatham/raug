@@ -352,6 +352,7 @@ pub fn processor_attribute(attr: TokenStream, item: TokenStream) -> TokenStream 
         get_outputs.push(quote! {
             // SAFETY: We won't ever get the same output buffer twice, so there's no way to alias it.
             let mut #name = unsafe { outputs.output_extended_lifetime(#arg_index) };
+            #name.type_check::<#ty>()?;
         });
         assign_outputs.push(quote! {
             // SAFETY: We checked the type when getting the output buffer.
@@ -409,8 +410,6 @@ pub fn processor_attribute(attr: TokenStream, item: TokenStream) -> TokenStream 
             #name: impl raug::graph::node::IntoOutputOpt,
         });
     }
-
-    // let outputs = item.sig.output.clone();
 
     let allocate_fn = if let Some(allocate_fn) = allocate_fn {
         quote! {

@@ -166,6 +166,19 @@ impl ProcessorOutput<'_> {
         }
     }
 
+    /// Checks if the output signal is of the given type.
+    #[inline]
+    pub fn type_check<S: Signal>(&self) -> Result<(), ProcessorError> {
+        if self.signal_type() != S::signal_type() {
+            return Err(ProcessorError::OutputTypeMismatch {
+                index: 0, // index is not known here
+                expected: S::signal_type(),
+                actual: self.signal_type(),
+            });
+        }
+        Ok(())
+    }
+
     /// Returns a reference to the output signal at the given index, if it is of the given type.
     #[inline]
     pub fn get_as<S: Signal>(&self, index: usize) -> Option<&S> {

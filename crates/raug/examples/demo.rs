@@ -43,12 +43,10 @@ fn main() {
 
     // open the audio stream
     graph
-        .play(CpalOut::spawn(
+        .play(&mut CpalOut::spawn(
             &AudioBackend::Default,
             &AudioDevice::Default,
+            Some(std::time::Duration::from_secs(3)),
         ))
-        // .play(NullOut::new(48_000.0, 512, 2))
-        .unwrap()
-        .run_for(Duration::from_secs(10))
         .unwrap();
 }

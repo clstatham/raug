@@ -187,6 +187,10 @@ pub trait IntoNodeOutput<O: AsNodeOutputIndex<ProcessorNode>>: Send + 'static {
     fn into_node_output(self, graph: &mut Graph) -> Output<O>;
 }
 
+pub trait IntoNodeInput<I: AsNodeInputIndex<ProcessorNode>>: Send + 'static {
+    fn into_node_input(self, graph: &mut Graph) -> Input<I>;
+}
+
 impl<O: AsNodeOutputIndex<ProcessorNode>> IntoNodeOutput<O> for Output<O> {
     fn into_node_output(self, _graph: &mut Graph) -> Output<O> {
         self
@@ -203,6 +207,12 @@ impl<S: Signal + Default + Clone + Copy> IntoNodeOutput<u32> for S {
 impl IntoNodeOutput<u32> for Node {
     fn into_node_output(self, _graph: &mut Graph) -> Output<u32> {
         Output(NodeOutput::new(self.into(), 0))
+    }
+}
+
+impl<I: AsNodeInputIndex<ProcessorNode>> IntoNodeInput<I> for Input<I> {
+    fn into_node_input(self, _graph: &mut Graph) -> Input<I> {
+        self
     }
 }
 

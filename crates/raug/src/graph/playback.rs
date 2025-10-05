@@ -1,6 +1,7 @@
 //! The audio graph processing runtime.
 
 use std::{
+    fmt::Debug,
     fs::File,
     io::BufWriter,
     path::Path,
@@ -9,20 +10,15 @@ use std::{
         Arc,
         atomic::{AtomicUsize, Ordering},
     },
-    thread::JoinHandle,
     time::Duration,
 };
 
-use atomic_time::AtomicDuration;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use crossbeam_channel::{Receiver, RecvError, SendError, Sender, TryRecvError, TrySendError};
 
 use crate::{
-    graph::{
-        Graph, GraphConstructionError, Node,
-        node::{Input, Output},
-    },
-    prelude::{ProcessNodeError, Processor, ProcessorNode, RaugNodeIndexExt},
+    graph::{Graph, GraphConstructionError},
+    prelude::ProcessNodeError,
 };
 
 /// The type of error that occurred while running a graph.
@@ -89,249 +85,33 @@ pub enum GraphRunError {
 pub type GraphRunResult<T> = Result<T, GraphRunError>;
 
 impl Graph {
-    pub fn play(mut self, mut output_stream: impl AudioOut) -> GraphRunResult<RunningGraph> {
-        let status = Arc::new(GraphStatus::new(self.sample_rate as usize, self.block_size));
-        let status_clone = status.clone();
-
-        let (kill_tx, kill_rx) = crossbeam_channel::bounded(1);
-        let (request_tx, request_rx) = crossbeam_channel::unbounded();
-        let (response_tx, response_rx) = crossbeam_channel::unbounded();
-        let handle = std::thread::spawn(move || -> GraphRunResult<Graph> {
-            loop {
-                if kill_rx.try_recv().is_ok() {
-                    return Ok(self);
+    pub fn play(&mut self, output_stream: &mut impl AudioOut) -> GraphRunResult<()> {
+        while !output_stream.is_finished() {
+            while output_stream.output_samples_needed() > 0 {
+                let block_size = output_stream.block_size();
+                if block_size > self.max_block_size {
+                    log::debug!("Reallocating graph buffers to {} samples", block_size);
+                    self.allocate(output_stream.sample_rate(), block_size);
+                } else if block_size != self.block_size {
+                    log::debug!("Resizing graph buffers to {} samples", block_size);
+                    self.resize_buffers(output_stream.sample_rate(), block_size);
                 }
 
-                while let Ok(request) = request_rx.try_recv() {
-                    match request {
-                        GraphRequest::AddNode(node) => {
-                            let node = self.graph.add_node(node);
-                            response_tx
-                                .send(GraphResponse::NodeAdded(Node(node)))
-                                .map_err(|_| GraphRunError::StreamSendError)?;
-                        }
-                        GraphRequest::RemoveNode(node) => {
-                            self.disconnect_all(node);
-                            response_tx
-                                .send(GraphResponse::NodeRemoved(node))
-                                .map_err(|_| GraphRunError::StreamSendError)?;
-                        }
-                        GraphRequest::ConnectU32U32 {
-                            source,
-                            source_output,
-                            target,
-                            target_input,
-                        } => {
-                            if source_output < self.graph[source.0].num_outputs() as u32
-                                && target_input < self.graph[target.0].num_inputs() as u32
-                            {
-                                self.connect(
-                                    source.output(source_output),
-                                    target.input(target_input),
-                                );
-                                response_tx
-                                    .send(GraphResponse::Connected)
-                                    .map_err(|_| GraphRunError::StreamSendError)?;
-                            } else {
-                                return Err(GraphRunError::GraphModificationError(
-                                    GraphConstructionError::InputIndexOutOfBounds {
-                                        index: target_input as usize,
-                                        num_inputs: self.graph[target.0].num_inputs(),
-                                    },
-                                ));
-                            }
-                        }
+                self.process()?;
+
+                for sample_idx in 0..self.block_size {
+                    for channel_idx in 0..output_stream.output_channels() {
+                        let Some(buffer) = self.get_output(channel_idx) else {
+                            continue;
+                        };
+
+                        output_stream.write(&[buffer[sample_idx]])?;
                     }
-                }
-
-                while output_stream.output_samples_needed() > 0 {
-                    if kill_rx.try_recv().is_ok() {
-                        return Ok(self);
-                    }
-
-                    let block_size = output_stream.block_size();
-                    if block_size > self.max_block_size {
-                        log::debug!("Reallocating graph buffers to {} samples", block_size);
-                        self.allocate(output_stream.sample_rate(), block_size);
-                        status_clone.block_size.store(block_size, Ordering::Relaxed);
-                    } else if block_size != self.block_size {
-                        log::debug!("Resizing graph buffers to {} samples", block_size);
-                        self.resize_buffers(output_stream.sample_rate(), block_size);
-                        status_clone.block_size.store(block_size, Ordering::Relaxed);
-                    }
-
-                    status_clone
-                        .sample_rate
-                        .store(output_stream.sample_rate() as usize, Ordering::Relaxed);
-
-                    self.process()?;
-
-                    let mut delta = 0;
-                    for sample_idx in 0..self.block_size {
-                        for channel_idx in 0..output_stream.output_channels() {
-                            let Some(buffer) = self.get_output(channel_idx) else {
-                                continue;
-                            };
-
-                            delta += output_stream.write(&[buffer[sample_idx]])?;
-                        }
-                    }
-
-                    status_clone
-                        .samples_written
-                        .fetch_add(delta, Ordering::Relaxed);
-
-                    let duration_secs = delta as f32
-                        / output_stream.output_channels() as f32
-                        / output_stream.sample_rate();
-                    status_clone
-                        .duration_written
-                        .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |dur| {
-                            Some(dur + Duration::from_secs_f32(duration_secs))
-                        })
-                        .unwrap();
                 }
             }
-        });
-
-        Ok(RunningGraph {
-            handle,
-            kill_tx,
-            request_tx,
-            response_rx,
-            status,
-        })
-    }
-
-    pub fn play_for(
-        self,
-        output_stream: impl AudioOut,
-        duration: Duration,
-    ) -> GraphRunResult<Graph> {
-        let handle = self.play(output_stream)?;
-        let graph = handle.run_for(duration)?;
-        Ok(graph)
-    }
-}
-
-pub struct GraphStatus {
-    samples_written: AtomicUsize,
-    duration_written: AtomicDuration,
-    sample_rate: AtomicUsize,
-    block_size: AtomicUsize,
-}
-
-impl GraphStatus {
-    fn new(sample_rate: usize, block_size: usize) -> Self {
-        Self {
-            samples_written: AtomicUsize::new(0),
-            duration_written: AtomicDuration::new(Duration::ZERO),
-            sample_rate: AtomicUsize::new(sample_rate),
-            block_size: AtomicUsize::new(block_size),
         }
-    }
-}
 
-pub enum GraphRequest {
-    AddNode(ProcessorNode),
-    RemoveNode(Node),
-    ConnectU32U32 {
-        source: Node,
-        source_output: u32,
-        target: Node,
-        target_input: u32,
-    },
-}
-
-#[derive(Debug)]
-pub enum GraphResponse {
-    NodeAdded(Node),
-    NodeRemoved(Node),
-    Connected,
-}
-
-pub struct RunningGraph {
-    handle: JoinHandle<GraphRunResult<Graph>>,
-    kill_tx: Sender<()>,
-    request_tx: Sender<GraphRequest>,
-    response_rx: Receiver<GraphResponse>,
-    status: Arc<GraphStatus>,
-}
-
-impl RunningGraph {
-    pub fn stop(self) -> GraphRunResult<Graph> {
-        self.kill_tx.send(()).unwrap();
-        self.handle.join().unwrap()
-    }
-
-    pub fn samples_written(&self) -> usize {
-        self.status.samples_written.load(Ordering::Relaxed)
-    }
-
-    pub fn duration_written(&self) -> Duration {
-        self.status.duration_written.load(Ordering::Relaxed)
-    }
-
-    pub fn sample_rate(&self) -> usize {
-        self.status.sample_rate.load(Ordering::Relaxed)
-    }
-
-    pub fn block_size(&self) -> usize {
-        self.status.block_size.load(Ordering::Relaxed)
-    }
-
-    pub fn run_for(self, duration: Duration) -> GraphRunResult<Graph> {
-        while self.duration_written() < duration {
-            std::thread::sleep(Duration::from_millis(10));
-        }
-        self.stop()
-    }
-
-    pub fn node(&self, node: impl Processor) -> GraphRunResult<Node> {
-        let mut node = ProcessorNode::new(node);
-        node.allocate(self.sample_rate() as f32, self.block_size());
-        node.resize_buffers(self.sample_rate() as f32, self.block_size());
-        match self.request_tx.send(GraphRequest::AddNode(node)) {
-            Ok(()) => {}
-            Err(_) => return Err(GraphRunError::StreamNotSpawned),
-        };
-
-        match self.response_rx.recv() {
-            Ok(GraphResponse::NodeAdded(node)) => Ok(node),
-            Ok(_) => Err(GraphRunError::StreamReceiveError),
-            Err(_) => Err(GraphRunError::StreamReceiveError),
-        }
-    }
-
-    pub fn remove_node(&self, node: Node) -> GraphRunResult<Node> {
-        match self.request_tx.send(GraphRequest::RemoveNode(node)) {
-            Ok(()) => {}
-            Err(_) => return Err(GraphRunError::StreamNotSpawned),
-        };
-
-        match self.response_rx.recv() {
-            Ok(GraphResponse::NodeRemoved(node)) => Ok(node),
-            Ok(_) => Err(GraphRunError::StreamReceiveError),
-            Err(_) => Err(GraphRunError::StreamReceiveError),
-        }
-    }
-
-    pub fn connect(&self, source: Output<u32>, target: Input<u32>) -> GraphRunResult<()> {
-        match self.request_tx.send(GraphRequest::ConnectU32U32 {
-            source: source.node.into(),
-            source_output: source.index,
-            target: target.node.into(),
-            target_input: target.index,
-        }) {
-            Ok(()) => {}
-            Err(_) => return Err(GraphRunError::StreamNotSpawned),
-        };
-
-        match self.response_rx.recv() {
-            Ok(GraphResponse::Connected) => Ok(()),
-            Ok(_) => Err(GraphRunError::StreamReceiveError),
-            Err(_) => Err(GraphRunError::StreamReceiveError),
-        }
+        Ok(())
     }
 }
 
@@ -350,6 +130,11 @@ pub enum AudioBackend {
     #[cfg(target_os = "windows")]
     /// Use the Windows Audio Session API audio backend.
     Wasapi,
+    /// Use a custom audio backend, specified by the given `cpal::HostId`.
+    Custom(
+        /// The custom host ID.
+        cpal::HostId,
+    ),
 }
 
 impl FromStr for AudioBackend {
@@ -370,7 +155,7 @@ impl FromStr for AudioBackend {
 }
 
 /// An audio device to use for audio I/O.
-#[derive(Default, Debug, Clone)]
+#[derive(Default, Clone)]
 pub enum AudioDevice {
     /// Use the default audio device.
     #[default]
@@ -379,6 +164,10 @@ pub enum AudioDevice {
     Index(usize),
     /// Use the audio device with the given substring in its name.
     Name(String),
+    Custom(
+        /// The custom device.
+        cpal::Device,
+    ),
 }
 
 impl FromStr for AudioDevice {
@@ -391,6 +180,17 @@ impl FromStr for AudioDevice {
             Ok(Self::Index(i))
         } else {
             Ok(Self::Name(s.to_string()))
+        }
+    }
+}
+
+impl Debug for AudioDevice {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Default => write!(f, "Default"),
+            Self::Index(i) => write!(f, "Index({})", i),
+            Self::Name(name) => write!(f, "Name({})", name),
+            Self::Custom(_) => write!(f, "Custom(...)"),
         }
     }
 }
@@ -491,8 +291,26 @@ impl<T> Channels<T> {
     }
 }
 
+#[cfg(target_arch = "wasm32")]
+pub trait WasmNotSend {}
+#[cfg(target_arch = "wasm32")]
+impl<T> WasmNotSend for T {}
+#[cfg(not(target_arch = "wasm32"))]
+pub trait WasmNotSend: Send {}
+#[cfg(not(target_arch = "wasm32"))]
+impl<T: Send> WasmNotSend for T {}
+
+#[cfg(target_arch = "wasm32")]
+pub trait WasmNotSync {}
+#[cfg(target_arch = "wasm32")]
+impl<T> WasmNotSync for T {}
+#[cfg(not(target_arch = "wasm32"))]
+pub trait WasmNotSync: Sync {}
+#[cfg(not(target_arch = "wasm32"))]
+impl<T: Sync> WasmNotSync for T {}
+
 /// An audio stream interface for outputting audio data.
-pub trait AudioOut: Send + Sync + 'static {
+pub trait AudioOut: WasmNotSend + WasmNotSync + 'static {
     /// Returns the sample rate of the audio stream.
     fn sample_rate(&self) -> f32;
     /// Returns the block size of the audio stream.
@@ -503,6 +321,8 @@ pub trait AudioOut: Send + Sync + 'static {
     /// Returns the number of output samples the stream needs from the graph.
     /// Negative values indicate that the stream has enough data already.
     fn output_samples_needed(&self) -> isize;
+
+    fn is_finished(&self) -> bool;
 
     /// Writes the given samples to the stream. On success, returns the number of samples written.
     fn write(&mut self, samps: &[f32]) -> GraphRunResult<usize>;
@@ -523,6 +343,10 @@ impl AudioOut for Box<dyn AudioOut> {
 
     fn output_samples_needed(&self) -> isize {
         self.as_ref().output_samples_needed()
+    }
+
+    fn is_finished(&self) -> bool {
+        self.as_ref().is_finished()
     }
 
     fn write(&mut self, samps: &[f32]) -> GraphRunResult<usize> {
@@ -558,6 +382,10 @@ impl<A: AudioOut, B: AudioOut> AudioOut for ParallelOut<A, B> {
         self.a
             .output_samples_needed()
             .min(self.b.output_samples_needed())
+    }
+
+    fn is_finished(&self) -> bool {
+        self.a.is_finished() || self.b.is_finished() // finish if either is finished
     }
 
     fn write(&mut self, samps: &[f32]) -> GraphRunResult<usize> {
@@ -602,6 +430,10 @@ impl AudioOut for NullOut {
 
     fn output_samples_needed(&self) -> isize {
         self.block_size as isize * self.output_channels as isize
+    }
+
+    fn is_finished(&self) -> bool {
+        false
     }
 
     fn write(&mut self, samps: &[f32]) -> GraphRunResult<usize> {
@@ -685,6 +517,14 @@ impl AudioOut for WavFileOut {
         }
     }
 
+    fn is_finished(&self) -> bool {
+        if let Some(max_samples) = self.max_samples {
+            self.samples_written >= max_samples
+        } else {
+            false
+        }
+    }
+
     fn write(&mut self, samps: &[f32]) -> GraphRunResult<usize> {
         let mut written = 0;
         for &samp in samps {
@@ -699,13 +539,19 @@ impl AudioOut for WavFileOut {
 pub struct CpalOut {
     config: cpal::SupportedStreamConfig,
     samples: Channels<f32>,
-    kill_tx: Sender<()>,
     block_size: Arc<AtomicUsize>,
+    stream: cpal::Stream,
+    max_samples: Option<usize>,
+    samples_written: Arc<AtomicUsize>,
 }
 
 impl CpalOut {
     /// Spawns a [`cpal`] stream on the given backend and device.
-    pub fn spawn(backend: &AudioBackend, output_device: &AudioDevice) -> Self {
+    pub fn spawn(
+        backend: &AudioBackend,
+        output_device: &AudioDevice,
+        max_duration: Option<Duration>,
+    ) -> Self {
         let host = match backend {
             AudioBackend::Default => cpal::default_host(),
             #[cfg(all(target_os = "linux", feature = "jack"))]
@@ -714,6 +560,7 @@ impl CpalOut {
             AudioBackend::Alsa => cpal::host_from_id(cpal::HostId::Alsa).unwrap(),
             #[cfg(target_os = "windows")]
             AudioBackend::Wasapi => cpal::host_from_id(cpal::HostId::Wasapi).unwrap(),
+            AudioBackend::Custom(id) => cpal::host_from_id(*id).unwrap(),
         };
 
         let output_device = match output_device {
@@ -724,6 +571,7 @@ impl CpalOut {
                 .unwrap()
                 .find(|d| d.name().is_ok_and(|n| n.contains(name.as_str())))
                 .unwrap(),
+            AudioDevice::Custom(device) => device.clone(),
         };
         let output_device = Arc::new(output_device);
 
@@ -735,88 +583,96 @@ impl CpalOut {
         let samples = Channels::unbounded();
         let samples_clone = samples.clone();
 
-        let (kill_tx, kill_rx) = crossbeam_channel::bounded(1);
+        let samples_written = Arc::new(AtomicUsize::new(0));
+        let samples_written_clone = samples_written.clone();
 
-        match output_config.sample_format() {
+        let stream = match output_config.sample_format() {
             cpal::SampleFormat::F32 => build_output_stream::<f32>(
                 samples_clone,
                 output_device.clone(),
                 output_config.config(),
                 block_size,
-                kill_rx,
+                samples_written_clone,
             ),
             cpal::SampleFormat::F64 => build_output_stream::<f64>(
                 samples_clone,
                 output_device.clone(),
                 output_config.config(),
                 block_size,
-                kill_rx,
+                samples_written_clone,
             ),
             cpal::SampleFormat::I8 => build_output_stream::<i8>(
                 samples_clone,
                 output_device.clone(),
                 output_config.config(),
                 block_size,
-                kill_rx,
+                samples_written_clone,
             ),
             cpal::SampleFormat::I16 => build_output_stream::<i16>(
                 samples_clone,
                 output_device.clone(),
                 output_config.config(),
                 block_size,
-                kill_rx,
+                samples_written_clone,
             ),
             cpal::SampleFormat::I32 => build_output_stream::<i32>(
                 samples_clone,
                 output_device.clone(),
                 output_config.config(),
                 block_size,
-                kill_rx,
+                samples_written_clone,
             ),
             cpal::SampleFormat::I64 => build_output_stream::<i64>(
                 samples_clone,
                 output_device.clone(),
                 output_config.config(),
                 block_size,
-                kill_rx,
+                samples_written_clone,
             ),
             cpal::SampleFormat::U8 => build_output_stream::<u8>(
                 samples_clone,
                 output_device.clone(),
                 output_config.config(),
                 block_size,
-                kill_rx,
+                samples_written_clone,
             ),
             cpal::SampleFormat::U16 => build_output_stream::<u16>(
                 samples_clone,
                 output_device.clone(),
                 output_config.config(),
                 block_size,
-                kill_rx,
+                samples_written_clone,
             ),
             cpal::SampleFormat::U32 => build_output_stream::<u32>(
                 samples_clone,
                 output_device.clone(),
                 output_config.config(),
                 block_size,
-                kill_rx,
+                samples_written_clone,
             ),
             cpal::SampleFormat::U64 => build_output_stream::<u64>(
                 samples_clone,
                 output_device.clone(),
                 output_config.config(),
                 block_size,
-                kill_rx,
+                samples_written_clone,
             ),
 
             _ => panic!("Unsupported sample format for output stream"),
         };
 
+        let max_samples = max_duration.map(|max_duration| {
+            (max_duration.as_secs_f32() * output_config.sample_rate().0 as f32) as usize
+                * output_config.channels() as usize
+        });
+
         Self {
+            stream,
             config: output_config,
             samples,
             block_size: block_size_clone,
-            kill_tx,
+            max_samples,
+            samples_written,
         }
     }
 
@@ -830,11 +686,15 @@ impl CpalOut {
         );
         ParallelOut::new(self, wav)
     }
+
+    pub fn samples_written(&self) -> usize {
+        self.samples_written.load(Ordering::Relaxed)
+    }
 }
 
 impl Drop for CpalOut {
     fn drop(&mut self) {
-        let _ = self.kill_tx.send(());
+        self.stream.pause().ok();
     }
 }
 
@@ -843,45 +703,46 @@ fn build_output_stream<T: cpal::SizedSample + cpal::FromSample<f32> + Send + 'st
     output_device: Arc<cpal::Device>,
     config: cpal::StreamConfig,
     block_size: Arc<AtomicUsize>,
-    kill_rx: Receiver<()>,
-) -> JoinHandle<()> {
+    samples_written: Arc<AtomicUsize>,
+) -> cpal::Stream {
     let channels = config.channels as usize;
-    std::thread::spawn(move || {
-        let stream = output_device
-            .build_output_stream(
-                &config,
-                move |data: &mut [T], _info| {
-                    let data_len = data.len();
-                    let new_block_size = data_len / channels;
-                    let old_block_size = block_size.load(Ordering::Relaxed);
-                    if new_block_size != old_block_size {
-                        log::debug!(
-                            "Changing block size from {} to {}",
-                            old_block_size,
-                            new_block_size
-                        );
-                        block_size.store(new_block_size, Ordering::Relaxed);
-                    }
+    let stream = output_device
+        .build_output_stream(
+            &config,
+            move |data: &mut [T], _info| {
+                let data_len = data.len();
+                let new_block_size = data_len / channels;
+                let old_block_size = block_size.load(Ordering::Relaxed);
+                if new_block_size != old_block_size {
+                    log::debug!(
+                        "Changing block size from {} to {}",
+                        old_block_size,
+                        new_block_size
+                    );
+                    block_size.store(new_block_size, Ordering::Relaxed);
+                }
 
-                    for out_samp in data.iter_mut() {
-                        if let Ok(in_samp) = samples.recv_blocking() {
-                            *out_samp = T::from_sample(in_samp);
-                        } else {
-                            log::error!("samples.recv_blocking() returned Err");
-                            *out_samp = T::from_sample(0.0f32);
-                        }
+                for out_samp in data.iter_mut() {
+                    if let Ok(in_samp) = samples.recv_blocking() {
+                        *out_samp = T::from_sample(in_samp);
+                    } else {
+                        log::error!("samples.recv_blocking() returned Err");
+                        *out_samp = T::from_sample(0.0f32);
                     }
-                },
-                |err| {
-                    log::error!("Output stream error: {}", err);
-                },
-                None,
-            )
-            .expect("Failed to build output stream");
+                }
 
-        stream.play().unwrap();
-        kill_rx.recv().unwrap();
-    })
+                samples_written.fetch_add(data_len, Ordering::Relaxed);
+            },
+            |err| {
+                log::error!("Output stream error: {}", err);
+            },
+            None,
+        )
+        .expect("Failed to build output stream");
+
+    stream.play().unwrap();
+
+    stream
 }
 
 impl AudioOut for CpalOut {
@@ -900,6 +761,14 @@ impl AudioOut for CpalOut {
     fn output_samples_needed(&self) -> isize {
         let in_channel = self.samples.rx.len();
         self.block_size() as isize - in_channel as isize
+    }
+
+    fn is_finished(&self) -> bool {
+        if let Some(max_samples) = self.max_samples {
+            self.samples_written() >= max_samples
+        } else {
+            false
+        }
     }
 
     fn write(&mut self, samps: &[f32]) -> GraphRunResult<usize> {

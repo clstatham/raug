@@ -140,7 +140,7 @@ pub fn caterpillar(num_tones: usize) -> Graph {
 }
 
 fn main() {
-    let graph = caterpillar(1);
+    let mut graph = caterpillar(1);
 
     graph
         .write_dot(&mut std::fs::File::create("caterpillar.dot").unwrap())
@@ -150,12 +150,10 @@ fn main() {
     println!("edges: {}", graph.edge_count());
 
     graph
-        .play(CpalOut::spawn(
+        .play(&mut CpalOut::spawn(
             &AudioBackend::Default,
             &AudioDevice::Default,
+            Some(std::time::Duration::from_secs(60)),
         ))
-        // .play(NullOut::new(48_000.0, 512, 2))
-        .unwrap()
-        .run_for(Duration::from_secs(100))
         .unwrap();
 }
