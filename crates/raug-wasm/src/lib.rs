@@ -163,6 +163,7 @@ impl Graph {
         let block_size = self.inner.block_size();
         for c in 0..num_outputs {
             let output = self.inner.get_output(c).unwrap();
+            #[allow(clippy::needless_range_loop)]
             for i in 0..block_size {
                 self.interleaved_output[i * num_outputs + c] = output[i];
             }
