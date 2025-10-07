@@ -4,7 +4,6 @@ use std::ops::Deref;
 
 use node::{ProcessNodeError, ProcessorNode};
 use raug_graph::{
-    graph::Connection,
     node::{AsNodeInputIndex, AsNodeOutputIndex},
     petgraph::{self, Direction, visit::EdgeRef},
 };
@@ -12,7 +11,7 @@ use rustc_hash::FxHashMap;
 
 use crate::{
     graph::node::{BuildOnGraph, IntoNodeInput, IntoNodeOutput, RaugNodeIndexExt},
-    prelude::{Constant, Null, Passthrough, ProcEnv},
+    prelude::{Constant, Null, Param, Passthrough, ProcEnv},
     processor::{Processor, io::ProcessMode},
     signal::Signal,
 };
@@ -21,6 +20,8 @@ pub mod node;
 #[cfg(feature = "playback")]
 pub mod playback;
 pub mod sub_graph;
+
+pub use raug_graph::graph::Connection;
 
 /// An error that occurred while constructing a graph.
 #[derive(Debug, thiserror::Error)]
@@ -124,6 +125,26 @@ impl Graph {
         self.graph.digraph().node_weight(node.0).is_some()
     }
 
+    pub fn get_node(&self, index: usize) -> &ProcessorNode {
+        &self.graph[raug_graph::graph::NodeIndex::new(index)]
+    }
+
+    pub fn get_node_mut(&mut self, index: usize) -> &mut ProcessorNode {
+        &mut self.graph[raug_graph::graph::NodeIndex::new(index)]
+    }
+
+    pub fn node_id_iter(&self) -> impl Iterator<Item = Node> + '_ {
+        self.graph.digraph().node_indices().map(Node)
+    }
+
+    pub fn node_iter(&self) -> impl Iterator<Item = &ProcessorNode> {
+        self.graph.digraph().node_weights()
+    }
+
+    pub fn edge_iter(&self) -> impl Iterator<Item = &Connection> {
+        self.graph.digraph().edge_weights()
+    }
+
     /// Adds an audio input node to the graph.
     pub fn audio_input(&mut self) -> Node {
         Node(self.graph.add_input(ProcessorNode::new(Null::default())))
@@ -151,11 +172,14 @@ impl Graph {
         node.build_on_graph(self)
     }
 
+    pub fn param<T>(&mut self, value: T) -> Node
+    where
+        T: Signal + Copy + Default,
+    {
+        self.node(Param::new(value))
+    }
+
     /// Connects two nodes in the graph.
-    ///
-    /// If the edge already exists, this function does nothing.
-    ///
-    /// If the target node already has an incoming edge at the target input, the existing edge is removed.
     pub fn connect<O, Src, I, Tgt>(&mut self, source: Src, target: Tgt)
     where
         O: AsNodeOutputIndex<ProcessorNode>,
@@ -168,15 +192,47 @@ impl Graph {
         self.graph.connect(*source, *target).unwrap();
     }
 
-    pub fn connect_constant<I, Tgt>(&mut self, value: f32, target: Tgt)
+    /// Connects a constant value to the specified target input.
+    ///
+    /// The constant processor is created and added to the graph automatically.
+    pub fn connect_constant<T, I, Tgt>(&mut self, value: T, target: Tgt)
     where
         I: AsNodeInputIndex<ProcessorNode>,
         Tgt: IntoNodeInput<I>,
+        T: Signal + Clone,
     {
         let constant = self.constant(value);
         self.connect(constant, target);
     }
 
+    /// Connects a parameter with the specified initial value to the specified target input.
+    ///
+    /// The parameter processor is created and added to the graph automatically.
+    ///
+    /// Returns a linked clone of the created `Param<T>` instance, which can be used to update the parameter value at runtime.
+    pub fn connect_param<T, I, Tgt>(&mut self, init: T, target: Tgt) -> Param<T>
+    where
+        I: AsNodeInputIndex<ProcessorNode>,
+        Tgt: IntoNodeInput<I>,
+        T: Signal + Copy + Default,
+    {
+        let param = Param::new(init);
+        let node = self.node(param.clone());
+        self.connect(node.output(0), target);
+        param
+    }
+
+    /// Creates an audio input node and connects it to the specified target input.
+    pub fn connect_audio_input<I, Tgt>(&mut self, target: Tgt)
+    where
+        I: AsNodeInputIndex<ProcessorNode>,
+        Tgt: IntoNodeInput<I>,
+    {
+        let input = self.audio_input();
+        self.connect(input.output(0), target);
+    }
+
+    /// Creates an audio output node and connects the specified source to its input.
     pub fn connect_audio_output<O, Src>(&mut self, source: Src)
     where
         O: AsNodeOutputIndex<ProcessorNode>,

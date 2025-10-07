@@ -118,6 +118,24 @@ impl ProcessorNode {
         self.output_spec.len()
     }
 
+    /// Returns true if the processor is of type `T`.
+    #[inline]
+    pub fn processor_is<T: Processor>(&self) -> bool {
+        self.processor.as_ref().is::<T>()
+    }
+
+    /// Returns a reference to the processor as type `T`, or `None` if the processor is not of type `T`.
+    #[inline]
+    pub fn processor_as<T: Processor>(&self) -> Option<&T> {
+        self.processor.as_ref().downcast_ref::<T>()
+    }
+
+    /// Returns a mutable reference to the processor as type `T`, or `None` if the processor is not of type `T`.
+    #[inline]
+    pub fn processor_as_mut<T: Processor>(&mut self) -> Option<&mut T> {
+        self.processor.as_mut().downcast_mut::<T>()
+    }
+
     /// Allocates memory for the processor.
     #[inline]
     pub fn allocate(&mut self, sample_rate: f32, max_block_size: usize) {

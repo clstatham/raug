@@ -18,6 +18,18 @@ pub struct Node {
 
 #[wasm_bindgen]
 impl Node {
+    #[wasm_bindgen(constructor)]
+    pub fn new(index: u32) -> Self {
+        Self {
+            inner: raug::prelude::Node::new(index as usize),
+        }
+    }
+
+    #[wasm_bindgen(js_name = "id")]
+    pub fn id(&self) -> u32 {
+        self.inner.index() as u32
+    }
+
     #[wasm_bindgen(js_name = "input")]
     pub fn input(&self, index: u32) -> Input {
         Input {
@@ -33,6 +45,40 @@ impl Node {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[wasm_bindgen]
+#[repr(transparent)]
+pub struct Edge {
+    pub(crate) inner: raug::graph::Connection,
+}
+
+#[wasm_bindgen]
+impl Edge {
+    #[wasm_bindgen(js_name = "sourceNode")]
+    pub fn source_node(&self) -> Node {
+        Node {
+            inner: self.inner.source.into(),
+        }
+    }
+
+    #[wasm_bindgen(js_name = "sourceOutputIndex")]
+    pub fn source_output_index(&self) -> u32 {
+        self.inner.source_output
+    }
+
+    #[wasm_bindgen(js_name = "targetNode")]
+    pub fn target_node(&self) -> Node {
+        Node {
+            inner: self.inner.target.into(),
+        }
+    }
+
+    #[wasm_bindgen(js_name = "targetInputIndex")]
+    pub fn target_input_index(&self) -> u32 {
+        self.inner.target_input
+    }
+}
+
 #[wasm_bindgen]
 #[repr(transparent)]
 pub struct Output {
@@ -43,6 +89,44 @@ pub struct Output {
 #[repr(transparent)]
 pub struct Input {
     pub(crate) inner: raug::graph::node::Input<u32>,
+}
+
+#[wasm_bindgen]
+#[repr(transparent)]
+pub struct FloatParam {
+    pub(crate) inner: raug::prelude::Param<f32>,
+}
+
+#[wasm_bindgen]
+impl FloatParam {
+    #[wasm_bindgen(js_name = "set")]
+    pub fn set(&self, value: f32) {
+        self.inner.set(value);
+    }
+
+    #[wasm_bindgen(js_name = "get")]
+    pub fn get(&self) -> f32 {
+        self.inner.get()
+    }
+}
+
+#[wasm_bindgen]
+#[repr(transparent)]
+pub struct BoolParam {
+    pub(crate) inner: raug::prelude::Param<bool>,
+}
+
+#[wasm_bindgen]
+impl BoolParam {
+    #[wasm_bindgen(js_name = "set")]
+    pub fn set(&self, value: bool) {
+        self.inner.set(value);
+    }
+
+    #[wasm_bindgen(js_name = "get")]
+    pub fn get(&self) -> bool {
+        self.inner.get()
+    }
 }
 
 #[derive(Default)]
@@ -68,6 +152,97 @@ impl Graph {
         }
     }
 
+    #[wasm_bindgen(js_name = "allNodes")]
+    pub fn all_nodes(&self) -> js_sys::Array {
+        self.inner
+            .node_id_iter()
+            .map(|node| JsValue::from(Node { inner: node }))
+            .collect()
+    }
+
+    #[wasm_bindgen(js_name = "nodeName")]
+    pub fn node_name(&self, node: &Node) -> String {
+        self.inner.get_node(node.inner.index()).name().to_string()
+    }
+
+    #[wasm_bindgen(js_name = "nodeInputNames")]
+    pub fn node_input_names(&self, node: &Node) -> js_sys::Array {
+        self.inner
+            .get_node(node.inner.index())
+            .input_spec()
+            .iter()
+            .map(|spec| JsValue::from(spec.name.clone()))
+            .collect()
+    }
+
+    #[wasm_bindgen(js_name = "nodeOutputNames")]
+    pub fn node_output_names(&self, node: &Node) -> js_sys::Array {
+        self.inner
+            .get_node(node.inner.index())
+            .output_spec()
+            .iter()
+            .map(|spec| JsValue::from(spec.name.clone()))
+            .collect()
+    }
+
+    #[wasm_bindgen(js_name = "allEdges")]
+    pub fn all_edges(&self) -> js_sys::Array {
+        self.inner
+            .edge_iter()
+            .map(|edge| JsValue::from(Edge { inner: *edge }))
+            .collect()
+    }
+
+    #[wasm_bindgen(js_name = "floatParam")]
+    pub fn float_param(&mut self, value: f32) -> Node {
+        let param = self.inner.param(value);
+        Node { inner: param }
+    }
+
+    #[wasm_bindgen(js_name = "boolParam")]
+    pub fn bool_param(&mut self, value: bool) -> Node {
+        let param = self.inner.param(value);
+        Node { inner: param }
+    }
+
+    #[wasm_bindgen(js_name = "isFloatParam")]
+    pub fn is_float_param(&self, node: &Node) -> bool {
+        self.inner
+            .get_node(node.inner.index())
+            .processor_is::<raug::prelude::Param<f32>>()
+    }
+
+    #[wasm_bindgen(js_name = "isBoolParam")]
+    pub fn is_bool_param(&self, node: &Node) -> bool {
+        self.inner
+            .get_node(node.inner.index())
+            .processor_is::<raug::prelude::Param<bool>>()
+    }
+
+    #[wasm_bindgen(js_name = "getFloatParam")]
+    pub fn get_float_param(&self, node: &Node) -> Result<FloatParam, JsValue> {
+        let proc = self
+            .inner
+            .get_node(node.inner.index())
+            .processor_as::<raug::prelude::Param<f32>>()
+            .ok_or_else(|| JsValue::from_str("Node is not a float param"))?;
+        Ok(FloatParam {
+            inner: proc.clone(),
+        })
+    }
+
+    #[wasm_bindgen(js_name = "getBoolParam")]
+    pub fn get_bool_param(&self, node: &Node) -> Result<BoolParam, JsValue> {
+        let proc = self
+            .inner
+            .get_node(node.inner.index())
+            .processor_as::<raug::prelude::Param<bool>>()
+            .ok_or_else(|| JsValue::from_str("Node is not a bool param"))?;
+        Ok(BoolParam {
+            inner: proc.clone(),
+        })
+    }
+
     #[wasm_bindgen(js_name = "connectRaw")]
     pub fn connect_raw(
         &mut self,
@@ -75,12 +250,20 @@ impl Graph {
         from_index: u32,
         to_node: Node,
         to_index: u32,
-    ) -> Result<(), JsValue> {
+    ) -> Result<Edge, JsValue> {
         self.inner.connect(
             from_node.inner.output(from_index),
             to_node.inner.input(to_index),
         );
-        Ok(())
+
+        Ok(Edge {
+            inner: raug::graph::Connection {
+                source: from_node.inner.into(),
+                source_output: from_index,
+                target: to_node.inner.into(),
+                target_input: to_index,
+            },
+        })
     }
 
     #[wasm_bindgen(js_name = "connect")]
@@ -104,6 +287,24 @@ impl Graph {
     #[wasm_bindgen(js_name = "connectConstant")]
     pub fn connect_constant(&mut self, value: f32, to: Input) -> Result<(), JsValue> {
         self.inner.connect_constant(value, to.inner);
+        Ok(())
+    }
+
+    #[wasm_bindgen(js_name = "connectFloatParam")]
+    pub fn connect_float_param(&mut self, value: f32, to: Input) -> Result<FloatParam, JsValue> {
+        let param = self.inner.connect_param(value, to.inner);
+        Ok(FloatParam { inner: param })
+    }
+
+    #[wasm_bindgen(js_name = "connectBoolParam")]
+    pub fn connect_bool_param(&mut self, value: bool, to: Input) -> Result<BoolParam, JsValue> {
+        let param = self.inner.connect_param(value, to.inner);
+        Ok(BoolParam { inner: param })
+    }
+
+    #[wasm_bindgen(js_name = "connectAudioInput")]
+    pub fn connect_audio_input(&mut self, to: Input) -> Result<(), JsValue> {
+        self.inner.connect_audio_input(to.inner);
         Ok(())
     }
 

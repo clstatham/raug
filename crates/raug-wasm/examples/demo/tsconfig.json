@@ -18,11 +18,14 @@
     "resolveJsonModule": true,
     "types": [
       "vite/client",
-      "audioworklet"
-    ]
+      "audioworklet",
+    ],
+    "jsx": "react-jsx",
+    "jsxImportSource": "react"
   },
   "include": [
     "src/**/*.ts",
-    "src/**/*.d.ts",
+    "src/**/*.tsx",
+    "src/**/*.d.ts", 
   ]
 }

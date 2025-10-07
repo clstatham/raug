@@ -1,6 +1,8 @@
 //! Math built-in processors.
 
-use std::marker::PhantomData;
+use std::{marker::PhantomData, sync::Arc};
+
+use crossbeam::atomic::AtomicCell;
 
 use crate::prelude::*;
 
@@ -48,6 +50,35 @@ impl<T: Signal + Clone> Processor for Constant<T> {
     ) -> Result<(), ProcessorError> {
         // constants never change, and the buffer is already pre-filled with the constant value
         Ok(())
+    }
+}
+
+#[processor(derive(Default, Clone))]
+pub fn param<T>(#[state] value: &mut Arc<AtomicCell<T>>, #[output] out: &mut T) -> ProcResult<()>
+where
+    T: Signal + Copy + Default,
+{
+    *out = value.load();
+    Ok(())
+}
+
+impl<T> Param<T>
+where
+    T: Signal + Copy + Default,
+{
+    pub fn new(init: T) -> Self {
+        Param {
+            value: Arc::new(AtomicCell::new(init)),
+            _t: PhantomData,
+        }
+    }
+
+    pub fn set(&self, value: T) {
+        self.value.store(value);
+    }
+
+    pub fn get(&self) -> T {
+        self.value.load()
     }
 }
 

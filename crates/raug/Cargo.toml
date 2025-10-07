@@ -34,6 +34,7 @@ dot_graph = "0.2.3"
 tynm = "0.2.0"
 raug-graph = { path = "../raug-graph" }
 parking_lot = "0.12.5"
+crossbeam = "0.8.4"
 
 [dev-dependencies]
 env_logger = "0.11.8"

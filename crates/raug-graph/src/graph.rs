@@ -22,7 +22,7 @@ pub enum VisitResult<T> {
 pub type NodeIndex = petgraph::graph::NodeIndex;
 pub type EdgeIndex = petgraph::graph::EdgeIndex;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Connection {
     pub source: NodeIndex,
     pub source_output: u32,

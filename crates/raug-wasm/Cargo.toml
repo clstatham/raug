@@ -2,6 +2,9 @@
 name = "raug-wasm"
 version = "0.1.0"
 edition = "2024"
+description = "WASM bindings for the Raug audio processing library"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/clstatham/raug"
 
 [lib]
 crate-type = ["cdylib"]

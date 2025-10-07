@@ -1,11 +1,10 @@
-import { errorMessage, logMessage } from './log';
+import { errorMessage, logMessage } from "./log";
+import initWasm, { Edge, Graph, Node, getMemory } from "../../../pkg/raug_wasm";
 
-type RaugModule = typeof import('../../../pkg/raug_wasm.js');
-type RaugGraph = InstanceType<RaugModule['Graph']>;
 type AudioWorkletMessage =
-    | { type: 'need'; samples?: number }
-    | { type: 'log'; msg: string }
-    | { type: 'error'; msg: string };
+    | { type: "need"; samples?: number }
+    | { type: "log"; msg: string }
+    | { type: "error"; msg: string };
 
 export default class GraphHandler {
     private readonly blocks: number;
@@ -18,11 +17,10 @@ export default class GraphHandler {
     private readonly samples: Float32Array;
     private readonly meta: SharedArrayBuffer;
     private readonly flags: Int32Array; // [writeIndex, readIndex, availableSamples, version]
-    private graph: RaugGraph | null = null;
-    private raug: RaugModule | null = null;
+    public graph: Graph | null = null;
     private memory: WebAssembly.Memory | null = null;
     private ctx: AudioContext | null = null;
-    private node: AudioWorkletNode | null = null;
+    private running: boolean = false;
 
     constructor(blocks: number, frames: number, channels: number) {
         this.blocks = blocks;
@@ -31,8 +29,10 @@ export default class GraphHandler {
         this.sampleRate = 48_000;
         this.blockSamples = frames * channels;
         this.queueSamples = blocks * this.blockSamples;
-        
-        this.shared = new SharedArrayBuffer(Float32Array.BYTES_PER_ELEMENT * this.queueSamples);
+
+        this.shared = new SharedArrayBuffer(
+            Float32Array.BYTES_PER_ELEMENT * this.queueSamples
+        );
         this.samples = new Float32Array(this.shared);
         this.meta = new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT * 4);
         this.flags = new Int32Array(this.meta);
@@ -43,14 +43,12 @@ export default class GraphHandler {
             return;
         }
 
-        const raug = await import('../../../pkg/raug_wasm.js');
-        await raug.default();
-        this.raug = raug;
+        await initWasm();
 
-        this.graph = new raug.Graph();
+        this.graph = new Graph();
 
         const osc = this.graph.sineOscillator();
-        this.graph.connectConstant(440.0, osc.input(0));
+        this.graph.connectFloatParam(440.0, osc.input(0));
         this.graph.connectAudioOutput(osc.output(0));
         this.graph.connectAudioOutput(osc.output(0));
 
@@ -60,20 +58,22 @@ export default class GraphHandler {
     }
 
     async start(): Promise<void> {
-        if (!this.graph || !this.raug) {
-            throw new Error('Graph handler has not been initialised. Call init() first.');
+        if (!this.graph) {
+            throw new Error(
+                "Graph handler has not been initialised. Call init() first."
+            );
         }
 
         this.ctx = new AudioContext({ sampleRate: this.sampleRate });
 
         this.graph.allocate(this.sampleRate, this.frames);
-        this.memory = this.raug.getMemory() as WebAssembly.Memory;
+        this.memory = getMemory() as WebAssembly.Memory;
         logMessage(`AudioContext started at ${this.sampleRate} Hz.`);
 
-        const moduleUrl = new URL('./raug-worker.ts', import.meta.url);
+        const moduleUrl = new URL("./raug-worker.ts", import.meta.url);
         await this.ctx.audioWorklet.addModule(moduleUrl);
 
-        const node = new AudioWorkletNode(this.ctx, 'raug-worker', {
+        const node = new AudioWorkletNode(this.ctx, "raug-worker", {
             numberOfInputs: 0,
             numberOfOutputs: 1,
             outputChannelCount: [this.channels],
@@ -90,7 +90,7 @@ export default class GraphHandler {
             const { data } = event;
 
             switch (data.type) {
-                case 'need': {
+                case "need": {
                     const minSamples = data.samples ?? this.blockSamples;
                     const target = minSamples * this.blocks;
                     while (Atomics.load(this.flags, 2) < target) {
@@ -98,17 +98,18 @@ export default class GraphHandler {
                     }
                     break;
                 }
-                case 'log':
+                case "log":
                     logMessage(data.msg);
                     break;
-                case 'error':
+                case "error":
                     errorMessage(data.msg);
                     break;
             }
         };
 
         node.connect(this.ctx.destination);
-        this.node = node;
+
+        this.running = true;
     }
 
     async stop(): Promise<void> {
@@ -116,35 +117,144 @@ export default class GraphHandler {
             return;
         }
 
+        this.running = false;
+
         await this.ctx.close();
         this.ctx = null;
-        this.node = null;
-        logMessage('AudioContext stopped.');
+
+        logMessage("AudioContext stopped.");
     }
 
-    enqueueBlock(): void {
+    isRunning(): boolean {
+        return this.running;
+    }
+
+    private enqueueBlock(): void {
         if (!this.graph || !this.memory) {
-            errorMessage('Graph handler is not ready yet.');
+            errorMessage("Graph handler is not ready yet.");
             return;
         }
 
         try {
             this.graph.process();
         } catch (error) {
-            errorMessage('Error during graph processing:', error);
+            errorMessage("Error during graph processing:", error);
             return;
         }
 
         const ptr = this.graph.outputBufferPtr();
-        const wasmView = new Float32Array(this.memory.buffer, ptr, this.blockSamples);
+        const wasmView = new Float32Array(
+            this.memory.buffer,
+            ptr,
+            this.blockSamples
+        );
         const writeIdx = Atomics.load(this.flags, 0);
 
         for (let i = 0; i < this.blockSamples; i += 1) {
             this.samples[(writeIdx + i) % this.queueSamples] = wasmView[i];
         }
 
-        Atomics.store(this.flags, 0, (writeIdx + this.blockSamples) % this.queueSamples);
+        Atomics.store(
+            this.flags,
+            0,
+            (writeIdx + this.blockSamples) % this.queueSamples
+        );
         Atomics.add(this.flags, 2, this.blockSamples);
         Atomics.add(this.flags, 3, 1);
     }
+
+    nodeName(node: Node): string | null {
+        if (!this.graph) {
+            errorMessage("Graph handler is not ready yet.");
+            return null;
+        }
+
+        return this.graph.nodeName(node);
+    }
+
+    nodeInputNames(node: Node): string[] | null {
+        if (!this.graph) {
+            errorMessage("Graph handler is not ready yet.");
+            return null;
+        }
+
+        return this.graph.nodeInputNames(node);
+    }
+
+    nodeOutputNames(node: Node): string[] | null {
+        if (!this.graph) {
+            errorMessage("Graph handler is not ready yet.");
+            return null;
+        }
+
+        return this.graph.nodeOutputNames(node);
+    }
+
+    allNodes(): Node[] {
+        if (!this.graph) {
+            errorMessage("Graph handler is not ready yet.");
+            return [];
+        }
+
+        return this.graph.allNodes();
+    }
+
+    allEdges(): Edge[] {
+        if (!this.graph) {
+            errorMessage("Graph handler is not ready yet.");
+            return [];
+        }
+
+        return this.graph.allEdges();
+    }
+
+    createNode(name: string): Node | null {
+        if (!this.graph) {
+            errorMessage("Graph handler is not ready yet.");
+            return null;
+        }
+
+        try {
+            let fn = this.graph[name as keyof Graph];
+            if (typeof fn !== "function") {
+                errorMessage(`Unknown processor type: ${name}`);
+                return null;
+            }
+
+            const node = (fn as () => Node).call(this.graph);
+            return node;
+        } catch (error) {
+            errorMessage(`Failed to create node of type ${name}:`, error);
+            return null;
+        }
+    }
+
+    connectNodes(
+        source: Node,
+        sourceHandle: number,
+        target: Node,
+        targetHandle: number
+    ): Edge | null {
+        if (!this.graph) {
+            errorMessage("Graph handler is not ready yet.");
+            return null;
+        }
+
+        try {
+            return this.graph.connectRaw(
+                source,
+                sourceHandle,
+                target,
+                targetHandle
+            );
+        } catch (error) {
+            errorMessage(
+                `Failed to connect nodes (${sourceHandle} -> ${targetHandle}):`,
+                error
+            );
+            return null;
+        }
+    }
 }
+
+export const graphHandler = new GraphHandler(8, 128, 2);

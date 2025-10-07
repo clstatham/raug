@@ -6,6 +6,13 @@ use raug::{
 use crate::prelude::*;
 
 pub trait GraphExt {
+    fn smooth<A, AO, B, BO>(&mut self, a: A, factor: B) -> Node
+    where
+        AO: AsNodeOutputIndex<ProcessorNode>,
+        BO: AsNodeOutputIndex<ProcessorNode>,
+        A: IntoNodeOutput<AO>,
+        B: IntoNodeOutput<BO>;
+
     fn powf<A, AO, B, BO>(&mut self, a: A, b: B) -> Node
     where
         AO: AsNodeOutputIndex<ProcessorNode>,
@@ -142,6 +149,19 @@ pub trait GraphExt {
 }
 
 impl GraphExt for Graph {
+    fn smooth<A, AO, B, BO>(&mut self, a: A, factor: B) -> Node
+    where
+        AO: AsNodeOutputIndex<ProcessorNode>,
+        BO: AsNodeOutputIndex<ProcessorNode>,
+        A: IntoNodeOutput<AO>,
+        B: IntoNodeOutput<BO>,
+    {
+        let node = self.node(Smooth::default());
+        self.connect(a, node.input(0));
+        self.connect(factor, node.input(1));
+        node
+    }
+
     fn powf<A, AO, B, BO>(&mut self, a: A, b: B) -> Node
     where
         AO: AsNodeOutputIndex<ProcessorNode>,

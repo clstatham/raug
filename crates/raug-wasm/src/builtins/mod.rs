@@ -1,6 +1,8 @@
 use crate::{Graph, Node};
 use wasm_bindgen::prelude::*;
 
+use raug::processor::Processor;
+
 mod raug_ext {
     pub mod builtins {
         pub use raug_ext::processors::*;
@@ -23,6 +25,39 @@ macro_rules! wrap_processor {
                     Self {
                         inner: <$module::builtins::$proc as Default>::default(),
                     }
+                }
+
+                #[wasm_bindgen(js_name = "name")]
+                pub fn name(&self) -> String {
+                    self.inner.name().to_string()
+                }
+
+                #[wasm_bindgen(js_name = "numInputs")]
+                pub fn num_inputs(&self) -> u32 {
+                    self.inner.input_spec().len() as u32
+                }
+
+                #[wasm_bindgen(js_name = "numOutputs")]
+                pub fn num_outputs(&self) -> u32 {
+                    self.inner.output_spec().len() as u32
+                }
+
+                #[wasm_bindgen(js_name = "inputNames")]
+                pub fn input_names(&self) -> js_sys::Array {
+                    self.inner
+                        .input_spec()
+                        .iter()
+                        .map(|spec| JsValue::from(spec.name.clone()))
+                        .collect()
+                }
+
+                #[wasm_bindgen(js_name = "outputNames")]
+                pub fn output_names(&self) -> js_sys::Array {
+                    self.inner
+                        .output_spec()
+                        .iter()
+                        .map(|spec| JsValue::from(spec.name.clone()))
+                        .collect()
                 }
             }
 
@@ -64,6 +99,11 @@ macro_rules! wrap_processor_generic {
                         inner: <$module::builtins::$inner_proc<$t> as Default>::default(),
                     }
                 }
+
+                #[wasm_bindgen(js_name = "name")]
+                pub fn name(&self) -> String {
+                    self.inner.name().to_string()
+                }
             }
 
             impl Default for $proc {
@@ -97,144 +137,6 @@ wrap_processor! {
     }
 }
 
-/*
-
-pub trait GraphExt {
-    fn powf<A, AO, B, BO>(&mut self, a: A, b: B) -> Node
-    where
-        AO: AsNodeOutputIndex<ProcessorNode>,
-        BO: AsNodeOutputIndex<ProcessorNode>,
-        A: IntoNodeOutput<AO>,
-        B: IntoNodeOutput<BO>;
-
-    fn sqrt<A, AO>(&mut self, a: A) -> Node
-    where
-        AO: AsNodeOutputIndex<ProcessorNode>,
-        A: IntoNodeOutput<AO>;
-
-    fn sin<A, AO>(&mut self, a: A) -> Node
-    where
-        AO: AsNodeOutputIndex<ProcessorNode>,
-        A: IntoNodeOutput<AO>;
-
-    fn cos<A, AO>(&mut self, a: A) -> Node
-    where
-        AO: AsNodeOutputIndex<ProcessorNode>,
-        A: IntoNodeOutput<AO>;
-
-    fn tan<A, AO>(&mut self, a: A) -> Node
-    where
-        AO: AsNodeOutputIndex<ProcessorNode>,
-        A: IntoNodeOutput<AO>;
-
-    fn asin<A, AO>(&mut self, a: A) -> Node
-    where
-        AO: AsNodeOutputIndex<ProcessorNode>,
-        A: IntoNodeOutput<AO>;
-
-    fn acos<A, AO>(&mut self, a: A) -> Node
-    where
-        AO: AsNodeOutputIndex<ProcessorNode>,
-        A: IntoNodeOutput<AO>;
-
-    fn atan<A, AO>(&mut self, a: A) -> Node
-    where
-        AO: AsNodeOutputIndex<ProcessorNode>,
-        A: IntoNodeOutput<AO>;
-
-    fn sinh<A, AO>(&mut self, a: A) -> Node
-    where
-        AO: AsNodeOutputIndex<ProcessorNode>,
-        A: IntoNodeOutput<AO>;
-
-    fn cosh<A, AO>(&mut self, a: A) -> Node
-    where
-        AO: AsNodeOutputIndex<ProcessorNode>,
-        A: IntoNodeOutput<AO>;
-
-    fn tanh<A, AO>(&mut self, a: A) -> Node
-    where
-        AO: AsNodeOutputIndex<ProcessorNode>,
-        A: IntoNodeOutput<AO>;
-
-    fn atan2<A, AO, B, BO>(&mut self, a: A, b: B) -> Node
-    where
-        AO: AsNodeOutputIndex<ProcessorNode>,
-        BO: AsNodeOutputIndex<ProcessorNode>,
-        A: IntoNodeOutput<AO>,
-        B: IntoNodeOutput<BO>;
-
-    fn hypot<A, AO, B, BO>(&mut self, a: A, b: B) -> Node
-    where
-        AO: AsNodeOutputIndex<ProcessorNode>,
-        BO: AsNodeOutputIndex<ProcessorNode>,
-        A: IntoNodeOutput<AO>,
-        B: IntoNodeOutput<BO>;
-
-    fn abs<A, AO>(&mut self, a: A) -> Node
-    where
-        AO: AsNodeOutputIndex<ProcessorNode>,
-        A: IntoNodeOutput<AO>;
-
-    fn ceil<A, AO>(&mut self, a: A) -> Node
-    where
-        AO: AsNodeOutputIndex<ProcessorNode>,
-        A: IntoNodeOutput<AO>;
-
-    fn floor<A, AO>(&mut self, a: A) -> Node
-    where
-        AO: AsNodeOutputIndex<ProcessorNode>,
-        A: IntoNodeOutput<AO>;
-
-    fn round<A, AO>(&mut self, a: A) -> Node
-    where
-        AO: AsNodeOutputIndex<ProcessorNode>,
-        A: IntoNodeOutput<AO>;
-
-    fn trunc<A, AO>(&mut self, a: A) -> Node
-    where
-        AO: AsNodeOutputIndex<ProcessorNode>,
-        A: IntoNodeOutput<AO>;
-
-    fn fract<A, AO>(&mut self, a: A) -> Node
-    where
-        AO: AsNodeOutputIndex<ProcessorNode>,
-        A: IntoNodeOutput<AO>;
-
-    fn recip<A, AO>(&mut self, a: A) -> Node
-    where
-        AO: AsNodeOutputIndex<ProcessorNode>,
-        A: IntoNodeOutput<AO>;
-
-    fn signum<A, AO>(&mut self, a: A) -> Node
-    where
-        AO: AsNodeOutputIndex<ProcessorNode>,
-        A: IntoNodeOutput<AO>;
-
-    fn max<A, AO, B, BO>(&mut self, a: A, b: B) -> Node
-    where
-        AO: AsNodeOutputIndex<ProcessorNode>,
-        BO: AsNodeOutputIndex<ProcessorNode>,
-        A: IntoNodeOutput<AO>,
-        B: IntoNodeOutput<BO>;
-
-    fn min<A, AO, B, BO>(&mut self, a: A, b: B) -> Node
-    where
-        AO: AsNodeOutputIndex<ProcessorNode>,
-        BO: AsNodeOutputIndex<ProcessorNode>,
-        A: IntoNodeOutput<AO>,
-        B: IntoNodeOutput<BO>;
-
-    fn clamp<A, AO, B, BO, C, CO>(&mut self, a: A, min: B, max: C) -> Node
-    where
-        AO: AsNodeOutputIndex<ProcessorNode>,
-        BO: AsNodeOutputIndex<ProcessorNode>,
-        CO: AsNodeOutputIndex<ProcessorNode>,
-        A: IntoNodeOutput<AO>,
-        B: IntoNodeOutput<BO>,
-        C: IntoNodeOutput<CO>;
-}
- */
 wrap_processor! {
     mod raug_ext {
         Powf powf;
@@ -258,9 +160,16 @@ wrap_processor! {
         Fract fract;
         Recip recip;
         Signum signum;
+        Exp exp;
+        Exp2 exp2;
+        Log log;
+        Log2 log2;
+        Log10 log10;
         SineOscillator sineOscillator;
         BlSawOscillator blSawOscillator;
-
+        NoiseOscillator noiseOscillator;
+        PhaseAccumulator phaseAccumulator;
+        Smooth smooth;
     }
 }
 
@@ -268,13 +177,11 @@ wrap_processor_generic! {
     mod raug {
         ConstantFloat constantFloat = Constant<f32>;
         ConstantBool constantBool = Constant<bool>;
-
     }
 }
 
 wrap_processor_generic! {
     mod raug_ext {
-
         FloatMax floatMax = Max<f32>;
         FloatMin floatMin = Min<f32>;
         FloatClamp floatClamp = Clamp<f32>;

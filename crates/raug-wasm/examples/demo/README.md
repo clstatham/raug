@@ -1,6 +1,6 @@
 # Raug WASM Demo
 
-This example bundles the `raug` audio worklet implementation with TypeScript and Vite.
+This example bundles the `raug` audio worklet implementation with TypeScript, Vite, and Cytoscape.js.
 
 ## Prerequisites
 

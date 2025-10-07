@@ -1,6 +1,19 @@
 import { defineConfig } from 'vite';
 import path from 'node:path';
 
+
+const wasmContentTypePlugin = {
+  name: "wasm-content-type-plugin",
+  configureServer(server: any) {
+    server.middlewares.use((req: any, res: any, next: any) => {
+      if (req.url.endsWith(".wasm")) {
+        res.setHeader("Content-Type", "application/wasm");
+      }
+      next();
+    });
+  },
+};
+
 const coopHeaders = {
   'Cross-Origin-Opener-Policy': 'same-origin',
   'Cross-Origin-Embedder-Policy': 'require-corp',
@@ -28,4 +41,5 @@ export default defineConfig({
     },
   },
   assetsInclude: ['**/*.wasm'],
+  plugins: [wasmContentTypePlugin],
 });
