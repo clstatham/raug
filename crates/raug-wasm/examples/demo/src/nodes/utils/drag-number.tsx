@@ -3,9 +3,14 @@ import { useState, useRef, useCallback, useEffect } from "react";
 type DragLabelProps = {
     setValue: (v: number) => void;
     getValue: () => number;
+    speed: number;
 };
 
-export default function DragLabel({ setValue, getValue }: DragLabelProps) {
+export default function DragLabel({
+    setValue,
+    getValue,
+    speed = 0.01,
+}: DragLabelProps) {
     const [snapshot, setSnapshot] = useState(getValue());
     const [isDragging, setIsDragging] = useState(false);
     const startXRef = useRef(0);
@@ -32,7 +37,7 @@ export default function DragLabel({ setValue, getValue }: DragLabelProps) {
         function onMove(e: MouseEvent) {
             if (isDragging) {
                 const delta = e.clientX - startXRef.current;
-                const newValue = baseValueRef.current + delta;
+                const newValue = baseValueRef.current + delta * speed;
                 setSnapshot(newValue);
                 setValue(newValue);
             }
@@ -49,7 +54,7 @@ export default function DragLabel({ setValue, getValue }: DragLabelProps) {
             window.removeEventListener("mousemove", onMove);
             window.removeEventListener("mouseup", onEnd);
         };
-    }, [isDragging, setValue]);
+    }, [isDragging, setValue, getValue, speed]);
 
     return (
         <span

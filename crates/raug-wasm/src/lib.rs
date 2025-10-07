@@ -160,29 +160,44 @@ impl Graph {
             .collect()
     }
 
+    #[wasm_bindgen(js_name = "allAudioOutputs")]
+    pub fn all_audio_outputs(&self) -> js_sys::Array {
+        self.inner
+            .output_indices()
+            .map(|node| JsValue::from(Node { inner: node }))
+            .collect()
+    }
+
+    #[wasm_bindgen(js_name = "hasNode")]
+    pub fn has_node(&self, node: &Node) -> bool {
+        self.inner.get_node(node.inner.index()).is_some()
+    }
+
     #[wasm_bindgen(js_name = "nodeName")]
-    pub fn node_name(&self, node: &Node) -> String {
-        self.inner.get_node(node.inner.index()).name().to_string()
+    pub fn node_name(&self, node: &Node) -> Option<String> {
+        Some(self.inner.get_node(node.inner.index())?.name().to_string())
     }
 
     #[wasm_bindgen(js_name = "nodeInputNames")]
-    pub fn node_input_names(&self, node: &Node) -> js_sys::Array {
-        self.inner
-            .get_node(node.inner.index())
-            .input_spec()
-            .iter()
-            .map(|spec| JsValue::from(spec.name.clone()))
-            .collect()
+    pub fn node_input_names(&self, node: &Node) -> Option<js_sys::Array> {
+        let node = self.inner.get_node(node.inner.index())?;
+        Some(
+            node.input_spec()
+                .iter()
+                .map(|spec| JsValue::from(spec.name.clone()))
+                .collect(),
+        )
     }
 
     #[wasm_bindgen(js_name = "nodeOutputNames")]
-    pub fn node_output_names(&self, node: &Node) -> js_sys::Array {
-        self.inner
-            .get_node(node.inner.index())
-            .output_spec()
-            .iter()
-            .map(|spec| JsValue::from(spec.name.clone()))
-            .collect()
+    pub fn node_output_names(&self, node: &Node) -> Option<js_sys::Array> {
+        let node = self.inner.get_node(node.inner.index())?;
+        Some(
+            node.output_spec()
+                .iter()
+                .map(|spec| JsValue::from(spec.name.clone()))
+                .collect(),
+        )
     }
 
     #[wasm_bindgen(js_name = "allEdges")]
@@ -206,17 +221,21 @@ impl Graph {
     }
 
     #[wasm_bindgen(js_name = "isFloatParam")]
-    pub fn is_float_param(&self, node: &Node) -> bool {
-        self.inner
-            .get_node(node.inner.index())
-            .processor_is::<raug::prelude::Param<f32>>()
+    pub fn is_float_param(&self, node: &Node) -> Option<bool> {
+        Some(
+            self.inner
+                .get_node(node.inner.index())?
+                .processor_is::<raug::prelude::Param<f32>>(),
+        )
     }
 
     #[wasm_bindgen(js_name = "isBoolParam")]
-    pub fn is_bool_param(&self, node: &Node) -> bool {
-        self.inner
-            .get_node(node.inner.index())
-            .processor_is::<raug::prelude::Param<bool>>()
+    pub fn is_bool_param(&self, node: &Node) -> Option<bool> {
+        Some(
+            self.inner
+                .get_node(node.inner.index())?
+                .processor_is::<raug::prelude::Param<bool>>(),
+        )
     }
 
     #[wasm_bindgen(js_name = "getFloatParam")]
@@ -224,6 +243,7 @@ impl Graph {
         let proc = self
             .inner
             .get_node(node.inner.index())
+            .ok_or_else(|| JsValue::from_str("Node not found"))?
             .processor_as::<raug::prelude::Param<f32>>()
             .ok_or_else(|| JsValue::from_str("Node is not a float param"))?;
         Ok(FloatParam {
@@ -236,6 +256,7 @@ impl Graph {
         let proc = self
             .inner
             .get_node(node.inner.index())
+            .ok_or_else(|| JsValue::from_str("Node not found"))?
             .processor_as::<raug::prelude::Param<bool>>()
             .ok_or_else(|| JsValue::from_str("Node is not a bool param"))?;
         Ok(BoolParam {
@@ -246,9 +267,9 @@ impl Graph {
     #[wasm_bindgen(js_name = "connectRaw")]
     pub fn connect_raw(
         &mut self,
-        from_node: Node,
+        from_node: &Node,
         from_index: u32,
-        to_node: Node,
+        to_node: &Node,
         to_index: u32,
     ) -> Result<Edge, JsValue> {
         self.inner.connect(
@@ -267,49 +288,78 @@ impl Graph {
     }
 
     #[wasm_bindgen(js_name = "connect")]
-    pub fn connect(&mut self, from: Output, to: Input) -> Result<(), JsValue> {
+    pub fn connect(&mut self, from: &Output, to: &Input) -> Result<(), JsValue> {
         self.inner.connect(from.inner, to.inner);
         Ok(())
     }
 
     #[wasm_bindgen(js_name = "disconnectRaw")]
-    pub fn disconnect_raw(&mut self, to_node: Node, to_index: u32) -> Result<(), JsValue> {
-        self.inner.disconnect(to_node.inner.input(to_index));
-        Ok(())
+    pub fn disconnect_raw(
+        &mut self,
+        from_node: &Node,
+        from_index: u32,
+        to_node: &Node,
+        to_index: u32,
+    ) -> Result<Edge, JsValue> {
+        self.inner.disconnect(
+            from_node.inner.output(from_index),
+            to_node.inner.input(to_index),
+        );
+        Ok(Edge {
+            inner: raug::graph::Connection {
+                source: from_node.inner.into(),
+                source_output: from_index,
+                target: to_node.inner.into(),
+                target_input: to_index,
+            },
+        })
     }
 
     #[wasm_bindgen(js_name = "disconnect")]
-    pub fn disconnect(&mut self, to: Input) -> Result<(), JsValue> {
-        self.inner.disconnect(to.inner);
-        Ok(())
+    pub fn disconnect(&mut self, from: &Output, to: &Input) -> Result<Edge, JsValue> {
+        self.inner.disconnect(from.inner, to.inner);
+        Ok(Edge {
+            inner: raug::graph::Connection {
+                source: from.inner.node,
+                source_output: from.inner.index,
+                target: to.inner.node,
+                target_input: to.inner.index,
+            },
+        })
     }
 
     #[wasm_bindgen(js_name = "connectConstant")]
-    pub fn connect_constant(&mut self, value: f32, to: Input) -> Result<(), JsValue> {
+    pub fn connect_constant(&mut self, value: f32, to: &Input) -> Result<(), JsValue> {
         self.inner.connect_constant(value, to.inner);
         Ok(())
     }
 
     #[wasm_bindgen(js_name = "connectFloatParam")]
-    pub fn connect_float_param(&mut self, value: f32, to: Input) -> Result<FloatParam, JsValue> {
+    pub fn connect_float_param(&mut self, value: f32, to: &Input) -> Result<FloatParam, JsValue> {
         let param = self.inner.connect_param(value, to.inner);
         Ok(FloatParam { inner: param })
     }
 
     #[wasm_bindgen(js_name = "connectBoolParam")]
-    pub fn connect_bool_param(&mut self, value: bool, to: Input) -> Result<BoolParam, JsValue> {
+    pub fn connect_bool_param(&mut self, value: bool, to: &Input) -> Result<BoolParam, JsValue> {
         let param = self.inner.connect_param(value, to.inner);
         Ok(BoolParam { inner: param })
     }
 
+    #[wasm_bindgen(js_name = "audioOutput")]
+    pub fn audio_output(&mut self) -> Result<Node, JsValue> {
+        let node = self.inner.audio_output();
+        Ok(Node { inner: node })
+    }
+
     #[wasm_bindgen(js_name = "connectAudioInput")]
-    pub fn connect_audio_input(&mut self, to: Input) -> Result<(), JsValue> {
+    pub fn connect_audio_input(&mut self, to: &Input) -> Result<(), JsValue> {
         self.inner.connect_audio_input(to.inner);
         Ok(())
     }
 
     #[wasm_bindgen(js_name = "connectAudioOutput")]
-    pub fn connect_audio_output(&mut self, from: Output) -> Result<(), JsValue> {
+    pub fn connect_audio_output(&mut self, from: &Output) -> Result<(), JsValue> {
         self.inner.connect_audio_output(from.inner);
         Ok(())
     }

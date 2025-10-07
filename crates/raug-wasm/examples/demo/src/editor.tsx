@@ -1,5 +1,5 @@
 import { graphHandler } from "./graph-handler";
-import { logMessage } from "./log";
+import { errorMessage, logMessage } from "./log";
 import {
     addEdge as addFlowEdge,
     applyEdgeChanges,
@@ -10,23 +10,27 @@ import {
     Panel,
     ReactFlow,
 } from "@xyflow/react";
+
 import "@xyflow/react/dist/style.css";
+import "./index.css";
+
 import { createWithEqualityFn } from "zustand/traditional";
 import { shallow } from "zustand/shallow";
 import ProcessorNode from "./nodes/processor-node";
 import { Edge, FloatParam, Node } from "../../../pkg/raug_wasm";
 import NumberNode from "./nodes/number-node";
+import CustomEdge from "./edge";
+import DacNode from "./nodes/dac-node";
 
 export const useEditorStore = createWithEqualityFn((set: any, get: any) => ({
     nodes: [] as any[],
     edges: [] as any[],
     isRunning: false,
-    edgeReconnectSuccessful: true,
 
     toggleRunning() {
         if (get().isRunning) {
-            graphHandler.stop();
             set({ isRunning: false });
+            graphHandler.stop();
         } else {
             graphHandler.start();
             set({ isRunning: true });
@@ -40,6 +44,40 @@ export const useEditorStore = createWithEqualityFn((set: any, get: any) => ({
     },
 
     onEdgeChanges(changes: EdgeChange[]) {
+        for (const change of changes) {
+            if (change.type === "remove") {
+                logMessage("Removing edge:", change);
+                const edge = get().edges.find((e: any) => e.id === change.id);
+                if (edge) {
+                    const ids = change.id.split("-");
+                    if (ids.length === 4) {
+                        const sourceId = parseInt(ids[0], 10);
+                        const sourceHandle = parseInt(ids[1], 10);
+                        const targetId = parseInt(ids[2], 10);
+                        const targetHandle = parseInt(ids[3], 10);
+
+                        const sourceNode = new Node(sourceId);
+                        const targetNode = new Node(targetId);
+
+                        graphHandler.graph?.disconnectRaw(
+                            sourceNode,
+                            sourceHandle,
+                            targetNode,
+                            targetHandle
+                        );
+                    } else {
+                        errorMessage(
+                            `Invalid edge id format: ${change.id}, expected format: sourceId-sourceHandle-targetId-targetHandle`
+                        );
+                    }
+                } else {
+                    errorMessage(`Edge not found: ${change.id}`);
+                }
+            } else {
+                logMessage("Edge change:", change);
+            }
+        }
+
         set({
             edges: applyEdgeChanges(changes, get().edges),
         });
@@ -56,22 +94,53 @@ export const useEditorStore = createWithEqualityFn((set: any, get: any) => ({
         );
     },
 
-    addNumberParamNode(
-        raugNode: Node,
-        raugParam: FloatParam,
-        position?: Position
-    ) {
-        const nodeOutputs = graphHandler.nodeOutputNames(raugNode) ?? [];
-        const nodeInputs = graphHandler.nodeInputNames(raugNode) ?? [];
+    addDacNode(raugNode: Node, index: number, position?: Position) {
+        const node = {
+            id: raugNode.id().toString(),
+            data: {
+                label: "DAC",
+                node: raugNode,
+                name: "DAC",
+                index: index,
+            },
+            type: "dac",
+            position: position ?? {
+                x: Math.random() * 250,
+                y: Math.random() * 250,
+            },
+            width: 150,
+            height: 60,
+        };
 
+        logMessage("Adding DAC node:", node);
+
+        set((state: any) => {
+            return {
+                nodes: [...state.nodes, node],
+            };
+        });
+    },
+
+    createDacNode(): string | null {
+        const index = graphHandler.graph?.numAudioOutputs() ?? 0;
+        const raugNode = graphHandler.graph?.audioOutput()!;
+
+        if (!raugNode) {
+            errorMessage("Failed to create DAC node");
+            return null;
+        }
+
+        get().addDacNode(raugNode, index);
+
+        return raugNode.id().toString();
+    },
+
+    addNumberNode(raugNode: Node, raugParam: FloatParam, position?: Position) {
         const node = {
             id: raugNode.id().toString(),
             data: {
                 label: "Number",
                 node: raugNode,
-                name: "Number",
-                inputNames: nodeInputs,
-                outputNames: nodeOutputs,
                 setValue: (v: number) => {
                     raugParam.set(v);
                 },
@@ -79,16 +148,10 @@ export const useEditorStore = createWithEqualityFn((set: any, get: any) => ({
                     return raugParam.get();
                 },
             },
-            type: "numberParam",
+            type: "number",
             position: position ?? {
                 x: Math.random() * 250,
                 y: Math.random() * 250,
-            },
-            style: {
-                padding: 10,
-                border: "1px solid #777",
-                borderRadius: 5,
-                background: "#fff",
             },
             width: 150,
             height: 80,
@@ -103,10 +166,26 @@ export const useEditorStore = createWithEqualityFn((set: any, get: any) => ({
         });
     },
 
+    createNumberNode(value: number): string | null {
+        const raugNode = graphHandler.graph?.floatParam(value)!;
+
+        if (!raugNode) {
+            errorMessage("Failed to create number param");
+            return null;
+        }
+
+        get().addNumberNode(
+            raugNode,
+            graphHandler.graph?.getFloatParam(raugNode)!
+        );
+
+        return raugNode.id().toString();
+    },
+
     addProcessorNode(raugNode: Node, position: Position) {
-        const nodeName = graphHandler.nodeName(raugNode) ?? "Node";
-        const nodeOutputs = graphHandler.nodeOutputNames(raugNode) ?? [];
-        const nodeInputs = graphHandler.nodeInputNames(raugNode) ?? [];
+        const nodeName = graphHandler.graph?.nodeName(raugNode) ?? "Node";
+        const nodeOutputs = graphHandler.graph?.nodeOutputNames(raugNode) ?? [];
+        const nodeInputs = graphHandler.graph?.nodeInputNames(raugNode) ?? [];
 
         const numOutputs = nodeOutputs.length;
         const numInputs = nodeInputs.length;
@@ -128,12 +207,6 @@ export const useEditorStore = createWithEqualityFn((set: any, get: any) => ({
                 x: Math.random() * 250,
                 y: Math.random() * 250,
             },
-            style: {
-                padding: 10,
-                border: "1px solid #777",
-                borderRadius: 5,
-                background: "#fff",
-            },
             width: 150,
             height: height,
         };
@@ -151,7 +224,7 @@ export const useEditorStore = createWithEqualityFn((set: any, get: any) => ({
         const raugNode = graphHandler.createNode(name)!;
 
         if (!raugNode) {
-            logMessage(`Failed to create node of type ${name}`);
+            errorMessage(`Failed to create node of type ${name}`);
             return null;
         }
 
@@ -163,12 +236,18 @@ export const useEditorStore = createWithEqualityFn((set: any, get: any) => ({
     addEdge(raugEdge: Edge) {
         const sourceNode = raugEdge.sourceNode();
         const targetNode = raugEdge.targetNode();
+        const sourceOutput = raugEdge.sourceOutputIndex();
+        const targetInput = raugEdge.targetInputIndex();
 
-        const connection: Connection = {
+        const id = `${sourceNode.id()}-${sourceOutput}-${targetNode.id()}-${targetInput}`;
+
+        const connection = {
+            id: id,
+            type: "custom",
             source: sourceNode.id().toString(),
-            sourceHandle: raugEdge.sourceOutputIndex().toString(),
+            sourceHandle: sourceOutput.toString(),
             target: targetNode.id().toString(),
-            targetHandle: raugEdge.targetInputIndex().toString(),
+            targetHandle: targetInput.toString(),
         };
 
         logMessage("Adding edge:", connection);
@@ -203,7 +282,7 @@ export const useEditorStore = createWithEqualityFn((set: any, get: any) => ({
         );
 
         if (!edge) {
-            logMessage(
+            errorMessage(
                 `Failed to create edge from node ${source} to node ${target}`
             );
             return;
@@ -218,8 +297,8 @@ type Position = {
     y: number;
 };
 
-/*
-Topological sort of the nodes in the graph, returning x-positions based on in-degree and y-position based on breadth.
+/**
+Topological sort of the nodes in the graph, returning x-positions based on in-degree and y-positions based on breadth.
 */
 function sortNodesTopologically(): Map<number, Position> | null {
     if (!graphHandler) {
@@ -227,8 +306,13 @@ function sortNodesTopologically(): Map<number, Position> | null {
         return null;
     }
 
-    const nodes = graphHandler.allNodes();
-    const edges = graphHandler.allEdges();
+    const nodes = graphHandler.graph?.allNodes();
+    const edges = graphHandler.graph?.allEdges();
+
+    if (!nodes || !edges) {
+        logMessage("Graph is empty.");
+        return null;
+    }
 
     const inDegree = new Map<number, number>();
     const breadth = new Map<number, number>();
@@ -270,7 +354,7 @@ function sortNodesTopologically(): Map<number, Position> | null {
     }
 
     if (sorted.length !== nodes.length) {
-        logMessage("Graph has at least one cycle, topological sort failed.");
+        errorMessage("Graph has at least one cycle, topological sort failed.");
         return null;
     }
 
@@ -286,9 +370,6 @@ function sortNodesTopologically(): Map<number, Position> | null {
     }
 
     for (const [b, nodeIds] of breadthLevels.entries()) {
-        // nodeIds.forEach((nodeId, index) => {
-        //     positions.set(nodeId, { x: sorted.indexOf(nodeId), y: index });
-        // });
         nodeIds.forEach((nodeId, index) => {
             positions.set(nodeId, { x: b, y: index });
         });
@@ -299,14 +380,20 @@ function sortNodesTopologically(): Map<number, Position> | null {
 
 export function populateNodes() {
     if (!graphHandler) {
-        logMessage("Graph handler is not ready yet.");
+        errorMessage("Graph handler is not ready yet.");
         return;
     }
 
     const store = useEditorStore.getState();
 
-    const nodes = graphHandler.allNodes();
-    const edges = graphHandler.allEdges();
+    const nodes = graphHandler.graph?.allNodes();
+    const edges = graphHandler.graph?.allEdges();
+    const audioOutputs = graphHandler.graph?.allAudioOutputs();
+
+    if (!nodes || !edges) {
+        logMessage("Graph is empty, nothing to populate.");
+        return;
+    }
 
     logMessage(
         `Populating editor with ${nodes.length} nodes and ${edges.length} edges.`
@@ -320,11 +407,14 @@ export function populateNodes() {
         position.y *= 100;
 
         if (graphHandler.graph?.isFloatParam(node)) {
-            store.addNumberParamNode(
+            store.addNumberNode(
                 node,
                 graphHandler.graph?.getFloatParam(node)!,
                 position
             );
+        } else if (audioOutputs?.some((n) => n.id() === node.id())) {
+            const index = audioOutputs.findIndex((n) => n.id() === node.id());
+            store.addDacNode(node, index, position);
         } else {
             store.addProcessorNode(node, position);
         }
@@ -345,20 +435,33 @@ export default function Editor() {
         onNodeChanges: state.onNodeChanges,
         onEdgeChanges: state.onEdgeChanges,
         onConnect: state.onConnect,
-        createNode: state.createNode,
+        createProcessorNode: state.createProcessorNode,
+        createEdge: state.createEdge,
+        addProcessorNode: state.addProcessorNode,
+        addNumberNode: state.addNumberNode,
+        createNumberNode: state.createNumberNode,
+        addEdge: state.addEdge,
+        addFloatParamNode: state.addFloatParamNode,
     });
 
     const store = useEditorStore(selector, shallow);
 
     const nodeTypes = {
         processor: ProcessorNode,
-        numberParam: NumberNode,
+        number: NumberNode,
+        dac: DacNode,
+    };
+
+    const edgeTypes = {
+        custom: CustomEdge,
     };
 
     return (
-        <div style={{ height: 400, border: "1px solid #cccccc" }}>
+        <div className="editor-container" style={{ height: "500px" }}>
             <ReactFlow
+                className="editor-flow"
                 nodeTypes={nodeTypes}
+                edgeTypes={edgeTypes}
                 nodes={store.nodes}
                 edges={store.edges}
                 onNodesChange={store.onNodeChanges}
@@ -366,13 +469,44 @@ export default function Editor() {
                 onConnect={store.onConnect}
                 fitView
             >
-                <Panel position="top-left">
+                <Panel position="bottom-left">
                     <button
                         onClick={() => {
                             store.toggleRunning();
                         }}
                     >
                         {store.isRunning ? "Stop" : "Play"}
+                    </button>
+                </Panel>
+                <Panel position="top-left">
+                    <button
+                        onClick={() => {
+                            const nodeId = prompt(
+                                "Enter processor node type (e.g., Oscillator, Gain, etc.):"
+                            );
+                            if (nodeId) {
+                                store.createProcessorNode(nodeId);
+                            }
+                        }}
+                    >
+                        Add Node
+                    </button>
+                    <button
+                        onClick={() => {
+                            const value = prompt("Enter value:", "0.0");
+                            if (value !== null) {
+                                const floatValue = parseFloat(value);
+                                if (isNaN(floatValue)) {
+                                    errorMessage(
+                                        "Invalid float value entered."
+                                    );
+                                    return;
+                                }
+                                store.createNumberNode(floatValue);
+                            }
+                        }}
+                    >
+                        Add Number
                     </button>
                 </Panel>
                 <Background />

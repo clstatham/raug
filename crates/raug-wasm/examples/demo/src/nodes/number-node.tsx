@@ -1,38 +1,38 @@
-import { nodeInputsJsx, nodeOutputsJsx } from "./processor-node";
+import {
+    nodeInputsJsx,
+    nodeOutputsJsx,
+    useNodeDeletionEffect,
+} from "./processor-node";
 import DragLabel from "./utils/drag-number";
 
 type NumberNodeProps = {
     data: {
-        name: string;
-        inputNames: string[];
-        outputNames: string[];
         setValue: (v: number) => void;
         getValue: () => number;
+        speed: number;
     };
 };
 
 export default function NumberNode(props: NumberNodeProps) {
-    const { name, inputNames, outputNames, setValue, getValue } = props.data;
+    const { setValue, getValue, speed } = props.data;
+
+    useNodeDeletionEffect(props);
+
     return (
-        <div className={"number-node-" + name.toLowerCase()}>
-            <div style={{ textAlign: "center", fontWeight: "bold" }}>
-                <strong>Number</strong>
+        <div className={"number-node"}>
+            <div className="node-title">
+                <strong className="node-title__text">Number</strong>
             </div>
-            <div
-                id="number-node-value"
-                style={{ fontSize: "24px", textAlign: "center" }}
-            >
-                <DragLabel setValue={setValue} getValue={getValue} />
-            </div>
-            <div
-                style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "flex-start",
-                }}
-            >
-                <div>{nodeInputsJsx(inputNames)}</div>
-                <div>{nodeOutputsJsx(outputNames)}</div>
+            <div className="node-ports">
+                <div>{nodeInputsJsx([])}</div>
+                <div id="number-node-value" className="number-node__value">
+                    <DragLabel
+                        setValue={setValue}
+                        getValue={getValue}
+                        speed={speed}
+                    />
+                </div>
+                <div>{nodeOutputsJsx([""])}</div>
             </div>
         </div>
     );

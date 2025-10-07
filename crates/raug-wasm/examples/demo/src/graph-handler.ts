@@ -49,8 +49,11 @@ export default class GraphHandler {
 
         const osc = this.graph.sineOscillator();
         this.graph.connectFloatParam(440.0, osc.input(0));
-        this.graph.connectAudioOutput(osc.output(0));
-        this.graph.connectAudioOutput(osc.output(0));
+        const mul = this.graph.mul();
+        this.graph.connectFloatParam(0.1, mul.input(1));
+        this.graph.connectRaw(osc, 0, mul, 0);
+        this.graph.connectAudioOutput(mul.output(0));
+        this.graph.connectAudioOutput(mul.output(0));
 
         logMessage(
             `Graph initialized with ${this.graph.nodeCount()} nodes and ${this.graph.numAudioOutputs()} audio outputs.`
@@ -161,51 +164,6 @@ export default class GraphHandler {
         );
         Atomics.add(this.flags, 2, this.blockSamples);
         Atomics.add(this.flags, 3, 1);
-    }
-
-    nodeName(node: Node): string | null {
-        if (!this.graph) {
-            errorMessage("Graph handler is not ready yet.");
-            return null;
-        }
-
-        return this.graph.nodeName(node);
-    }
-
-    nodeInputNames(node: Node): string[] | null {
-        if (!this.graph) {
-            errorMessage("Graph handler is not ready yet.");
-            return null;
-        }
-
-        return this.graph.nodeInputNames(node);
-    }
-
-    nodeOutputNames(node: Node): string[] | null {
-        if (!this.graph) {
-            errorMessage("Graph handler is not ready yet.");
-            return null;
-        }
-
-        return this.graph.nodeOutputNames(node);
-    }
-
-    allNodes(): Node[] {
-        if (!this.graph) {
-            errorMessage("Graph handler is not ready yet.");
-            return [];
-        }
-
-        return this.graph.allNodes();
-    }
-
-    allEdges(): Edge[] {
-        if (!this.graph) {
-            errorMessage("Graph handler is not ready yet.");
-            return [];
-        }
-
-        return this.graph.allEdges();
     }
 
     createNode(name: string): Node | null {

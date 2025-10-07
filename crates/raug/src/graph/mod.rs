@@ -125,8 +125,10 @@ impl Graph {
         self.graph.digraph().node_weight(node.0).is_some()
     }
 
-    pub fn get_node(&self, index: usize) -> &ProcessorNode {
-        &self.graph[raug_graph::graph::NodeIndex::new(index)]
+    pub fn get_node(&self, index: usize) -> Option<&ProcessorNode> {
+        self.graph
+            .digraph()
+            .node_weight(raug_graph::graph::NodeIndex::new(index))
     }
 
     pub fn get_node_mut(&mut self, index: usize) -> &mut ProcessorNode {
@@ -320,13 +322,16 @@ impl Graph {
     /// Disconnects two nodes in the graph at the specified input and output indices.
     ///
     /// Does nothing if the edge does not exist.
-    pub fn disconnect<I, Tgt>(&mut self, target: Tgt) -> Option<Connection>
+    pub fn disconnect<O, Src, I, Tgt>(&mut self, source: Src, target: Tgt)
     where
+        O: AsNodeOutputIndex<ProcessorNode>,
         I: AsNodeInputIndex<ProcessorNode>,
+        Src: IntoNodeOutput<O>,
         Tgt: IntoNodeInput<I>,
     {
+        let source = source.into_node_output(self);
         let target = target.into_node_input(self);
-        self.graph.disconnect(target.0)
+        self.graph.disconnect(*source, *target);
     }
 
     /// Disconnects all inputs to the specified node.

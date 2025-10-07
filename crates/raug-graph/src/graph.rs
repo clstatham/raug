@@ -187,28 +187,43 @@ impl<N: Node> Graph<N> {
         Ok(self.digraph.add_edge(source, target, connection))
     }
 
-    pub fn disconnect<I, Tgt>(&mut self, target: Tgt) -> Option<Connection>
+    pub fn disconnect<O, Src, I, Tgt>(&mut self, source: Src, target: Tgt)
     where
+        O: AsNodeOutputIndex<N>,
         I: AsNodeInputIndex<N>,
+        Src: Into<NodeOutput<N, O>> + Copy,
         Tgt: Into<NodeInput<N, I>> + Copy,
     {
+        let NodeOutput {
+            node: source,
+            index: source_output,
+            ..
+        } = source.into();
         let NodeInput {
             node: target,
             index: target_input,
             ..
         } = target.into();
-        let target_input = target_input.as_node_input_index(self, target)?;
+
+        let Some(source_output) = source_output.as_node_output_index(self, source) else {
+            return;
+        };
+
+        let Some(target_input) = target_input.as_node_input_index(self, target) else {
+            return;
+        };
 
         if let Some(edge) = self
             .digraph
             .edges_directed(target, Direction::Incoming)
-            .find(|edge| edge.weight().target_input == target_input)
+            .find(|edge| {
+                edge.weight().source == source
+                    && edge.weight().source_output == source_output
+                    && edge.weight().target_input == target_input
+            })
         {
-            let connection = self.digraph.remove_edge(edge.id()).unwrap();
+            self.digraph.remove_edge(edge.id());
             self.needs_visitor_reset = true;
-            Some(connection)
-        } else {
-            None
         }
     }
 
