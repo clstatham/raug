@@ -13,17 +13,9 @@ import {
 import "@xyflow/react/dist/style.css";
 import { createWithEqualityFn } from "zustand/traditional";
 import { shallow } from "zustand/shallow";
-import ProcessorNode from "./processor-node";
+import ProcessorNode from "./nodes/processor-node";
 import { Edge, FloatParam, Node } from "../../../pkg/raug_wasm";
-import {
-    forceCenter,
-    forceCollide,
-    forceLink,
-    forceManyBody,
-    forceSimulation,
-} from "d3-force";
-import { useEffect, useRef, useState } from "react";
-import NumberNode from "./number-node";
+import NumberNode from "./nodes/number-node";
 
 export const useEditorStore = createWithEqualityFn((set: any, get: any) => ({
     nodes: [] as any[],
@@ -111,7 +103,7 @@ export const useEditorStore = createWithEqualityFn((set: any, get: any) => ({
         });
     },
 
-    addProcessorNode(raugNode: Node, position?: Position) {
+    addProcessorNode(raugNode: Node, position: Position) {
         const nodeName = graphHandler.nodeName(raugNode) ?? "Node";
         const nodeOutputs = graphHandler.nodeOutputNames(raugNode) ?? [];
         const nodeInputs = graphHandler.nodeInputNames(raugNode) ?? [];
@@ -294,8 +286,11 @@ function sortNodesTopologically(): Map<number, Position> | null {
     }
 
     for (const [b, nodeIds] of breadthLevels.entries()) {
+        // nodeIds.forEach((nodeId, index) => {
+        //     positions.set(nodeId, { x: sorted.indexOf(nodeId), y: index });
+        // });
         nodeIds.forEach((nodeId, index) => {
-            positions.set(nodeId, { x: sorted.indexOf(nodeId), y: index });
+            positions.set(nodeId, { x: b, y: index });
         });
     }
 
@@ -317,14 +312,12 @@ export function populateNodes() {
         `Populating editor with ${nodes.length} nodes and ${edges.length} edges.`
     );
 
-    const x_positions = sortNodesTopologically();
+    const positions = sortNodesTopologically();
 
     for (const node of nodes) {
-        const { x, y } = x_positions?.get(node.id()) ?? { x: 0, y: 0 };
-        const position = {
-            x: x * 200,
-            y: y * 200,
-        };
+        const position = positions?.get(node.id()) ?? { x: 0, y: 0 };
+        position.x *= 200;
+        position.y *= 100;
 
         if (graphHandler.graph?.isFloatParam(node)) {
             store.addNumberParamNode(
@@ -356,130 +349,6 @@ export default function Editor() {
     });
 
     const store = useEditorStore(selector, shallow);
-    const [nodes, setNodes] = useState(store.nodes);
-    const previousNodesRef = useRef(nodes);
-
-    useEffect(() => {
-        previousNodesRef.current = nodes;
-    }, [nodes]);
-
-    useEffect(() => {
-        setNodes((current: any[]) => {
-            const currentById = new Map(
-                current.map((node: any) => [node.id, node])
-            );
-
-            return store.nodes.map((node: any) => {
-                return currentById.get(node.id) ?? node;
-            });
-        });
-    }, [store.nodes]);
-
-    useEffect(() => {
-        if (!store.nodes.length) {
-            setNodes([]);
-            return;
-        }
-
-        const anyDragging = store.nodes.some((node: any) => node.dragging);
-
-        if (anyDragging) {
-            setNodes((current: any[]) => {
-                const currentById = new Map(
-                    current.map((node: any) => [node.id, node])
-                );
-
-                return store.nodes.map((node: any) => {
-                    if (node.dragging) {
-                        return node;
-                    }
-
-                    return (
-                        currentById.get(node.id) ?? {
-                            ...node,
-                            position: node.position ?? { x: 0, y: 0 },
-                        }
-                    );
-                });
-            });
-            return;
-        }
-
-        type SimulationNode = {
-            id: string;
-            x: number;
-            y: number;
-            vx?: number;
-            vy?: number;
-        };
-
-        const previousNodes = previousNodesRef.current;
-
-        const baseNodes =
-            previousNodes.length === store.nodes.length
-                ? previousNodes
-                : store.nodes;
-
-        const simNodes: SimulationNode[] = baseNodes.map((node: any) => ({
-            id: node.id,
-            x: node.position?.x ?? Math.random() * 400,
-            y: node.position?.y ?? Math.random() * 400,
-        }));
-
-        const nodeLookup = new Map(simNodes.map((node) => [node.id, node]));
-
-        const linkData = store.edges.map((edge: any) => ({
-            source: edge.source,
-            target: edge.target,
-        }));
-
-        const simulation = forceSimulation(simNodes)
-            .force(
-                "link",
-                forceLink(linkData)
-                    .id((d: any) => d.id)
-                    .distance(200)
-                    .strength(0.02)
-            )
-            .force("charge", forceManyBody().strength(-50))
-            .force("collide", forceCollide().radius(10).strength(0.5))
-            .force("center", forceCenter(400, 200).strength(0.1))
-            .alpha(1)
-            .alphaDecay(0.02);
-
-        let stopped = false;
-
-        const handleTick = () => {
-            if (stopped) {
-                return;
-            }
-
-            setNodes(
-                store.nodes.map((node: any) => {
-                    const simNode = nodeLookup.get(node.id);
-                    return {
-                        ...node,
-                        position: {
-                            x: simNode?.x ?? node.position?.x ?? 0,
-                            y: simNode?.y ?? node.position?.y ?? 0,
-                        },
-                    };
-                })
-            );
-
-            if (simulation.alpha() < 0.01) {
-                stopped = true;
-                simulation.stop();
-            }
-        };
-
-        simulation.on("tick", handleTick);
-
-        return () => {
-            stopped = true;
-            simulation.stop();
-        };
-    }, [store.nodes, store.edges]);
 
     const nodeTypes = {
         processor: ProcessorNode,
@@ -490,7 +359,7 @@ export default function Editor() {
         <div style={{ height: 400, border: "1px solid #cccccc" }}>
             <ReactFlow
                 nodeTypes={nodeTypes}
-                nodes={nodes}
+                nodes={store.nodes}
                 edges={store.edges}
                 onNodesChange={store.onNodeChanges}
                 onEdgesChange={store.onEdgeChanges}
