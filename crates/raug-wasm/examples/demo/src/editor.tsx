@@ -21,6 +21,8 @@ import { Edge, FloatParam, Node } from "../../../pkg/raug_wasm";
 import NumberNode from "./nodes/number-node";
 import CustomEdge from "./edge";
 import DacNode from "./nodes/dac-node";
+import { Button } from "./components/ui/button";
+import { useTheme } from "./theme-provider";
 
 export const useEditorStore = createWithEqualityFn((set: any, get: any) => ({
     nodes: [] as any[],
@@ -108,8 +110,6 @@ export const useEditorStore = createWithEqualityFn((set: any, get: any) => ({
                 x: Math.random() * 250,
                 y: Math.random() * 250,
             },
-            width: 150,
-            height: 60,
         };
 
         logMessage("Adding DAC node:", node);
@@ -141,10 +141,10 @@ export const useEditorStore = createWithEqualityFn((set: any, get: any) => ({
             data: {
                 label: "Number",
                 node: raugNode,
-                setValue: (v: number) => {
+                set: (v: number) => {
                     raugParam.set(v);
                 },
-                getValue: () => {
+                get: () => {
                     return raugParam.get();
                 },
             },
@@ -153,8 +153,6 @@ export const useEditorStore = createWithEqualityFn((set: any, get: any) => ({
                 x: Math.random() * 250,
                 y: Math.random() * 250,
             },
-            width: 150,
-            height: 80,
         };
 
         logMessage("Adding number param node:", node, "at position", position);
@@ -207,8 +205,6 @@ export const useEditorStore = createWithEqualityFn((set: any, get: any) => ({
                 x: Math.random() * 250,
                 y: Math.random() * 250,
             },
-            width: 150,
-            height: height,
         };
 
         logMessage("Adding node:", node, "at position", position);
@@ -456,8 +452,13 @@ export default function Editor() {
         custom: CustomEdge,
     };
 
+    const { setTheme } = useTheme();
+
     return (
-        <div className="editor-container" style={{ height: "500px" }}>
+        <div
+            className="editor-container"
+            style={{ height: "500px", width: "100%" }}
+        >
             <ReactFlow
                 className="editor-flow"
                 nodeTypes={nodeTypes}
@@ -470,16 +471,16 @@ export default function Editor() {
                 fitView
             >
                 <Panel position="bottom-left">
-                    <button
+                    <Button
                         onClick={() => {
                             store.toggleRunning();
                         }}
                     >
                         {store.isRunning ? "Stop" : "Play"}
-                    </button>
+                    </Button>
                 </Panel>
                 <Panel position="top-left">
-                    <button
+                    <Button
                         onClick={() => {
                             const nodeId = prompt(
                                 "Enter processor node type (e.g., Oscillator, Gain, etc.):"
@@ -490,8 +491,8 @@ export default function Editor() {
                         }}
                     >
                         Add Node
-                    </button>
-                    <button
+                    </Button>
+                    <Button
                         onClick={() => {
                             const value = prompt("Enter value:", "0.0");
                             if (value !== null) {
@@ -507,7 +508,30 @@ export default function Editor() {
                         }}
                     >
                         Add Number
-                    </button>
+                    </Button>
+                </Panel>
+                <Panel position="top-right">
+                    <Button
+                        onClick={() => {
+                            setTheme("light");
+                        }}
+                    >
+                        Light Mode
+                    </Button>
+                    <Button
+                        onClick={() => {
+                            setTheme("dark");
+                        }}
+                    >
+                        Dark Mode
+                    </Button>
+                    <Button
+                        onClick={() => {
+                            setTheme("system");
+                        }}
+                    >
+                        System Theme
+                    </Button>
                 </Panel>
                 <Background />
             </ReactFlow>

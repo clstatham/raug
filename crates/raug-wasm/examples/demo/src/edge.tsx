@@ -8,7 +8,7 @@ import {
 import { useEffect } from "react";
 
 const useEdgeDeletionEffect = (edge: any) => {
-    const reactFlow = useReactFlow();
+    const { deleteElements } = useReactFlow();
     const deleteKey = useKeyPress("Delete");
 
     const edges = useEdges();
@@ -17,9 +17,9 @@ const useEdgeDeletionEffect = (edge: any) => {
 
     useEffect(() => {
         if (selected && deleteKey) {
-            reactFlow.deleteElements({ edges: [{ id: edge.id! }] });
+            deleteElements({ edges: [{ id: edge.id! }] });
         }
-    }, [deleteKey, reactFlow, edge]);
+    }, [deleteKey, deleteElements, edge]);
 };
 
 export default function CustomEdge(props: SimpleBezierEdgeProps) {

@@ -50,7 +50,7 @@ export default class GraphHandler {
         const osc = this.graph.sineOscillator();
         this.graph.connectFloatParam(440.0, osc.input(0));
         const mul = this.graph.mul();
-        this.graph.connectFloatParam(0.1, mul.input(1));
+        this.graph.connectFloatParam(0.5, mul.input(1));
         this.graph.connectRaw(osc, 0, mul, 0);
         this.graph.connectAudioOutput(mul.output(0));
         this.graph.connectAudioOutput(mul.output(0));

@@ -1,11 +1,10 @@
 import { createWithEqualityFn } from "zustand/traditional";
 import { nanoid } from "nanoid";
+import { Label } from "./components/ui/label";
 
-const useLogStore = createWithEqualityFn<{
-    entries: LogEntry[];
-    appendLogEntry: (entry: LogEntry) => void;
-}>((set, get) => ({
+const useLogStore = createWithEqualityFn((set, get): any => ({
     entries: [] as LogEntry[],
+
     appendLogEntry: (entry: LogEntry) => {
         set({
             entries: [...get().entries, entry].slice(-100), // Keep only last 100 entries
@@ -42,54 +41,38 @@ function formatArgs(message: string, args: any[]): string {
 export function logMessage(message: string, ...args: any[]): void {
     const formatted = formatArgs(message, args);
     console.log(formatted);
-    useLogStore
-        .getState()
-        .appendLogEntry({
-            message: formatted,
-            level: "info",
-            timestamp: new Date(),
-        });
+    useLogStore.getState().appendLogEntry({
+        message: formatted,
+        level: "info",
+        timestamp: new Date(),
+    });
 }
 
 export function errorMessage(message: string, ...args: any[]): void {
     const formatted = formatArgs(message, args);
     console.error(formatted);
-    useLogStore
-        .getState()
-        .appendLogEntry({
-            message: formatted,
-            level: "error",
-            timestamp: new Date(),
-        });
+    useLogStore.getState().appendLogEntry({
+        message: formatted,
+        level: "error",
+        timestamp: new Date(),
+    });
 }
 
 export function Log() {
     const entries = useLogStore((state) => state.entries);
     return (
-        <div
-            style={{
-                maxHeight: 200,
-                overflowY: "auto",
-                backgroundColor: "#f0f0f0",
-                padding: "10px",
-                border: "1px solid #ccc",
-            }}
-        >
-            {entries.map((entry) => (
+        <div className="border rounded p-4 h-64 overflow-y-auto">
+            {entries.map((entry: LogEntry) => (
                 <div
                     key={nanoid()}
-                    style={{
-                        color:
-                            entry.level === "error"
-                                ? "red"
-                                : entry.level === "warn"
-                                ? "orange"
-                                : "black",
-                        fontFamily: "monospace",
-                        marginBottom: "4px",
-                    }}
+                    className={`mb-2 ${
+                        entry.level === "error" ? "text-red-600" : ""
+                    }`}
                 >
-                    [{entry.timestamp.toLocaleTimeString()}] {entry.message}
+                    <Label className="text-xs font-mono">
+                        [{entry.timestamp.toLocaleTimeString()}]&nbsp;
+                        {entry.message}
+                    </Label>
                 </div>
             ))}
         </div>
