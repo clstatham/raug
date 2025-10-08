@@ -15,7 +15,8 @@ export default function NumberNode(props: NumberNodeProps) {
     const externalValue = getExternal();
     const [localValue, setLocalValue] = useState(0.5); // ratio min:max
     const [min, setMin] = useState(0);
-    const [max, setMax] = useState(externalValue * 2.0); // default max to twice initial value
+    // default max to twice initial value, so that initial value is in middle of slider
+    const [max, setMax] = useState(externalValue * 2.0);
 
     return (
         <ProcessorNode
@@ -30,7 +31,7 @@ export default function NumberNode(props: NumberNodeProps) {
                     <div>
                         <div className="flex gap-2 mb-2">
                             <div className="flex flex-col">
-                                <label className="text-xs text-gray-600">
+                                <label className="text-xs text-foreground">
                                     Min
                                 </label>
                                 <input
@@ -43,7 +44,7 @@ export default function NumberNode(props: NumberNodeProps) {
                                 />
                             </div>
                             <div className="flex flex-col">
-                                <label className="text-xs text-gray-600">
+                                <label className="text-xs text-foreground">
                                     Max
                                 </label>
                                 <input
@@ -62,9 +63,9 @@ export default function NumberNode(props: NumberNodeProps) {
                             onPointerMove={(event) => event.stopPropagation()}
                             onClick={(event) => event.stopPropagation()}
                         >
-                            <label className="text-xs text-gray-600">
+                            <label className="text-xs text-foreground">
                                 {"Value: "}
-                                {(min + localValue * (max - min)).toFixed(3)}
+                                {getExternal().toFixed(3)}
                             </label>
                             <Slider
                                 className="w-full"
