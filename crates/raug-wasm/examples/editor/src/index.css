@@ -119,3 +119,9 @@
         @apply bg-background text-foreground;
     }
 }
+
+@layer components {
+    .react-flow__node.selectable.selected {
+        @apply ring-2 ring-offset-2 ring-primary;
+    }
+}

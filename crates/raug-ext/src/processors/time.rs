@@ -401,7 +401,7 @@ impl Delay {
     }
 }
 
-#[processor]
+#[processor(derive(Default))]
 pub fn allpass(
     env: ProcEnv,
     #[state] ringbuf: &mut Vec<f32>,

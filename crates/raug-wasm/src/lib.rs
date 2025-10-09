@@ -4,6 +4,8 @@ mod builtins;
 
 use raug::prelude::RaugNodeIndexExt;
 
+use crate::builtins::Proc;
+
 #[wasm_bindgen]
 extern "C" {
     pub fn alert(s: &str);
@@ -262,6 +264,12 @@ impl Graph {
         Ok(BoolParam {
             inner: proc.clone(),
         })
+    }
+
+    #[wasm_bindgen(js_name = "addNode")]
+    pub fn add_node(&mut self, proc: Proc) -> Result<Node, JsValue> {
+        let node = self.inner.processor_boxed(proc.inner);
+        Ok(Node { inner: node })
     }
 
     #[wasm_bindgen(js_name = "connectRaw")]

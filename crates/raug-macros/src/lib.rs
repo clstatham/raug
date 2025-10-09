@@ -4,10 +4,16 @@ use quote::quote;
 use syn::punctuated::Punctuated;
 
 mod processor_attribute;
+mod wrap_wasm;
 
 #[proc_macro_attribute]
 pub fn processor(attr: TokenStream, item: TokenStream) -> TokenStream {
     processor_attribute(attr, item)
+}
+
+#[proc_macro]
+pub fn wrap_wasm(input: TokenStream) -> TokenStream {
+    wrap_wasm::wrap_wasm(input)
 }
 
 /// Returns the MIDI note constant for the given note name and octave.

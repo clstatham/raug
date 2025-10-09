@@ -29,20 +29,16 @@ class RaugWorker extends AudioWorkletProcessor {
         this.version = Atomics.load(this.flags, 3);
     }
 
-    private postMessage(message: WorkletMessage): void {
-        this.port.postMessage(message);
-    }
-
     private postError(message: string): void {
-        this.postMessage({ type: "error", msg: message });
+        this.port.postMessage({ type: "error", msg: message });
     }
 
     private postLog(message: string): void {
-        this.postMessage({ type: "log", msg: message });
+        this.port.postMessage({ type: "log", msg: message });
     }
 
     private requestSamples(samples: number): void {
-        this.postMessage({ type: "need", samples });
+        this.port.postMessage({ type: "need", samples });
     }
 
     process(

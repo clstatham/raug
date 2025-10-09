@@ -258,6 +258,12 @@ pub fn pitch_to_freq(#[input] pitch: &f32, #[output] freq: &mut f32) -> ProcResu
 }
 
 #[processor(derive(Default))]
+pub fn freq_to_pitch(#[input] freq: &f32, #[output] pitch: &mut f32) -> ProcResult<()> {
+    *pitch = 69.0f32 + 12.0f32 * (freq / 440.0f32).log2();
+    Ok(())
+}
+
+#[processor(derive(Default))]
 pub fn scale(
     #[input] t: &f32,
     #[input] min: &f32,

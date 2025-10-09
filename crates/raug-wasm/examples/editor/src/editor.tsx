@@ -22,7 +22,7 @@ import NumberNode from "./nodes/number-node";
 import CustomEdge from "./edge";
 import DacNode from "./nodes/dac-node";
 import { Button } from "./components/ui/button";
-import { useTheme } from "./theme-provider";
+import PitchNode from "./nodes/pitch-node";
 
 export const useEditorStore = createWithEqualityFn((set: any, get: any) => ({
     nodes: [] as any[],
@@ -175,6 +175,51 @@ export const useEditorStore = createWithEqualityFn((set: any, get: any) => ({
         get().addNumberNode(
             raugNode,
             graphHandler.graph?.getFloatParam(raugNode)!
+        );
+
+        return raugNode.id().toString();
+    },
+
+    addPitchNode(raugNode: Node, raugParam: FloatParam, position?: Position) {
+        const node = {
+            id: raugNode.id().toString(),
+            data: {
+                label: "Pitch",
+                node: raugNode,
+                set: (v: number) => {
+                    raugParam.set(v);
+                },
+                get: () => {
+                    return raugParam.get();
+                },
+            },
+            type: "pitch",
+            position: position ?? {
+                x: Math.random() * 250,
+                y: Math.random() * 250,
+            },
+        };
+
+        logMessage("Adding pitch param node:", node, "at position", position);
+
+        set((state: any) => {
+            return {
+                nodes: [...state.nodes, node],
+            };
+        });
+    },
+
+    createPitchNode(value: number): string | null {
+        const raugNode = graphHandler.graph?.floatParam(value)!;
+
+        if (!raugNode) {
+            errorMessage("Failed to create pitch param");
+            return null;
+        }
+
+        get().addPitchNode(
+            raugNode,
+            graphHandler.graph?.getFloatParam(raugNode)
         );
 
         return raugNode.id().toString();
@@ -438,6 +483,11 @@ export default function Editor() {
         createNumberNode: state.createNumberNode,
         addEdge: state.addEdge,
         addFloatParamNode: state.addFloatParamNode,
+        createFloatParamNode: state.createFloatParamNode,
+        createDacNode: state.createDacNode,
+        addDacNode: state.addDacNode,
+        addPitchNode: state.addPitchNode,
+        createPitchNode: state.createPitchNode,
     });
 
     const store = useEditorStore(selector, shallow);
@@ -445,14 +495,13 @@ export default function Editor() {
     const nodeTypes = {
         processor: ProcessorNode,
         number: NumberNode,
+        pitch: PitchNode,
         dac: DacNode,
     };
 
     const edgeTypes = {
         custom: CustomEdge,
     };
-
-    const { setTheme } = useTheme();
 
     return (
         <div
@@ -509,28 +558,12 @@ export default function Editor() {
                     >
                         Add Number
                     </Button>
-                </Panel>
-                <Panel position="top-right">
                     <Button
                         onClick={() => {
-                            setTheme("light");
+                            store.createPitchNode(60);
                         }}
                     >
-                        Light Mode
-                    </Button>
-                    <Button
-                        onClick={() => {
-                            setTheme("dark");
-                        }}
-                    >
-                        Dark Mode
-                    </Button>
-                    <Button
-                        onClick={() => {
-                            setTheme("system");
-                        }}
-                    >
-                        System Theme
+                        Add Pitch
                     </Button>
                 </Panel>
                 <Background />

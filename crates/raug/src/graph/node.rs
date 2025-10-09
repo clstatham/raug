@@ -75,12 +75,16 @@ impl AbstractNode for ProcessorNode {
 impl ProcessorNode {
     /// Creates a new `ProcessorNode` with the given processor.
     pub fn new(processor: impl Processor) -> Self {
+        Self::new_boxed(Box::new(processor))
+    }
+
+    pub fn new_boxed(processor: Box<dyn Processor>) -> Self {
         let name = processor.name().to_string();
         let input_spec = processor.input_spec();
         let output_spec = processor.output_spec();
         let outputs = processor.create_output_buffers(0);
         Self {
-            processor: Box::new(processor),
+            processor,
             name,
             input_spec,
             output_spec,

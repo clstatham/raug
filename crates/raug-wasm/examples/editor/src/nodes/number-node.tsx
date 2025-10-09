@@ -1,6 +1,7 @@
 import { Slider } from "@/components/ui/slider";
 import ProcessorNode from "./processor-node";
-import { useEffect, useState } from "react";
+import { useMemo, useState } from "react";
+import { NumericScrubber } from "@/components/ui/number-scrubber";
 
 type NumberNodeProps = {
     data: {
@@ -18,6 +19,13 @@ export default function NumberNode(props: NumberNodeProps) {
     // default max to twice initial value, so that initial value is in middle of slider
     const [max, setMax] = useState(externalValue * 2.0);
 
+    useMemo(() => {
+        // if external value changes, or if the min/max change, update local value accordingly
+        const clamped = Math.min(max, Math.max(min, externalValue));
+        const ratio = (clamped - min) / (max - min);
+        setLocalValue(ratio);
+    }, [externalValue, min, max]);
+
     return (
         <ProcessorNode
             {...props}
@@ -28,37 +36,33 @@ export default function NumberNode(props: NumberNodeProps) {
                 inputNames: [],
                 outputNames: ["value"],
                 content: (
-                    <div>
+                    <div className="nodrag">
                         <div className="flex gap-2 mb-2">
                             <div className="flex flex-col">
                                 <label className="text-xs text-foreground">
                                     Min
                                 </label>
-                                <input
-                                    type="number"
-                                    value={min}
-                                    onChange={(e) =>
-                                        setMin(Number(e.target.value))
-                                    }
+                                <NumericScrubber
                                     className="w-16 px-2 py-1 text-xs border rounded"
+                                    value={min}
+                                    step={0.01}
+                                    onChange={(v) => setMin(v)}
                                 />
                             </div>
                             <div className="flex flex-col">
                                 <label className="text-xs text-foreground">
                                     Max
                                 </label>
-                                <input
-                                    type="number"
-                                    value={max}
-                                    onChange={(e) =>
-                                        setMax(Number(e.target.value))
-                                    }
+                                <NumericScrubber
                                     className="w-16 px-2 py-1 text-xs border rounded"
+                                    value={max}
+                                    step={0.01}
+                                    onChange={(v) => setMax(v)}
                                 />
                             </div>
                         </div>
                         <div
-                            className="nodrag w-full"
+                            className="w-full"
                             onPointerDown={(event) => event.stopPropagation()}
                             onPointerMove={(event) => event.stopPropagation()}
                             onClick={(event) => event.stopPropagation()}

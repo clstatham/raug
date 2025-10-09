@@ -1121,6 +1121,7 @@ dependencies = [
  "js-sys",
  "raug",
  "raug-ext",
+ "raug-macros",
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-sys",

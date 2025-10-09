@@ -160,6 +160,17 @@ impl Graph {
         Node(self.graph.add_output(node))
     }
 
+    pub fn processor_boxed(&mut self, proc: Box<dyn Processor>) -> Node {
+        let mut node = ProcessorNode::new_boxed(proc);
+
+        // allocate for the node on-the-fly with the current sample rate and
+        // block size, so that it can immediately be used
+        node.allocate(self.sample_rate, self.max_block_size);
+        node.resize_buffers(self.sample_rate, self.max_block_size);
+
+        Node(self.graph.add_node(node))
+    }
+
     pub fn processor(&mut self, node: impl Processor) -> Node {
         let mut node = ProcessorNode::new(node);
         // allocate for the node on-the-fly with the current sample rate and

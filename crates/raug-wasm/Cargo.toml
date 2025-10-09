@@ -16,6 +16,7 @@ wasm-bindgen = "0.2"
 getrandom = { version = "*", features = ["wasm_js"] }
 console_error_panic_hook = "0.1.7"
 wasm-bindgen-futures = "0.4"
+raug-macros = { path = "../raug-macros" }
 
 [dependencies.web-sys]
 version = "0.3"

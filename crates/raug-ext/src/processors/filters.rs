@@ -1,7 +1,7 @@
 use raug::prelude::*;
 use std::f32::consts::PI;
 
-#[processor]
+#[processor(derive(Default))]
 pub fn lowpass1(
     env: ProcEnv,
     #[state] prev_out: &mut f32,
@@ -15,7 +15,7 @@ pub fn lowpass1(
     Ok(())
 }
 
-#[processor]
+#[processor(derive(Default))]
 pub fn highpass1(
     env: ProcEnv,
     #[state] prev_out: &mut f32,

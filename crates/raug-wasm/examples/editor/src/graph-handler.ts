@@ -1,5 +1,12 @@
 import { errorMessage, logMessage } from "./log";
-import initWasm, { Edge, Graph, Node, getMemory } from "../../../pkg/raug_wasm";
+import initWasm, {
+    Edge,
+    Graph,
+    Node,
+    Proc,
+    ProcFactory,
+    getMemory,
+} from "../../../pkg/raug_wasm";
 
 type AudioWorkletMessage =
     | { type: "need"; samples?: number }
@@ -47,9 +54,10 @@ export default class GraphHandler {
 
         this.graph = new Graph();
 
-        const osc = this.graph.sineOscillator();
+        const factory = new ProcFactory();
+        const osc = this.graph.addNode(factory.sineOscillator());
         this.graph.connectFloatParam(440.0, osc.input(0));
-        const mul = this.graph.mul();
+        const mul = this.graph.addNode(factory.mul());
         this.graph.connectFloatParam(0.5, mul.input(1));
         this.graph.connectRaw(osc, 0, mul, 0);
         this.graph.connectAudioOutput(mul.output(0));
@@ -173,13 +181,15 @@ export default class GraphHandler {
         }
 
         try {
-            let fn = this.graph[name as keyof Graph];
+            const factory = new ProcFactory();
+            let fn = factory[name as keyof ProcFactory];
             if (typeof fn !== "function") {
                 errorMessage(`Unknown processor type: ${name}`);
                 return null;
             }
 
-            const node = (fn as () => Node).call(this.graph);
+            const proc = (fn as () => Proc).call(factory);
+            const node = this.graph.addNode(proc);
             return node;
         } catch (error) {
             errorMessage(`Failed to create node of type ${name}:`, error);
@@ -215,4 +225,4 @@ export default class GraphHandler {
     }
 }
 
-export const graphHandler = new GraphHandler(8, 128, 2);
+export const graphHandler = new GraphHandler(32, 128, 2);
