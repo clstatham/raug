@@ -1,18 +1,18 @@
 use std::f32::consts::PI;
 
 use raug::prelude::*;
-// use raug_ext::prelude::*;
+use raug_ext::prelude::*;
 
-struct SmoothRandomLfoState {
-    a: f32,
-    a_n: f32,
-    c_n: f32,
-    last_a: f32,
-    a_step: f32,
-    x: f32,
-    last_sign: f32,
-    amp_scale: f32,
-    new_amp_scale: f32,
+pub struct SmoothRandomLfoState {
+    pub a: f32,
+    pub a_n: f32,
+    pub c_n: f32,
+    pub last_a: f32,
+    pub a_step: f32,
+    pub x: f32,
+    pub last_sign: f32,
+    pub amp_scale: f32,
+    pub new_amp_scale: f32,
 }
 
 // https://www.musicdsp.org/en/latest/Synthesis/269-smooth-random-lfo-generator.html
@@ -90,36 +90,52 @@ impl Default for SmoothRandomLfo {
     }
 }
 
+/// A processor that generates Brownian noise.
+#[processor(derive(Default))]
+fn brownian(
+    env: ProcEnv,
+    #[state] last: &mut f32,
+    #[state] last2: &mut f32,
+    #[input] speed: &f32,
+    #[output] out: &mut f32,
+) -> ProcResult<()> {
+    let delta: f32 = (rand::random::<f32>() * 2.0 - 1.0) * speed / env.sample_rate;
+
+    *last += delta;
+
+    // smooth the output a bit
+    *last2 = 0.9 * *last2 + 0.1 * *last;
+
+    *last2 = last2.tanh();
+
+    *out = *last2;
+
+    Ok(())
+}
+
 #[allow(clippy::collapsible_else_if)]
 #[processor]
-pub fn playing_around(
+pub fn weird_tuba(
     env: ProcEnv,
     #[state] state: &mut f32,
-    #[state] phase: &mut u32,
+    #[state] t: &mut f32,
     #[input] freq: &f32,
     #[input] mod1: &f32,
     #[input] mod2: &f32,
     #[output] out: &mut f32,
 ) -> ProcResult<()> {
     // phase accumulation for sine wave
-    *phase += 1;
-    *phase %= env.sample_rate as u32;
+    *t += freq / env.sample_rate;
+    *t %= 1.0;
+    let phase = (PI * 2.0 * *t).sin();
 
-    // sine wave
-    let sine = (PI * 2.0 * *phase as f32 * freq / env.sample_rate).sin();
-
-    // sine wave (octave)
-    let sine2 = (PI * 2.0 * *phase as f32 * freq * 2.0 / env.sample_rate).sin();
+    // linear interpolation target
+    let t = phase * *mod1;
 
     // integrate
-    {
-        let t = *mod1;
-        let input = sine * t + sine2 * (1.0 - t);
-        *state += input;
-    }
+    *state = *state + (phase * t - (1.0 - t) * *state) * *mod2;
 
     // non-linearity and clipping
-    // *state = state.tanh();
     *state = state.tanh();
 
     // output
@@ -128,11 +144,11 @@ pub fn playing_around(
     Ok(())
 }
 
-impl Default for PlayingAround {
+impl Default for WeirdTuba {
     fn default() -> Self {
-        PlayingAround {
+        WeirdTuba {
             state: 0.0,
-            phase: 0,
+            t: 0.0,
             mod1: 0.0,
             mod2: 0.5,
             freq: 32.0,
@@ -143,35 +159,112 @@ impl Default for PlayingAround {
 fn main() {
     let mut graph = Graph::new();
 
-    let mod1 = graph.node(SmoothRandomLfo::default());
-    graph.connect_constant(0.5, mod1.input("rate"));
+    let mut client = OscClient::bind("localhost:9000");
 
-    let mod2 = graph.node(SmoothRandomLfo::default());
-    graph.connect_constant(0.5, mod2.input("rate"));
+    let osc = graph.node(WeirdTuba::default());
+    let mod1 = graph.node(client.register_param("mod1", 0.0));
+    let mod2 = graph.node(client.register_param("mod2", 0.0));
+    let note = graph.node(client.register_param("note", 32.0));
+    let vel = graph.node(client.register_param("vel", 0.0));
 
-    let osc = graph.node(PlayingAround::default());
-    graph.connect(mod1, osc.input("mod1"));
-    graph.connect(mod2, osc.input("mod2"));
+    let lfo1 = graph.node(Brownian::default());
+    graph.connect(mod1, lfo1.input("speed"));
+    let lfo2 = graph.node(Brownian::default());
+    graph.connect(mod2, lfo2.input("speed"));
 
-    // let hpf = graph.node(Biquad::highpass());
-    // graph.connect_constant(20.0, hpf.input("cutoff"));
-    // graph.connect_constant(1.0, hpf.input("q"));
-    // graph.connect(osc, hpf.input(0));
+    let note = graph.smooth(note, 0.02);
+    let freq = graph.node(PitchToFreq::default());
+    graph.connect(note, freq.input("pitch"));
 
-    let hpf = osc;
+    graph.connect(lfo1, osc.input("mod1"));
+    graph.connect(lfo2, osc.input("mod2"));
+    graph.connect(freq, osc.input("freq"));
 
-    graph.connect_audio_output(hpf);
-    graph.connect_audio_output(hpf);
+    let adsr = graph.node(Adsr::default());
+    graph.connect(vel, adsr.input("gate"));
+    graph.connect_constant(0.1, adsr.input("attack"));
+    graph.connect_constant(0.1, adsr.input("decay"));
+    graph.connect_constant(0.5, adsr.input("sustain"));
+    graph.connect_constant(0.5, adsr.input("release"));
 
-    graph
-        .play(
-            &mut CpalOut::spawn(
-                &AudioBackend::Default,
-                &AudioDevice::Default,
-                Some(Duration::from_secs(10)),
-            )
-            .record_to_wav("playing_around.wav"),
-            // WavFileOut::new("playing_around.wav", 48_000.0, 512, 2, None),
-        )
-        .unwrap();
+    let osc = graph.mul(osc, adsr);
+
+    client.add_rule("/note_on", move |args, params| {
+        let &[OscType::Int(note), OscType::Int(velocity)] = args else {
+            return;
+        };
+
+        if let Some(p) = params.get("note") {
+            p.set(note as f32);
+        }
+
+        if let Some(p) = params.get("vel") {
+            let new_value = velocity as f32 / 127.0;
+            p.set(new_value);
+            println!("amp: {}", new_value);
+        }
+    });
+
+    client.add_rule("/note_off", move |args, params| {
+        let &[OscType::Int(_note), OscType::Int(_velocity)] = args else {
+            return;
+        };
+
+        if let Some(p) = params.get("vel") {
+            p.set(0.0);
+            println!("amp: 0.0");
+        }
+    });
+
+    client.add_rule("/control_change", move |args, params| {
+        let &[OscType::Int(cc), OscType::Int(value)] = args else {
+            return;
+        };
+
+        let normalized = value as f32 / 127.0;
+
+        match cc {
+            70 => {
+                if let Some(p) = params.get("mod1") {
+                    let new_value = normalized * 200.0;
+                    p.set(new_value);
+                    println!("mod1: {}", new_value);
+                }
+            }
+            71 => {
+                if let Some(p) = params.get("mod2") {
+                    let new_value = normalized * 20.0;
+                    p.set(new_value);
+                    println!("mod2: {}", new_value);
+                }
+            }
+            _ => {}
+        }
+    });
+
+    let hpf = graph.node(Biquad::highpass());
+    graph.connect_constant(20.0, hpf.input("cutoff"));
+    graph.connect_constant(1.0, hpf.input("q"));
+    graph.connect(osc, hpf.input(0));
+
+    let mast = graph.node(hpf * 1.0);
+
+    graph.connect_audio_output(mast);
+    graph.connect_audio_output(mast);
+
+    let stream = CpalOut::spawn(&AudioBackend::Default, &AudioDevice::Default, None)
+        .record_to_wav("playing_around.wav");
+
+    let kill_switch = KillSwitch::default();
+    ctrlc::set_handler({
+        let kill_switch = kill_switch.clone();
+        move || {
+            kill_switch.kill();
+        }
+    })
+    .unwrap();
+
+    client.spawn();
+
+    graph.play(&stream, Some(kill_switch)).unwrap();
 }

@@ -150,10 +150,13 @@ fn main() {
     println!("edges: {}", graph.edge_count());
 
     graph
-        .play(&mut CpalOut::spawn(
-            &AudioBackend::Default,
-            &AudioDevice::Default,
-            Some(std::time::Duration::from_secs(60)),
-        ))
+        .play(
+            &CpalOut::spawn(
+                &AudioBackend::Default,
+                &AudioDevice::Default,
+                Some(std::time::Duration::from_secs(60)),
+            ),
+            None,
+        )
         .unwrap();
 }

@@ -185,14 +185,17 @@ impl Graph {
         node.build_on_graph(self)
     }
 
-    pub fn param<T>(&mut self, value: T) -> Node
+    pub fn param<T>(&mut self, value: T) -> (Node, Param<T>)
     where
         T: Signal + Copy + Default,
     {
-        self.node(Param::new(value))
+        let param = Param::new(value);
+        let node = self.node(param.clone());
+        (node, param)
     }
 
     /// Connects two nodes in the graph.
+    #[track_caller]
     pub fn connect<O, Src, I, Tgt>(&mut self, source: Src, target: Tgt)
     where
         O: AsNodeOutputIndex<ProcessorNode>,

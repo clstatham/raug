@@ -105,10 +105,10 @@ enum AdsrState {
 pub fn adsr(
     env: ProcEnv,
     #[state] state: &mut AdsrState,
-    #[state] last_gate: &mut bool,
+    #[state] last_gate: &mut f32,
     #[state] value: &mut f32,
 
-    #[input] gate: &bool,
+    #[input] gate: &f32,
     #[input] attack: &f32,
     #[input] decay: &f32,
     #[input] sustain: &f32,
@@ -120,42 +120,45 @@ pub fn adsr(
     let decay = decay * env.sample_rate;
     let release = release * env.sample_rate;
 
-    if *gate && !*last_gate {
-        *value = 0.0;
+    // rising edge
+    if *gate > *last_gate && *gate > 0.0 {
         *state = AdsrState::Attack;
-    } else if !*gate && *last_gate {
+    }
+    // falling edge
+    else if *gate <= 0.0 {
         *state = AdsrState::Release;
     }
 
+    // scale the increment to the current state
     let slope = match *state {
         AdsrState::Attack => {
             if attack > 0.0 {
-                1.0 / attack
+                *gate / attack
             } else {
-                1.0
+                *gate
             }
         }
         AdsrState::Decay => {
             if decay > 0.0 {
-                -(1.0 - *sustain) / decay
+                (*sustain - *gate) / decay
             } else {
-                -1.0
+                *sustain - *gate
             }
         }
         AdsrState::Sustain => 0.0,
         AdsrState::Release => {
             if release > 0.0 {
-                -(1.0 - *sustain) / release
+                -(*value / release)
             } else {
-                -1.0
+                -*value
             }
         }
     };
 
     *value += slope;
 
-    if *state == AdsrState::Attack && *value >= 1.0 {
-        *value = 1.0;
+    if *state == AdsrState::Attack && *value >= *gate {
+        *value = *gate;
         *state = AdsrState::Decay;
     } else if *state == AdsrState::Decay && *value <= *sustain {
         *value = *sustain;
@@ -175,9 +178,9 @@ impl Default for Adsr {
     fn default() -> Self {
         Self {
             state: AdsrState::Sustain,
-            last_gate: false,
+            last_gate: 0.0,
             value: 0.0,
-            gate: false,
+            gate: 0.0,
             attack: 0.0,
             decay: 0.0,
             sustain: 1.0,

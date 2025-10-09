@@ -239,13 +239,24 @@ pub fn lerp(
 
 #[processor(derive(Default))]
 pub fn smooth(
+    env: ProcEnv,
+    #[state] initialized: &mut bool,
     #[state] x: &mut f32,
     #[input] input: &f32,
-    #[input] factor: &f32,
+    #[input] tau: &f32,
     #[output] out: &mut f32,
 ) -> ProcResult<()> {
-    let factor = factor.clamp(0.0, 1.0);
-    *x = *x + (*input - *x) * factor;
+    let alpha = 1.0 - (-1.0 / (tau * env.sample_rate)).exp();
+    if !*initialized {
+        *x = *input;
+        *initialized = true;
+    }
+    let alpha = if alpha.is_finite() {
+        alpha.clamp(0.0, 0.999999)
+    } else {
+        0.0
+    };
+    *x += (*input - *x) * alpha;
     *out = *x;
 
     Ok(())

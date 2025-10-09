@@ -5,7 +5,7 @@ import { createRoot } from "react-dom/client";
 
 export default function RaugWasmEditorApp() {
     return (
-        <div style={{ padding: "20px", fontFamily: "Arial, sans-serif" }}>
+        <div className="p-4 space-y-4">
             <h1>raug-wasm editor</h1>
 
             <Editor />

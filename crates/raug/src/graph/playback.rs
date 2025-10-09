@@ -8,13 +8,14 @@ use std::{
     str::FromStr,
     sync::{
         Arc,
-        atomic::{AtomicUsize, Ordering},
+        atomic::{AtomicBool, AtomicUsize, Ordering},
     },
     time::Duration,
 };
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use crossbeam_channel::{Receiver, RecvError, SendError, Sender, TryRecvError, TrySendError};
+use parking_lot::Mutex;
 
 use crate::{
     graph::{Graph, GraphConstructionError},
@@ -84,9 +85,38 @@ pub enum GraphRunError {
 /// A result type for graph run operations.
 pub type GraphRunResult<T> = Result<T, GraphRunError>;
 
+#[derive(Clone, Default)]
+pub struct KillSwitch {
+    is_killed: Arc<AtomicBool>,
+}
+
+impl KillSwitch {
+    pub fn new() -> Self {
+        Self {
+            is_killed: Arc::new(AtomicBool::new(false)),
+        }
+    }
+
+    pub fn is_killed(&self) -> bool {
+        self.is_killed.load(Ordering::Relaxed)
+    }
+
+    pub fn kill(&self) {
+        self.is_killed.store(true, Ordering::Relaxed);
+    }
+
+    pub fn reset(&self) {
+        self.is_killed.store(false, Ordering::Relaxed);
+    }
+}
+
 impl Graph {
-    pub fn play(&mut self, output_stream: &mut impl AudioOut) -> GraphRunResult<()> {
-        while !output_stream.is_finished() {
+    pub fn play(
+        &mut self,
+        output_stream: &impl AudioOut,
+        kill_switch: Option<KillSwitch>,
+    ) -> GraphRunResult<()> {
+        while !output_stream.is_finished() && kill_switch.as_ref().is_none_or(|k| !k.is_killed()) {
             while output_stream.output_samples_needed() > 0 {
                 let block_size = output_stream.block_size();
                 if block_size > self.max_block_size {
@@ -109,6 +139,8 @@ impl Graph {
                     }
                 }
             }
+
+            std::thread::yield_now();
         }
 
         Ok(())
@@ -325,7 +357,7 @@ pub trait AudioOut: WasmNotSend + WasmNotSync + 'static {
     fn is_finished(&self) -> bool;
 
     /// Writes the given samples to the stream. On success, returns the number of samples written.
-    fn write(&mut self, samps: &[f32]) -> GraphRunResult<usize>;
+    fn write(&self, samps: &[f32]) -> GraphRunResult<usize>;
 }
 
 impl AudioOut for Box<dyn AudioOut> {
@@ -349,8 +381,8 @@ impl AudioOut for Box<dyn AudioOut> {
         self.as_ref().is_finished()
     }
 
-    fn write(&mut self, samps: &[f32]) -> GraphRunResult<usize> {
-        self.as_mut().write(samps)
+    fn write(&self, samps: &[f32]) -> GraphRunResult<usize> {
+        self.as_ref().write(samps)
     }
 }
 
@@ -388,7 +420,7 @@ impl<A: AudioOut, B: AudioOut> AudioOut for ParallelOut<A, B> {
         self.a.is_finished() || self.b.is_finished() // finish if either is finished
     }
 
-    fn write(&mut self, samps: &[f32]) -> GraphRunResult<usize> {
+    fn write(&self, samps: &[f32]) -> GraphRunResult<usize> {
         for &samp in samps {
             self.a.write(&[samp])?;
             self.b.write(&[samp])?;
@@ -436,14 +468,14 @@ impl AudioOut for NullOut {
         false
     }
 
-    fn write(&mut self, samps: &[f32]) -> GraphRunResult<usize> {
+    fn write(&self, samps: &[f32]) -> GraphRunResult<usize> {
         Ok(samps.len())
     }
 }
 
 /// An [`AudioOut`] implementation that writes audio data to a WAV file.
 pub struct WavFileOut {
-    file: hound::WavWriter<BufWriter<File>>,
+    file: Mutex<hound::WavWriter<BufWriter<File>>>,
     sample_rate: f32,
     block_size: usize,
     output_channels: usize,
@@ -479,7 +511,7 @@ impl WavFileOut {
         };
 
         Self {
-            file,
+            file: Mutex::new(file),
             sample_rate,
             block_size,
             output_channels,
@@ -490,7 +522,7 @@ impl WavFileOut {
 
     /// Finalizes the WAV file, writing any remaining data and closing the file.
     pub fn finalize(self) -> hound::Result<()> {
-        self.file.finalize()?;
+        self.file.into_inner().finalize()?;
 
         Ok(())
     }
@@ -525,10 +557,10 @@ impl AudioOut for WavFileOut {
         }
     }
 
-    fn write(&mut self, samps: &[f32]) -> GraphRunResult<usize> {
+    fn write(&self, samps: &[f32]) -> GraphRunResult<usize> {
         let mut written = 0;
         for &samp in samps {
-            self.file.write_sample(samp)?;
+            self.file.lock().write_sample(samp)?;
             written += 1;
         }
         Ok(written)
@@ -771,7 +803,7 @@ impl AudioOut for CpalOut {
         }
     }
 
-    fn write(&mut self, samps: &[f32]) -> GraphRunResult<usize> {
+    fn write(&self, samps: &[f32]) -> GraphRunResult<usize> {
         let mut written = 0;
         for &samp in samps {
             self.samples.send_blocking(samp).unwrap();

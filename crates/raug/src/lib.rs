@@ -14,7 +14,7 @@ extern crate self as raug;
 pub mod prelude {
     #[cfg(feature = "playback")]
     pub use crate::graph::playback::{
-        AudioBackend, AudioDevice, AudioOut, CpalOut, NullOut, WavFileOut,
+        AudioBackend, AudioDevice, AudioOut, CpalOut, KillSwitch, NullOut, WavFileOut,
     };
     pub use crate::{
         builtins::*,

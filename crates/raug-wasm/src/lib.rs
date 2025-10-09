@@ -212,14 +212,14 @@ impl Graph {
 
     #[wasm_bindgen(js_name = "floatParam")]
     pub fn float_param(&mut self, value: f32) -> Node {
-        let param = self.inner.param(value);
-        Node { inner: param }
+        let (node, _) = self.inner.param(value);
+        Node { inner: node }
     }
 
     #[wasm_bindgen(js_name = "boolParam")]
     pub fn bool_param(&mut self, value: bool) -> Node {
-        let param = self.inner.param(value);
-        Node { inner: param }
+        let (node, _) = self.inner.param(value);
+        Node { inner: node }
     }
 
     #[wasm_bindgen(js_name = "isFloatParam")]

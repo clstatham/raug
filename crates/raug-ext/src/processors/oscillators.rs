@@ -42,10 +42,12 @@ pub fn sine_oscillator(
         *t = 0.0;
         *out = 0.0;
     } else {
-        *t += frequency / env.sample_rate * 2.0 * std::f32::consts::PI;
-        *out = (*t + phase).sin();
+        *t += frequency / env.sample_rate;
+        *t %= 1.0;
+        let phase = (PI * 2.0 * *t) + *phase;
+
+        *out = phase.sin();
     }
-    *t %= 2.0 * std::f32::consts::PI;
 
     Ok(())
 }
