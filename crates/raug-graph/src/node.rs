@@ -12,7 +12,7 @@ pub trait Node {
     fn output_name(&self, index: u32) -> Option<&str>;
 }
 
-pub trait AsNodeInputIndex<N: Node>: Send + ToString + Copy + 'static {
+pub trait AsNodeInputIndex<N: Node>: Send + ToString + Copy + PartialEq {
     fn as_node_input_index(&self, graph: &Graph<N>, node: NodeIndex) -> Option<u32>;
 }
 
@@ -26,7 +26,7 @@ impl<N: Node> AsNodeInputIndex<N> for u32 {
     }
 }
 
-impl<N: Node> AsNodeInputIndex<N> for &'static str {
+impl<N: Node> AsNodeInputIndex<N> for &str {
     fn as_node_input_index(&self, graph: &Graph<N>, node: NodeIndex) -> Option<u32> {
         for i in 0..graph[node].num_inputs() {
             if let Some(name) = graph[node].input_name(i as u32)
@@ -39,7 +39,7 @@ impl<N: Node> AsNodeInputIndex<N> for &'static str {
     }
 }
 
-pub trait AsNodeOutputIndex<N: Node>: Send + ToString + Copy + 'static {
+pub trait AsNodeOutputIndex<N: Node>: Send + ToString + Copy + PartialEq {
     fn as_node_output_index(&self, graph: &Graph<N>, node: NodeIndex) -> Option<u32>;
 }
 
@@ -53,7 +53,7 @@ impl<N: Node> AsNodeOutputIndex<N> for u32 {
     }
 }
 
-impl<N: Node> AsNodeOutputIndex<N> for &'static str {
+impl<N: Node> AsNodeOutputIndex<N> for &str {
     fn as_node_output_index(&self, graph: &Graph<N>, node: NodeIndex) -> Option<u32> {
         for i in 0..graph[node].num_outputs() {
             if let Some(name) = graph[node].output_name(i as u32)
@@ -66,6 +66,7 @@ impl<N: Node> AsNodeOutputIndex<N> for &'static str {
     }
 }
 
+#[derive(Debug)]
 pub struct NodeInput<N: Node, I: AsNodeInputIndex<N>> {
     pub node: NodeIndex,
     pub index: I,
@@ -79,6 +80,12 @@ impl<N: Node, I: AsNodeInputIndex<N>> Clone for NodeInput<N, I> {
 }
 
 impl<N: Node, I: AsNodeInputIndex<N>> Copy for NodeInput<N, I> {}
+
+impl<N: Node, I: AsNodeInputIndex<N>> PartialEq for NodeInput<N, I> {
+    fn eq(&self, other: &Self) -> bool {
+        self.node == other.node && self.index == other.index
+    }
+}
 
 impl<N: Node, I: AsNodeInputIndex<N>> NodeInput<N, I> {
     pub fn new(node: NodeIndex, index: I) -> Self {
@@ -96,10 +103,17 @@ impl<N: Node> From<NodeIndex> for NodeInput<N, u32> {
     }
 }
 
+#[derive(Debug)]
 pub struct NodeOutput<N: Node, I: AsNodeOutputIndex<N>> {
     pub node: NodeIndex,
     pub index: I,
     _phantom: std::marker::PhantomData<N>,
+}
+
+impl<N: Node, I: AsNodeOutputIndex<N>> PartialEq for NodeOutput<N, I> {
+    fn eq(&self, other: &Self) -> bool {
+        self.node == other.node && self.index == other.index
+    }
 }
 
 pub trait AsNodeOutput<N: Node, I: AsNodeOutputIndex<N>> {

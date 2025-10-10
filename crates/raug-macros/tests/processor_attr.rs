@@ -1,3 +1,4 @@
+use raug::prelude::ProcResult;
 use raug_macros::processor;
 
 #[processor(derive(Clone, Copy, Debug, Default))]

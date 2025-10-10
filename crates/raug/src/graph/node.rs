@@ -183,7 +183,7 @@ impl ProcessorNode {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Debug)]
 pub struct Output<O: AsNodeOutputIndex<ProcessorNode>>(pub(crate) NodeOutput<ProcessorNode, O>);
 
 impl<O: AsNodeOutputIndex<ProcessorNode>> Deref for Output<O> {
@@ -194,7 +194,7 @@ impl<O: AsNodeOutputIndex<ProcessorNode>> Deref for Output<O> {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Debug)]
 pub struct Input<I: AsNodeInputIndex<ProcessorNode>>(pub(crate) NodeInput<ProcessorNode, I>);
 
 impl<I: AsNodeInputIndex<ProcessorNode>> Deref for Input<I> {
@@ -205,11 +205,11 @@ impl<I: AsNodeInputIndex<ProcessorNode>> Deref for Input<I> {
     }
 }
 
-pub trait IntoNodeOutput<O: AsNodeOutputIndex<ProcessorNode>>: Send + 'static {
+pub trait IntoNodeOutput<O: AsNodeOutputIndex<ProcessorNode>>: Send {
     fn into_node_output(self, graph: &mut Graph) -> Output<O>;
 }
 
-pub trait IntoNodeInput<I: AsNodeInputIndex<ProcessorNode>>: Send + 'static {
+pub trait IntoNodeInput<I: AsNodeInputIndex<ProcessorNode>>: Send {
     fn into_node_input(self, graph: &mut Graph) -> Input<I>;
 }
 
@@ -253,7 +253,7 @@ impl RaugNodeIndexExt for Node {
     }
 }
 
-pub trait BuildOnGraph: Send + 'static {
+pub trait BuildOnGraph: Send {
     fn build_on_graph(self, graph: &mut Graph) -> Node;
 }
 

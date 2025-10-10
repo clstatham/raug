@@ -16,6 +16,9 @@ use crate::{
     signal::Signal,
 };
 
+pub mod builder;
+#[cfg(feature = "expr")]
+pub mod expr;
 pub mod node;
 #[cfg(feature = "playback")]
 pub mod playback;
@@ -57,7 +60,7 @@ pub enum GraphConstructionError {
 /// A result type for graph construction operations.
 pub type GraphConstructionResult<T> = Result<T, GraphConstructionError>;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[repr(transparent)]
 pub struct Node(raug_graph::graph::NodeIndex);
 

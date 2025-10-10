@@ -11,9 +11,10 @@ repository = "https://github.com/clstatham/raug"
 name = "raug"
 
 [features]
-default = ["playback"]
+default = ["playback", "expr"]
 playback = ["cpal", "hound"]
 jack = ["cpal/jack"]
+expr = ["nom", "nom-language"]
 
 [dependencies]
 cpal = { version = "0.16.0", features = [], optional = true }
@@ -35,6 +36,8 @@ tynm = "0.2.0"
 raug-graph = { path = "../raug-graph" }
 parking_lot = "0.12.5"
 crossbeam = "0.8.4"
+nom = { version = "8.0.0", optional = true }
+nom-language = { version = "0.1.0", optional = true }
 
 [dev-dependencies]
 env_logger = "0.11.8"

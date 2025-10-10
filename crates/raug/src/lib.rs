@@ -20,6 +20,7 @@ pub mod prelude {
         builtins::*,
         graph::{
             Graph, Node,
+            builder::GraphBuilder,
             node::{ProcessNodeError, ProcessorNode, RaugNodeIndexExt},
         },
         processor::{

@@ -92,7 +92,7 @@ impl Default for SmoothRandomLfo {
 
 /// A processor that generates Brownian noise.
 #[processor(derive(Default))]
-fn brownian(
+pub fn brownian(
     env: ProcEnv,
     #[state] last: &mut f32,
     #[state] last2: &mut f32,
@@ -159,7 +159,7 @@ impl Default for WeirdTuba {
 fn main() {
     let mut graph = Graph::new();
 
-    let mut client = OscClient::bind("localhost:9000");
+    let mut client = OscClient::bind("localhost:9000").unwrap();
 
     let osc = graph.node(WeirdTuba::default());
     let mod1 = graph.node(client.register_param("mod1", 0.0));

@@ -1,11 +1,14 @@
 use std::{
     collections::HashMap,
     net::{ToSocketAddrs, UdpSocket},
+    thread::JoinHandle,
+    time::Duration,
 };
 
 use raug::prelude::Param;
 
 pub use rosc::OscType;
+use rosc::{OscMessage, OscPacket};
 
 pub type OscRule = dyn FnMut(&[rosc::OscType], ParamProxy) + Send + Sync;
 
@@ -15,7 +18,7 @@ pub struct ParamProxy<'a> {
 }
 
 impl<'a> ParamProxy<'a> {
-    pub fn new(params: &'a HashMap<String, Param<f32>>) -> Self {
+    pub(crate) fn new(params: &'a HashMap<String, Param<f32>>) -> Self {
         Self { params }
     }
 
@@ -25,22 +28,20 @@ impl<'a> ParamProxy<'a> {
 }
 
 pub struct OscClient {
-    pub socket: UdpSocket,
-    pub params: HashMap<String, Param<f32>>,
-    pub rules: HashMap<String, Vec<Box<OscRule>>>,
+    socket: UdpSocket,
+    params: HashMap<String, Param<f32>>,
+    rules: HashMap<String, Vec<Box<OscRule>>>,
 }
 
 impl OscClient {
-    pub fn bind(addr: impl ToSocketAddrs) -> Self {
-        let socket = UdpSocket::bind(addr).expect("could not bind to address");
-        socket
-            .set_nonblocking(true)
-            .expect("could not set non-blocking");
-        Self {
+    pub fn bind(addr: impl ToSocketAddrs) -> Result<Self, std::io::Error> {
+        let socket = UdpSocket::bind(addr)?;
+        socket.set_nonblocking(true)?;
+        Ok(Self {
             socket,
             params: HashMap::new(),
             rules: HashMap::new(),
-        }
+        })
     }
 
     pub fn register_param(&mut self, name: &str, initial_value: f32) -> Param<f32> {
@@ -52,7 +53,7 @@ impl OscClient {
 
     pub fn add_rule<F>(&mut self, address: &str, rule: F)
     where
-        F: FnMut(&[rosc::OscType], ParamProxy) + Send + Sync + 'static,
+        F: FnMut(&[OscType], ParamProxy) + Send + Sync + 'static,
     {
         self.rules
             .entry(address.to_string())
@@ -69,24 +70,24 @@ impl OscClient {
         }
     }
 
-    pub fn listen(&mut self) {
+    pub fn listen_forever(&mut self) {
         loop {
             self.poll();
-            std::thread::sleep(std::time::Duration::from_millis(1));
+            std::thread::sleep(Duration::from_millis(1));
         }
     }
 
-    pub fn spawn(mut self) -> std::thread::JoinHandle<Self> {
+    pub fn spawn(mut self) -> JoinHandle<Self> {
         std::thread::spawn(move || {
-            self.listen();
+            self.listen_forever();
             self
         })
     }
 
-    fn handle_packet(&mut self, packet: rosc::OscPacket) {
+    fn handle_packet(&mut self, packet: OscPacket) {
         match packet {
-            rosc::OscPacket::Message(msg) => self.handle_message(msg),
-            rosc::OscPacket::Bundle(bundle) => {
+            OscPacket::Message(msg) => self.handle_message(msg),
+            OscPacket::Bundle(bundle) => {
                 for p in bundle.content {
                     self.handle_packet(p);
                 }
@@ -94,7 +95,7 @@ impl OscClient {
         }
     }
 
-    fn handle_message(&mut self, msg: rosc::OscMessage) {
+    fn handle_message(&mut self, msg: OscMessage) {
         if let Some(rules) = self.rules.get_mut(&msg.addr) {
             let param = ParamProxy::new(&self.params);
             for rule in rules {
