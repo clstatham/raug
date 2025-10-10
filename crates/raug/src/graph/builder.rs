@@ -38,13 +38,6 @@ impl GraphBuilder {
             .unwrap_or_else(|| panic!("unknown node name: {}", name))
     }
 
-    #[track_caller]
-    pub(crate) fn get_param(&self, name: &str) -> &Param<f32> {
-        self.params
-            .get(name)
-            .unwrap_or_else(|| panic!("node is not a param: {}", name))
-    }
-
     pub fn param_iter(&self) -> impl Iterator<Item = (&String, &Param<f32>)> {
         self.params.iter()
     }
