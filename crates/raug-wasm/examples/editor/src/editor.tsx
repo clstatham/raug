@@ -65,11 +65,11 @@ export const useEditorStore = createWithEqualityFn((set: any, get: any) => ({
                             sourceNode,
                             sourceHandle,
                             targetNode,
-                            targetHandle
+                            targetHandle,
                         );
                     } else {
                         errorMessage(
-                            `Invalid edge id format: ${change.id}, expected format: sourceId-sourceHandle-targetId-targetHandle`
+                            `Invalid edge id format: ${change.id}, expected format: sourceId-sourceHandle-targetId-targetHandle`,
                         );
                     }
                 } else {
@@ -92,7 +92,7 @@ export const useEditorStore = createWithEqualityFn((set: any, get: any) => ({
             connection.source!,
             connection.sourceHandle!,
             connection.target!,
-            connection.targetHandle!
+            connection.targetHandle!,
         );
     },
 
@@ -174,7 +174,7 @@ export const useEditorStore = createWithEqualityFn((set: any, get: any) => ({
 
         get().addNumberNode(
             raugNode,
-            graphHandler.graph?.getFloatParam(raugNode)!
+            graphHandler.graph?.getFloatParam(raugNode)!,
         );
 
         return raugNode.id().toString();
@@ -219,7 +219,7 @@ export const useEditorStore = createWithEqualityFn((set: any, get: any) => ({
 
         get().addPitchNode(
             raugNode,
-            graphHandler.graph?.getFloatParam(raugNode)
+            graphHandler.graph?.getFloatParam(raugNode),
         );
 
         return raugNode.id().toString();
@@ -305,7 +305,7 @@ export const useEditorStore = createWithEqualityFn((set: any, get: any) => ({
         sourceId: string,
         sourceHandle: string,
         targetId: string,
-        targetHandle: string
+        targetHandle: string,
     ) {
         const source = parseInt(sourceId, 10);
         const target = parseInt(targetId, 10);
@@ -319,12 +319,12 @@ export const useEditorStore = createWithEqualityFn((set: any, get: any) => ({
             sourceNode,
             sourceOutput,
             targetNode,
-            targetInput
+            targetInput,
         );
 
         if (!edge) {
             errorMessage(
-                `Failed to create edge from node ${source} to node ${target}`
+                `Failed to create edge from node ${source} to node ${target}`,
             );
             return;
         }
@@ -437,7 +437,7 @@ export function populateNodes() {
     }
 
     logMessage(
-        `Populating editor with ${nodes.length} nodes and ${edges.length} edges.`
+        `Populating editor with ${nodes.length} nodes and ${edges.length} edges.`,
     );
 
     const positions = sortNodesTopologically();
@@ -451,7 +451,7 @@ export function populateNodes() {
             store.addNumberNode(
                 node,
                 graphHandler.graph?.getFloatParam(node)!,
-                position
+                position,
             );
         } else if (audioOutputs?.some((n) => n.id() === node.id())) {
             const index = audioOutputs.findIndex((n) => n.id() === node.id());
@@ -532,7 +532,7 @@ export default function Editor() {
                     <Button
                         onClick={() => {
                             const nodeId = prompt(
-                                "Enter processor node type (e.g., Oscillator, Gain, etc.):"
+                                "Enter processor node type (e.g., Oscillator, Gain, etc.):",
                             );
                             if (nodeId) {
                                 store.createProcessorNode(nodeId);
@@ -548,7 +548,7 @@ export default function Editor() {
                                 const floatValue = parseFloat(value);
                                 if (isNaN(floatValue)) {
                                     errorMessage(
-                                        "Invalid float value entered."
+                                        "Invalid float value entered.",
                                     );
                                     return;
                                 }

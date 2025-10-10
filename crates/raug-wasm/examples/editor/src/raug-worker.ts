@@ -44,7 +44,7 @@ class RaugWorker extends AudioWorkletProcessor {
     process(
         _inputs: Float32Array[][],
         outputs: Float32Array[][],
-        _parameters: Record<string, Float32Array>
+        _parameters: Record<string, Float32Array>,
     ): boolean {
         if (outputs.length === 0 || outputs[0].length === 0) {
             return true;
@@ -57,7 +57,7 @@ class RaugWorker extends AudioWorkletProcessor {
 
         if (available < samplesNeeded) {
             this.postError(
-                `Underrun: need ${samplesNeeded}, have ${available}`
+                `Underrun: need ${samplesNeeded}, have ${available}`,
             );
             this.requestSamples(samplesNeeded);
             out.forEach((channel) => channel.fill(0));
@@ -77,7 +77,7 @@ class RaugWorker extends AudioWorkletProcessor {
         Atomics.store(
             this.flags,
             1,
-            (readIdx + samplesNeeded) % this.queueSamples
+            (readIdx + samplesNeeded) % this.queueSamples,
         );
         Atomics.sub(this.flags, 2, samplesNeeded);
 

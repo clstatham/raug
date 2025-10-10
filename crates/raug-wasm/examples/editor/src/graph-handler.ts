@@ -38,7 +38,7 @@ export default class GraphHandler {
         this.queueSamples = blocks * this.blockSamples;
 
         this.shared = new SharedArrayBuffer(
-            Float32Array.BYTES_PER_ELEMENT * this.queueSamples
+            Float32Array.BYTES_PER_ELEMENT * this.queueSamples,
         );
         this.samples = new Float32Array(this.shared);
         this.meta = new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT * 4);
@@ -64,14 +64,14 @@ export default class GraphHandler {
         this.graph.connectAudioOutput(mul.output(0));
 
         logMessage(
-            `Graph initialized with ${this.graph.nodeCount()} nodes and ${this.graph.numAudioOutputs()} audio outputs.`
+            `Graph initialized with ${this.graph.nodeCount()} nodes and ${this.graph.numAudioOutputs()} audio outputs.`,
         );
     }
 
     async start(): Promise<void> {
         if (!this.graph) {
             throw new Error(
-                "Graph handler has not been initialised. Call init() first."
+                "Graph handler has not been initialised. Call init() first.",
             );
         }
 
@@ -157,7 +157,7 @@ export default class GraphHandler {
         const wasmView = new Float32Array(
             this.memory.buffer,
             ptr,
-            this.blockSamples
+            this.blockSamples,
         );
         const writeIdx = Atomics.load(this.flags, 0);
 
@@ -168,7 +168,7 @@ export default class GraphHandler {
         Atomics.store(
             this.flags,
             0,
-            (writeIdx + this.blockSamples) % this.queueSamples
+            (writeIdx + this.blockSamples) % this.queueSamples,
         );
         Atomics.add(this.flags, 2, this.blockSamples);
         Atomics.add(this.flags, 3, 1);
@@ -201,7 +201,7 @@ export default class GraphHandler {
         source: Node,
         sourceHandle: number,
         target: Node,
-        targetHandle: number
+        targetHandle: number,
     ): Edge | null {
         if (!this.graph) {
             errorMessage("Graph handler is not ready yet.");
@@ -213,12 +213,12 @@ export default class GraphHandler {
                 source,
                 sourceHandle,
                 target,
-                targetHandle
+                targetHandle,
             );
         } catch (error) {
             errorMessage(
                 `Failed to connect nodes (${sourceHandle} -> ${targetHandle}):`,
-                error
+                error,
             );
             return null;
         }
